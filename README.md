@@ -19,7 +19,7 @@ Kirikiroid2 一脉）加上 VitaGL 呈现层：游戏保持原样，继续使用
 
 | | |
 | --- | --- |
-| Vita3K | **已实测可玩，目前仅仅模拟器测试**|
+| Vita3K | **已实测可进入界面，目前仅仅模拟器测试**|
 | 真机 PS Vita | 构建通过全部契约，但未实机验证 |
 | 已知缺口 | 若干特效插件为空实现；`stringUtil.dll` 的 `isNumber/initSpline` 未实现；Vita3K 上建议加 `tvpgl-scalar` 标记（见下） |
 

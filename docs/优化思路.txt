@@ -1,0 +1,599 @@
+思考了 1m 42s
+
+我扒完之后，发现了一个非常关键、而且和我们上一条判断不一样的事实：
+
+> Azahar 的 Vita 版并不是 Interpreter → JIT → IR → Renderer 这一条链。
+
+Vita 上实际运行的是：PICA shader → GXM USSE IR → USSE 指令/GXP → SceGxm → Vita GPU。
+
+而 shader_jit_a32_compiler.cpp 虽然存在，而且确实是一个很漂亮的 ARM32 JIT，但 PS Vita 编译时明确禁用了它。
+
+
+
+这反而比“Interpreter 比 Sony 官方快”更有意思。
+
+
+---
+
+1. 先给你整张真正的架构图
+
+Azahar Vita 现在实际上有 三条不同的 shader 路径：
+
+3DS 游戏
+                            │
+                            ▼
+                     PICA200 Shader
+                            │
+                ┌───────────┴────────────┐
+                │                        │
+                │ CPU Shader Engine      │ GXM Renderer
+                │                        │
+                ▼                        ▼
+         ┌──────────────┐       PICA → USSE
+         │ Interpreter  │              │
+         └──────────────┘              ▼
+                │                 USSE IR
+                │                       │
+                │                       ▼
+                │                 Optimizer
+                │                       │
+                │                       ▼
+                │                 USSE Encoder
+                │                       │
+                │                       ▼
+                │                    GXP
+                │                       │
+                │                       ▼
+                │               SceGxmShaderPatcher
+                │                       │
+                │                       ▼
+                │                 SceGxm GPU
+                │                       │
+                │                       ▼
+                │                  Vita GPU
+                │
+                │
+                └────── 非 Vita ARM32 ──────►
+                         A32 Shader JIT
+                              │
+                              ▼
+                       ARM32 + NEON
+                         native code
+
+这里最重要的一点：
+
+Interpreter 和 A32 JIT 是 CPU shader engine 的两个选择；GXM USSE 是另一套完全独立的 GPU shader 编译路径。
+
+
+---
+
+2. 第一条：Interpreter
+
+Vita 因为不能直接使用普通的 shader JIT，所以最终选择：
+
+Pica::Shader::InterpreterEngine
+
+入口在：
+
+src/video_core/shader/shader_interpreter.cpp
+
+它拿到：
+
+ShaderSetup
+   │
+   ├── program_code
+   ├── swizzle_data
+   ├── uniforms
+   └── entry_point
+
+然后：
+
+RunInterpreter(...)
+
+逐条读取：
+
+program_counter
+        │
+        ▼
+PICA instruction
+        │
+        ├── ADD
+        ├── MUL
+        ├── DP3
+        ├── DP4
+        ├── MAD
+        ├── RCP
+        ├── RSQ
+        ├── IF
+        ├── CALL
+        ├── LOOP
+        └── ...
+
+同时维护：
+
+if_stack
+call_stack
+loop_stack
+conditional_code
+address_registers
+ShaderUnit registers
+
+源码里甚至明确把三个栈定义出来：
+
+IfStackElement
+CallStackElement
+LoopStackElement
+
+而 RunInterpreter() 每次执行 shader 都会在这个循环里逐条解释指令。
+
+最终：
+
+InterpreterEngine::Run()
+    ↓
+RunInterpreter()
+    ↓
+ShaderUnit state
+
+
+---
+
+3. 但是：PS Vita 根本不用 A32 Shader JIT
+
+这个地方是这次扒代码最大的发现。
+
+你之前问：
+
+> Azahar 的 shader interpreter / JIT 是不是很强？
+
+
+
+答案是：
+
+A32 JIT 确实很强，但 Vita 版根本没有启用。
+
+看：
+
+src/common/arch.h
+
+这里直接写死：
+
+#if (x86_64 || arm64 || arm32) && !defined(__vita__)
+#define CITRA_HAS_SHADER_JIT 1
+#else
+#define CITRA_HAS_SHADER_JIT 0
+#endif
+
+注释甚至直接解释原因：
+
+> PS Vita 映射 executable memory 需要 kernel plugin，因此这个 build 不要求它，所以使用 shader interpreter。
+
+
+
+所以：
+
+普通 ARM32 Linux
+       │
+       └── A32 JIT = YES
+
+PS Vita
+       │
+       └── A32 JIT = NO
+             ↓
+       Interpreter
+
+
+---
+
+4. 但 Azahar 又确实写了一个 ARM32 JIT
+
+这个非常值得你注意。
+
+文件：
+
+src/video_core/shader/shader_jit_a32_compiler.cpp
+
+不是摆设。
+
+它是真正的：
+
+PICA bytecode
+      ↓
+ARM32 machine code
+
+JIT engine 会：
+
+ShaderSetup
+    ↓
+program code hash
+    +
+swizzle hash
+    ↓
+cache lookup
+    │
+    ├── hit → 直接执行
+    │
+    └── miss
+          ↓
+       JitShader
+          ↓
+       Compile()
+          ↓
+       ARM32 machine code
+          ↓
+       executable memory
+
+而且它不是简单的 C++ switch interpreter。
+
+它直接生成：
+
+ARM32
+  +
+NEON
+
+例如寄存器分配：
+
+R0  = uniforms
+R1  = ShaderUnit
+R2/R3/R12 = scratch
+
+Q1 = SRC1
+Q2 = SRC2
+Q3 = SRC3
+
+Q4 = constant 1.0
+Q8/Q9 = scratch
+
+也就是说：
+
+PICA ADD
+ ↓
+ARM32 VADD
+
+PICA MUL
+ ↓
+ARM32 VMUL
+
+PICA DP4
+ ↓
+NEON dot/vector sequence
+
+它甚至针对 PICA 的：
+
+swizzle
+mask
+relative uniform addressing
+MOVA
+LOOP
+CALL
+IF
+CMP
+MAD
+
+做了专门处理。
+
+
+---
+
+5. A32 JIT 最后怎么执行？
+
+这一段非常漂亮。
+
+编译完之后：
+
+mmap(
+    ...,
+    PROT_READ | PROT_WRITE | PROT_EXEC,
+    ...
+)
+
+把生成出来的 ARM32 machine code 放进 executable memory。
+
+然后：
+
+program =
+    reinterpret_cast<CompiledShader*>(code_mem);
+
+运行时：
+
+program(
+    &setup.uniforms,
+    &state,
+    entry
+);
+
+也就是说：
+
+PICA shader
+
+     ↓ compile once
+
+ARM32 machine code
+
+     ↓ cache
+
+直接 CALL 函数指针
+
+完全跳过：
+
+decode
+dispatch
+switch
+instruction interpretation
+
+但是 Vita 因为 executable-memory 问题没有走这条路。
+
+
+---
+
+6. 真正有意思的是 Vita 的 GXM Renderer
+
+现在来到这次真正的重点。
+
+Azahar Vita 新增：
+
+src/video_core/renderer_gxm/
+
+而且 CMake 里面明确把：
+
+renderer_gxm/
+
+加入 video_core。
+
+更关键的是：
+
+renderer_gxm/usse/
+
+下面有：
+
+usse_ir.cpp
+usse_ir.h
+
+usse_encoder.cpp
+usse_encoder.h
+
+vs_usse_gen.cpp
+vs_usse_gen.h
+
+fs_usse_gen.cpp
+fs_usse_gen.h
+
+gxp_writer.cpp
+gxp_writer.h
+
+这才是 Vita 版真正牛逼的地方。
+
+
+---
+
+7. Vita 的真正 shader pipeline
+
+现在把它展开：
+
+PICA200 shader
+      │
+      ▼
+nihstro::Instruction
+      │
+      ▼
+VertexEmitter / FragmentEmitter
+      │
+      ▼
+USSE IR
+      │
+      ├── dead store elimination
+      ├── load folding
+      ├── internal register reuse
+      ├── two-wide optimization
+      ├── liveness analysis
+      └── register allocation
+      │
+      ▼
+USSE Encoder
+      │
+      ▼
+USSE machine instructions
+      │
+      ▼
+GXP container
+      │
+      ▼
+sceGxmProgramCheck()
+      │
+      ▼
+sceGxmShaderPatcherRegisterProgram()
+      │
+      ▼
+sceGxmShaderPatcherCreateVertexProgram()
+sceGxmShaderPatcherCreateFragmentProgram()
+      │
+      ▼
+sceGxmSetVertexProgram()
+sceGxmSetFragmentProgram()
+      │
+      ▼
+SGX543MP4+ GPU
+
+这才是：
+
+Azahar Vita 的核心 shader 编译链。
+
+
+---
+
+8. 这个 IR 是真的 IR
+
+你问我“IR 在哪”。
+
+就在：
+
+renderer_gxm/usse/usse_ir.h
+
+这里。
+
+它自己就叫：
+
+namespace GxmRenderer::Usse::Ir
+
+而且不是随便叫个 IR。
+
+它定义了完整的：
+
+enum class Op
+
+包括：
+
+Phas
+Nop
+Wdf
+KillUnlessP1
+DepthF
+EndVertex
+EndSecondary
+Label
+Br
+PhaseStart
+
+Vec
+Vec16
+Mad
+Dot
+Comp
+
+MoveF32x4
+PackF16
+MoveInternal
+CondMove
+Test
+Sample2D
+Lda32
+Bitwise
+MadI16
+MadI32
+PackS16
+Mad2
+
+所以这里已经不是：
+
+PICA opcode → switch
+
+而是：
+
+PICA semantic
+      ↓
+IR
+      ↓
+optimization
+      ↓
+register allocation
+      ↓
+USSE
+
+
+---
+
+9. 这个 IR 做了什么优化？
+
+这里是我认为最值得你研究的地方。
+
+源码自己列出来了。
+
+① Dead Store Elimination
+
+比如：
+
+r0 = MUL(...)
+r0 = ADD(...)
+
+如果第一个 r0 根本没人读取：
+
+MUL
+
+直接删。
+
+
+---
+
+② Load folding
+
+例如：
+
+load r0, uniform
+mul r1, r0, r2
+
+变成：
+
+mul r1, uniform, r2
+
+如果硬件指令允许直接读取。
+
+
+---
+
+③ Internal register reuse
+
+比如：
+
+load → i0
+use
+load → i0
+use
+
+如果第二次 load 前 i0 仍然保存正确值：
+
+第二次 load
+
+直接删。
+
+
+---
+
+④ Two-wide optimization
+
+这个尤其适合 Vita USSE。
+
+比如 PICA：
+
+mul.xyzw
+
+最终发现结果实际上只需要：
+
+xy
+zw
+
+而 USSE 对 pair 操作更友好。
+
+于是：
+
+4-wide operation
+
+可能被拆成：
+
+2-wide op
+2-wide op
+
+并且把原来用于搬运数据的 load 一起消掉。
+
+这些优化都明确写在 usse_ir.h 的注释和 Lower() 设计里。
+
+
+---
+
+10. 然后才是 Register Allocation
+
+这部分也不是简单生成代码。
+
+IR 有：
+
+RegClass
+
+并且：
+
+liveness analysis
+        ↓
+linear scan
+        ↓
+register allocation
+
+它会按照：
+
+tempor

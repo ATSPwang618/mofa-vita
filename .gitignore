@@ -1,0 +1,19 @@
+/build*/
+/agent/
+/_deps/
+/vendor/
+/third_party/
+/node_modules/
+/.cache/
+/.idea/
+/.vscode/
+compile_commands.json
+*.vpk
+*.velf
+*.self
+*.sfo
+*.o
+*.ttc
+
+# User-supplied proprietary fonts must remain external and must never enter
+# source control or a VPK.

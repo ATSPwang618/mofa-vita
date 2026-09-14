@@ -1,0 +1,36 @@
+#pragma once
+
+#include "mofa/game.hpp"
+
+#include <cstddef>
+#include <filesystem>
+#include <optional>
+#include <string>
+
+namespace mofa {
+
+struct FilterVerification {
+    std::size_t samples = 0;
+    std::size_t recognized = 0;
+    int score = 0;
+};
+
+struct PreparedFilter {
+    std::filesystem::path path;
+    std::string origin;
+};
+
+bool verify_retail_filter(const GameDescriptor& game,
+                          const std::filesystem::path& filter_path,
+                          FilterVerification* verification = nullptr,
+                          std::string* error = nullptr);
+
+// Uses a game-local filter when permitted; otherwise samples the real archives,
+// identifies a common extraction pattern, and writes a generated TJS filter.
+// `allow_game_local=false` is the strict phase-1 boundary: only XP3 metadata
+// and payload samples may contribute to the result.
+std::optional<PreparedFilter> prepare_filter_fallback(
+    const GameDescriptor& game, const std::filesystem::path& generated_root,
+    std::string* error = nullptr, bool allow_game_local = true);
+
+} // namespace mofa

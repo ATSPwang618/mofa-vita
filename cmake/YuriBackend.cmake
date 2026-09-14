@@ -5666,11 +5666,13 @@ static void TVPInitRippleTransformFuncs()
         NAME "魔夜 Vita"
         FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/sce_sys/icon0.png"
              sce_sys/icon0.png
-        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/bubble/bg0.png"
-             sce_sys/livearea/contents/bg0.png
-        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/bubble/startup.png"
+        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/sce_sys/pic0.png"
+             sce_sys/pic0.png
+        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/sce_sys/livearea/contents/background.png"
+             sce_sys/livearea/contents/background.png
+        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/sce_sys/livearea/contents/startup.png"
              sce_sys/livearea/contents/startup.png
-        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/bubble/template.xml"
+        FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/sce_sys/livearea/contents/template.xml"
              sce_sys/livearea/contents/template.xml
         FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/vita/default-xp3filter.tjs"
              mofa-vita/default-xp3filter.tjs

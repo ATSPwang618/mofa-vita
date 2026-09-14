@@ -35,7 +35,7 @@ add_custom_command(
         "${MOFA_TEMPLATE}/sce_sys/livearea/contents"
     DEPENDS mofa-booter.self-self
             "${MOFA_ROOT}/resources/vita/bubble/template.xml"
-            "${MOFA_ROOT}/resources/vita/bubble/bg0.png"
+            "${MOFA_ROOT}/resources/vita/bubble/background.png"
             "${MOFA_ROOT}/resources/vita/bubble/startup.png"
     VERBATIM
 )

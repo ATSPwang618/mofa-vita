@@ -31,12 +31,12 @@ add_custom_command(
         "${CMAKE_CURRENT_BINARY_DIR}/mofa-booter.self"
         "${MOFA_TEMPLATE}/eboot.bin"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
-        "${MOFA_ROOT}/resources/vita/bubble"
+        "${MOFA_ROOT}/resources/vita/sce_sys/livearea/contents"
         "${MOFA_TEMPLATE}/sce_sys/livearea/contents"
     DEPENDS mofa-booter.self-self
-            "${MOFA_ROOT}/resources/vita/bubble/template.xml"
-            "${MOFA_ROOT}/resources/vita/bubble/background.png"
-            "${MOFA_ROOT}/resources/vita/bubble/startup.png"
+            "${MOFA_ROOT}/resources/vita/sce_sys/livearea/contents/template.xml"
+            "${MOFA_ROOT}/resources/vita/sce_sys/livearea/contents/background.png"
+            "${MOFA_ROOT}/resources/vita/sce_sys/livearea/contents/startup.png"
     VERBATIM
 )
 add_custom_target(mofa-booter-template ALL

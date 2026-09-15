@@ -819,7 +819,7 @@ require_text("${SOURCE_DIR}/src/platform/vita/yuri_main.cpp"
     "mofa::vita_stage_record_frame(mofa::VitaFrameStages{"
     "every event-loop iteration reports its measured stage costs")
 require_text("${SOURCE_DIR}/src/platform/vita/yuri_stage_profile.cpp"
-    "script=%.2fms(events=%.2f timer=%.2f kag=%.2f cont=%.2f tags=%u "
+    "script=%.2fms(events=%.2f timer=%.2f kag=%.2f kload=%.2f klabels=%.2f "
     "the script bucket decomposes into events, timers, tag parsing and the rest")
 require_text("${GENERATED_DIR}/EventIntf.cpp"
     "mofa_yuri_stage_bucket(mofa::kVitaStageContinuous, mofa_continuous_started);"
@@ -828,7 +828,7 @@ require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
     "MOFA_COUNT_PIXELS(TVPConstAlphaBlend_a, mofa::kTvpgPixelAdditiveDest, 2);"
     "the constant-opacity text path is counted in the additive-dest family")
 require_text("${SOURCE_DIR}/src/platform/vita/yuri_stage_profile.cpp"
-    "rest=%.2f) composite=%.2fms(%.0f%%,%u calls)"
+    "khooks=%.2f cont=%.2f tags=%u rest=%.2f) "
     "the stage line separates script work from compositor work")
 require_text("${GENERATED_DIR}/SysInitImpl.cpp"
     "mofa::apply_device_tvpgl_kernel_policy();"
@@ -1392,6 +1392,18 @@ require_text("${GENERATED_DIR}/KAGParser.cpp"
 require_text("${GENERATED_DIR}/KAGParser.cpp"
     "mofa_yuri_stage_note_tag();"
     "every parsed KAG tag is counted for the frame report")
+require_text("${GENERATED_DIR}/KAGParser.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageKagLoad, mofa_load_started);"
+    "the scenario file read and line split is measured on its own")
+require_text("${GENERATED_DIR}/KAGParser.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageKagLabels, mofa_labels_started);"
+    "the label cache build is measured on its own")
+require_text("${GENERATED_DIR}/KAGParser.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageKagHooks, mofa_hook_started);"
+    "the title's own onScenarioLoad callback is measured separately")
+require_text("${GENERATED_DIR}/KAGParser.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageKagHooks, mofa_loaded_started);"
+    "the title's own onScenarioLoaded callback is measured separately")
 require_text("${GENERATED_DIR}/KAGParser.cpp"
     "yuri-kag-large-inline-execution-complete"
     "large KAG inline execution completion is observable on hardware")

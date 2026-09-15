@@ -1609,9 +1609,64 @@ tTJSNI_KAGParser::tTJSNI_KAGParser()
     if(yuri_kag_parser_patched_5 STREQUAL yuri_kag_parser_patched_4)
         message(FATAL_ERROR "Yuri KAG tag-parse stage patch no longer applies")
     endif()
+
+    # The scenario-load stall. A peak window reports ~45 ms of "kag" against 18
+    # parsed tags, so the cost is not per-tag parsing: it is the first read and
+    # line-split of a .ks (TVPGetScenario caches by storage name afterwards), the
+    # one-pass label cache build, or the game's own onScenarioLoad /
+    # onScenarioLoaded callbacks. Only the first two are ours to change, so they
+    # are measured apart from the hooks that belong to the title.
+    set(yuri_kag_load_hook_old "\t\ttjs_error status = Owner->FuncCall(0, funcname.c_str(), funcname.GetHint(),\n\t\t\t&result, 1, &pparam, Owner);")
+    set(yuri_kag_load_hook_new "\t\tconst std::uint64_t mofa_hook_started = mofa_yuri_stage_ticks();\n\t\ttjs_error status = Owner->FuncCall(0, funcname.c_str(), funcname.GetHint(),\n\t\t\t&result, 1, &pparam, Owner);\n\t\tmofa_yuri_stage_bucket(mofa::kVitaStageKagHooks, mofa_hook_started);")
+    set(yuri_kag_patched_6 "${yuri_kag_parser_patched_5}")
+    string(REPLACE "${yuri_kag_load_hook_old}" "${yuri_kag_load_hook_new}"
+        yuri_kag_patched_6 "${yuri_kag_patched_6}")
+    if(yuri_kag_patched_6 STREQUAL yuri_kag_parser_patched_5)
+        message(FATAL_ERROR "Yuri onScenarioLoad timing patch no longer applies")
+    endif()
+    set(yuri_kag_load_start_old "\t\tif(status == TJS_S_OK && result.Type() == tvtString)")
+    set(yuri_kag_load_start_new "\t\tconst std::uint64_t mofa_load_started = mofa_yuri_stage_ticks();\n\t\tif(status == TJS_S_OK && result.Type() == tvtString)")
+    set(yuri_kag_patched_7 "${yuri_kag_patched_6}")
+    string(REPLACE "${yuri_kag_load_start_old}" "${yuri_kag_load_start_new}"
+        yuri_kag_patched_7 "${yuri_kag_patched_7}")
+    if(yuri_kag_patched_7 STREQUAL yuri_kag_patched_6)
+        message(FATAL_ERROR "Yuri scenario-load timing patch no longer applies")
+    endif()
+    set(yuri_kag_load_lines_old "\t\tLines = Scenario->GetLines();\n\t\tLineCount = Scenario->GetLineCount();")
+    set(yuri_kag_load_lines_new "\t\tLines = Scenario->GetLines();\n\t\tLineCount = Scenario->GetLineCount();\n\t\tmofa_yuri_stage_bucket(mofa::kVitaStageKagLoad, mofa_load_started);")
+    set(yuri_kag_patched_8 "${yuri_kag_patched_7}")
+    string(REPLACE "${yuri_kag_load_lines_old}" "${yuri_kag_load_lines_new}"
+        yuri_kag_patched_8 "${yuri_kag_patched_8}")
+    if(yuri_kag_patched_8 STREQUAL yuri_kag_patched_7)
+        message(FATAL_ERROR "Yuri scenario line-fetch timing patch no longer applies")
+    endif()
+    set(yuri_kag_loaded_hook_old "\t\tOwner->FuncCall(0, funcname.c_str(), funcname.GetHint(),\n\t\t\tNULL, 1, &pparam, Owner);")
+    set(yuri_kag_loaded_hook_new "\t\tconst std::uint64_t mofa_loaded_started = mofa_yuri_stage_ticks();\n\t\tOwner->FuncCall(0, funcname.c_str(), funcname.GetHint(),\n\t\t\tNULL, 1, &pparam, Owner);\n\t\tmofa_yuri_stage_bucket(mofa::kVitaStageKagHooks, mofa_loaded_started);")
+    set(yuri_kag_patched_9 "${yuri_kag_patched_8}")
+    string(REPLACE "${yuri_kag_loaded_hook_old}" "${yuri_kag_loaded_hook_new}"
+        yuri_kag_patched_9 "${yuri_kag_patched_9}")
+    if(yuri_kag_patched_9 STREQUAL yuri_kag_patched_8)
+        message(FATAL_ERROR "Yuri onScenarioLoaded timing patch no longer applies")
+    endif()
+    set(yuri_kag_labels_open_old "void tTVPScenarioCacheItem::EnsureLabelCache()\n{\n\t// construct label cache")
+    set(yuri_kag_labels_open_new "void tTVPScenarioCacheItem::EnsureLabelCache()\n{\n\tconst std::uint64_t mofa_labels_started = mofa_yuri_stage_ticks();\n\t// construct label cache")
+    set(yuri_kag_patched_10 "${yuri_kag_patched_9}")
+    string(REPLACE "${yuri_kag_labels_open_old}" "${yuri_kag_labels_open_new}"
+        yuri_kag_patched_10 "${yuri_kag_patched_10}")
+    if(yuri_kag_patched_10 STREQUAL yuri_kag_patched_9)
+        message(FATAL_ERROR "Yuri label-cache open timing patch no longer applies")
+    endif()
+    set(yuri_kag_labels_close_old "\t\tLabelCached = true;\n\t}\n\n}")
+    set(yuri_kag_labels_close_new "\t\tLabelCached = true;\n\t}\n\n\tmofa_yuri_stage_bucket(mofa::kVitaStageKagLabels, mofa_labels_started);\n}")
+    set(yuri_kag_patched_11 "${yuri_kag_patched_10}")
+    string(REPLACE "${yuri_kag_labels_close_old}" "${yuri_kag_labels_close_new}"
+        yuri_kag_patched_11 "${yuri_kag_patched_11}")
+    if(yuri_kag_patched_11 STREQUAL yuri_kag_patched_10)
+        message(FATAL_ERROR "Yuri label-cache close timing patch no longer applies")
+    endif()
     file(CONFIGURE
         OUTPUT "${yuri_generated_dir}/KAGParser.cpp"
-        CONTENT "${yuri_kag_parser_patched_5}"
+        CONTENT "${yuri_kag_patched_11}"
         @ONLY NEWLINE_STYLE UNIX)
     list(REMOVE_ITEM yuri_utils_sources "${yuri_kag_parser}")
     list(APPEND yuri_utils_sources "${yuri_generated_dir}/KAGParser.cpp")

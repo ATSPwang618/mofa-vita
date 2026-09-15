@@ -28,6 +28,15 @@ enum VitaStageBucket : int {
     // carries tag dispatch, keyframe evaluation and the layer property writes
     // those callbacks perform.
     kVitaStageContinuous,
+    // Reading and splitting a scenario file. The first load of a .ks is the
+    // expensive one; later loads of the same storage come from the scenario
+    // cache.
+    kVitaStageKagLoad,
+    // One-pass label cache build for a freshly loaded scenario.
+    kVitaStageKagLabels,
+    // The game's own onScenarioLoad / onScenarioLoaded callbacks. Their cost is
+    // the title's, not ours, so it has to be visible separately.
+    kVitaStageKagHooks,
     kVitaStageBucketCount
 };
 

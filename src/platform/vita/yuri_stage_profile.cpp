@@ -52,6 +52,12 @@ void flush_stage_window() {
         window_bucket_us[mofa::kVitaStageTimer] / 1.0e3 / frames;
     const double kag_parse_ms =
         window_bucket_us[mofa::kVitaStageKagParse] / 1.0e3 / frames;
+    const double kag_load_ms =
+        window_bucket_us[mofa::kVitaStageKagLoad] / 1.0e3 / frames;
+    const double kag_labels_ms =
+        window_bucket_us[mofa::kVitaStageKagLabels] / 1.0e3 / frames;
+    const double kag_hooks_ms =
+        window_bucket_us[mofa::kVitaStageKagHooks] / 1.0e3 / frames;
     const double continuous_ms =
         window_bucket_us[mofa::kVitaStageContinuous] / 1.0e3 / frames;
     const double accounted_ms = events_ms + timer_ms + continuous_ms;
@@ -66,13 +72,14 @@ void flush_stage_window() {
     std::snprintf(
         line, sizeof line,
         "[mofa-stage] frames=%u loop=%.2fms busy=%.2fms engine=%.2fms "
-        "script=%.2fms(events=%.2f timer=%.2f kag=%.2f cont=%.2f tags=%u "
-        "rest=%.2f) composite=%.2fms(%.0f%%,%u calls) present=%.2fms "
+        "script=%.2fms(events=%.2f timer=%.2f kag=%.2f kload=%.2f klabels=%.2f "
+        "khooks=%.2f cont=%.2f tags=%u rest=%.2f) "
+        "composite=%.2fms(%.0f%%,%u calls) present=%.2fms "
         "input=%.2fms recycle=%.2fms idle=%.2fms",
         window_frames, loop_ms, busy_ms, engine_ms, script_ms, events_ms,
-        timer_ms, kag_parse_ms, continuous_ms, window_tags, rest_ms,
-        composite_ms, composite_share, window_composite_calls, present_ms,
-        input_ms, recycle_ms, idle_ms);
+        timer_ms, kag_parse_ms, kag_load_ms, kag_labels_ms, kag_hooks_ms,
+        continuous_ms, window_tags, rest_ms, composite_ms, composite_share,
+        window_composite_calls, present_ms, input_ms, recycle_ms, idle_ms);
     mofa_boot_trace(line);
 
     std::uint64_t pixels[mofa::kTvpgPixelFamilyCount] = {};

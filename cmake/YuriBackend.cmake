@@ -503,6 +503,26 @@ tTVPLocalFileStream::~tTVPLocalFileStream()
                 "Yuri generated event source retains zero-length allocation: ${yuri_event_allocating_empty_path}")
         endif()
     endforeach()
+
+    # Continuous-event delivery is where KAG's Conductor advances the scenario:
+    # tag dispatch, keyframe evaluation and the layer property writes those
+    # handlers perform all happen inside this call. Bracketing it separates that
+    # work from the rest of the engine stage, and the pixel meter says how much
+    # of it was pixels rather than interpretation.
+    string(REPLACE
+        "#include \"EventIntf.h\""
+        "#include \"EventIntf.h\"\n#include \"mofa/vita_stage_profile.hpp\""
+        yuri_event_intf_patched "${yuri_event_intf_patched}")
+    set(yuri_deliver_all_events_old "\t\t\tr = _TVPDeliverAllEvents();")
+    set(yuri_deliver_all_events_staged "\t\t\tconst std::uint64_t mofa_continuous_started = mofa_yuri_stage_ticks();\n\t\t\tr = _TVPDeliverAllEvents();\n\t\t\tmofa_yuri_stage_bucket(mofa::kVitaStageContinuous, mofa_continuous_started);")
+    set(yuri_event_intf_before_delivery "${yuri_event_intf_patched}")
+    string(REPLACE "${yuri_deliver_all_events_old}"
+        "${yuri_deliver_all_events_staged}"
+        yuri_event_intf_patched "${yuri_event_intf_patched}")
+    if(yuri_event_intf_patched STREQUAL yuri_event_intf_before_delivery)
+        message(FATAL_ERROR
+            "Yuri continuous-event stage-timing patch no longer applies")
+    endif()
     file(CONFIGURE
         OUTPUT "${yuri_generated_dir}/EventIntf.cpp"
         CONTENT "${yuri_event_intf_patched}"
@@ -1227,7 +1247,7 @@ public:
     file(READ "${yuri_sysinit_impl}" yuri_sysinit_impl_text)
     string(REPLACE
         "#include \"SysInitImpl.h\""
-        "#include \"SysInitImpl.h\"\n#include \"tvpgl.h\"\n#include \"mofa/retail_bootstrap.hpp\"\n#include \"mofa/tvpgl_kernel_policy.hpp\"\n#include \"mofa/yuri_additive_alpha_policy.hpp\""
+        "#include \"SysInitImpl.h\"\n#include \"tvpgl.h\"\n#include \"mofa/retail_bootstrap.hpp\"\n#include \"mofa/tvpgl_kernel_benchmark.hpp\"\n#include \"mofa/tvpgl_kernel_policy.hpp\"\n#include \"mofa/tvpgl_pixel_meter.hpp\"\n#include \"mofa/yuri_additive_alpha_policy.hpp\""
         yuri_sysinit_impl_text "${yuri_sysinit_impl_text}")
     set(yuri_argv_start "static void PushAllCommandlineArguments()\n{")
     set(yuri_argv_end
@@ -1327,6 +1347,15 @@ public:
 	mofa::select_exact_additive_alpha(TVPConvertAlphaToAdditiveAlpha, TVPConvertAlphaToAdditiveAlpha_c);
 	mofa::select_exact_additive_alpha(TVPConvertAdditiveAlphaToAlpha, TVPConvertAdditiveAlphaToAlpha_c);
 	mofa_boot_trace("yuri-additive-alpha-scalar-exact-ready");
+	// The NEON kernels are installed from the CPU feature bits alone. Measure
+	// them against the generated scalar core on this machine and keep NEON
+	// only where it is actually faster, so one build serves a Cortex-A9 and a
+	// host that has to interpret the same instructions.
+	mofa::apply_device_tvpgl_kernel_policy();
+	// Counting shells around the kernels that were just selected, plus the
+	// per-pixel cost probe the frame report needs to turn pixel counts into
+	// milliseconds measured on this device.
+	mofa::install_tvpgl_pixel_meter();
 ]=])
     string(REPLACE "\tTVPGL_ASM_Init();" "${yuri_additive_alpha_init}"
         yuri_sysinit_alpha_exact "${yuri_sysinit_impl_patched}")
@@ -1446,7 +1475,7 @@ void TVPLoadPlugin(const ttstr & name)
     file(READ "${yuri_kag_parser}" yuri_kag_parser_text)
     string(REPLACE
         "#include \"EventIntf.h\""
-        "#include \"EventIntf.h\"\n#include \"mofa/kag_inline_script.hpp\"\n#include \"mofa/kag_log_policy.hpp\"\n#include \"mofa/retail_bootstrap.hpp\""
+        "#include \"EventIntf.h\"\n#include \"mofa/kag_inline_script.hpp\"\n#include \"mofa/kag_log_policy.hpp\"\n#include \"mofa/retail_bootstrap.hpp\"\n#include \"mofa/vita_stage_profile.hpp\""
         yuri_kag_parser_patched "${yuri_kag_parser_text}")
     if(yuri_kag_parser_patched STREQUAL yuri_kag_parser_text)
         message(FATAL_ERROR "Yuri KAG log-policy include patch no longer applies")
@@ -1567,9 +1596,22 @@ tTJSNI_KAGParser::tTJSNI_KAGParser()
     if(yuri_kag_parser_patched_4 STREQUAL yuri_kag_parser_patched_3)
         message(FATAL_ERROR "Yuri KAG log-policy marker patch no longer applies")
     endif()
+
+    # KAG's Conductor pulls one tag at a time from the native parser and then
+    # dispatches it from script. Timing the parser call separates "reading the
+    # scenario" from "executing the tag handler", and the tag count makes the
+    # script bucket's work per tag comparable between builds.
+    set(yuri_kag_next_tag_old "iTJSDispatch2 * tTJSNI_KAGParser::GetNextTag()\n{\n\treturn _GetNextTag();\n}")
+    set(yuri_kag_next_tag_staged "iTJSDispatch2 * tTJSNI_KAGParser::GetNextTag()\n{\n\tconst std::uint64_t mofa_tag_started = mofa_yuri_stage_ticks();\n\tiTJSDispatch2 * mofa_tag = _GetNextTag();\n\tmofa_yuri_stage_bucket(mofa::kVitaStageKagParse, mofa_tag_started);\n\tmofa_yuri_stage_note_tag();\n\treturn mofa_tag;\n}")
+    set(yuri_kag_parser_patched_5 "${yuri_kag_parser_patched_4}")
+    string(REPLACE "${yuri_kag_next_tag_old}" "${yuri_kag_next_tag_staged}"
+        yuri_kag_parser_patched_5 "${yuri_kag_parser_patched_5}")
+    if(yuri_kag_parser_patched_5 STREQUAL yuri_kag_parser_patched_4)
+        message(FATAL_ERROR "Yuri KAG tag-parse stage patch no longer applies")
+    endif()
     file(CONFIGURE
         OUTPUT "${yuri_generated_dir}/KAGParser.cpp"
-        CONTENT "${yuri_kag_parser_patched_4}"
+        CONTENT "${yuri_kag_parser_patched_5}"
         @ONLY NEWLINE_STYLE UNIX)
     list(REMOVE_ITEM yuri_utils_sources "${yuri_kag_parser}")
     list(APPEND yuri_utils_sources "${yuri_generated_dir}/KAGParser.cpp")
@@ -2095,7 +2137,7 @@ void TVPExecThreadTask(int numThreads, TVP_THREAD_TASK_FUNC func)
     file(READ "${yuri_layer_manager}" yuri_layer_manager_text)
     string(REPLACE
         "#include \"LayerManager.h\""
-        "#include \"LayerManager.h\"\n#include \"mofa/layer_draw_completion.hpp\"\n#include \"mofa/yuri_frame_damage.hpp\""
+        "#include \"LayerManager.h\"\n#include \"mofa/layer_draw_completion.hpp\"\n#include \"mofa/vita_stage_profile.hpp\"\n#include \"mofa/yuri_frame_damage.hpp\""
         yuri_layer_manager_profiled "${yuri_layer_manager_text}")
     set(yuri_layer_manager_profiled_2 "${yuri_layer_manager_profiled}")
 
@@ -2135,6 +2177,25 @@ void tTVPLayerManager::NotifyUpdateRegionFixed()
     if(yuri_layer_manager_profiled_3 STREQUAL yuri_layer_manager_profiled_2)
         message(FATAL_ERROR "Yuri finalized damage capture patch no longer applies")
     endif()
+
+    # The software compositor is the one frame stage a 444 MHz Cortex-A9
+    # cannot hide, so the event loop reports its cost separately from script
+    # dispatch. Bracket the layer-tree completion with the same microsecond
+    # clock the Vita loop uses: two calls, no per-pixel work, and the figure
+    # therefore describes the device the build runs on rather than the host.
+    set(yuri_layer_manager_draw_original "void TJS_INTF_METHOD tTVPLayerManager::UpdateToDrawDevice()\n{\n\t// drawdevice -> layer\n\tif(!Primary) return;\n\tPrimary->CompleteForWindow(this);\n}")
+    set(yuri_layer_manager_draw_staged "void TJS_INTF_METHOD tTVPLayerManager::UpdateToDrawDevice()\n{\n\t// drawdevice -> layer\n\tif(!Primary) return;\n\tconst std::uint64_t mofa_stage_started = mofa_yuri_stage_ticks();\n\tPrimary->CompleteForWindow(this);\n\tmofa_yuri_stage_composite(mofa_stage_started);\n}")
+    string(REPLACE "${yuri_layer_manager_draw_original}"
+        "${yuri_layer_manager_draw_staged}"
+        yuri_layer_manager_profiled_3_staged
+        "${yuri_layer_manager_profiled_3}")
+    if(yuri_layer_manager_profiled_3_staged STREQUAL
+       yuri_layer_manager_profiled_3)
+        message(FATAL_ERROR
+            "Yuri compositor stage-timing patch no longer applies")
+    endif()
+    set(yuri_layer_manager_profiled_3
+        "${yuri_layer_manager_profiled_3_staged}")
 
     # An opaque primary with visible children composites directly into the
     # manager's persistent DrawBuffer. Yuri then reports that same buffer and
@@ -4428,7 +4489,7 @@ void TJS_INTF_METHOD tTVPBasicDrawDevice::SetDestRectangle(const tTVPRect & rect
     file(READ "${yuri_application}" yuri_application_text)
     string(REPLACE
         "#include \"Application.h\""
-        "#include \"Application.h\"\n#include \"LayerIntf.h\"\n#include \"mofa/retail_bootstrap.hpp\"\n#include \"mofa/system_app_id_compat.hpp\"\n#include \"mofa/vita_storage_path.hpp\"\n#include \"mofa/yuri_storage_preflight.hpp\""
+        "#include \"Application.h\"\n#include \"LayerIntf.h\"\n#include \"mofa/retail_bootstrap.hpp\"\n#include \"mofa/system_app_id_compat.hpp\"\n#include \"mofa/vita_stage_profile.hpp\"\n#include \"mofa/vita_storage_path.hpp\"\n#include \"mofa/yuri_storage_preflight.hpp\""
         yuri_application_patched "${yuri_application_text}")
     string(REPLACE
         "bool tTVPApplication::StartApplication(ttstr path) {"
@@ -4492,6 +4553,25 @@ void TJS_INTF_METHOD tTVPBasicDrawDevice::SetDestRectangle(const tTVPRect & rect
         "\t\t/*if(TVPProjectDirSelected)*/ TVPInitializeStartupScript();"
         "\t\tmofa_boot_trace(\"yuri-startup-script-entered\");\n\t\t/*if(TVPProjectDirSelected)*/ TVPInitializeStartupScript();\n\t\tmofa_boot_trace(\"yuri-startup-script-complete\");"
         yuri_application_patched "${yuri_application_patched}")
+
+    # The engine stage is the biggest single number in the frame profile and it
+    # mixes three different kinds of work: message/input event delivery, the
+    # TVPTimer callbacks KAG uses to advance the scenario, run keyframes and
+    # reveal text, and the software compositor. The first two are single seams
+    # in Application::ProcessMessages, so two timestamp pairs per frame split a
+    # 444 MHz Cortex-A9 budget into "script interpretation" and "pixels"
+    # without touching any per-pixel path.
+    set(yuri_process_messages_old "\tfor (std::tuple<void*, int, tMsg>& it : lstUserMsg) {\n\t\tstd::get<2>(it)();\n\t}\n\tTVPTimer::ProgressAllTimer();")
+    set(yuri_process_messages_staged "\tconst std::uint64_t mofa_events_started = mofa_yuri_stage_ticks();\n\tfor (std::tuple<void*, int, tMsg>& it : lstUserMsg) {\n\t\tstd::get<2>(it)();\n\t}\n\tmofa_yuri_stage_bucket(mofa::kVitaStageEvents, mofa_events_started);\n\tconst std::uint64_t mofa_timer_started = mofa_yuri_stage_ticks();\n\tTVPTimer::ProgressAllTimer();\n\tmofa_yuri_stage_bucket(mofa::kVitaStageTimer, mofa_timer_started);")
+    set(yuri_process_messages_input "${yuri_application_patched}")
+    string(REPLACE "${yuri_process_messages_old}"
+        "${yuri_process_messages_staged}"
+        yuri_application_patched "${yuri_application_patched}")
+    if(yuri_application_patched STREQUAL yuri_process_messages_input)
+        message(FATAL_ERROR
+            "Yuri message/timer stage-split patch no longer applies")
+    endif()
+
     foreach(yuri_application_trace_name
         yuri-start-application-entered
         yuri-project-normalized
@@ -4514,6 +4594,13 @@ void TJS_INTF_METHOD tTVPBasicDrawDevice::SetDestRectangle(const tTVPRect & rect
                 "Yuri application trace point no longer applies: ${yuri_application_trace_name}")
         endif()
     endforeach()
+    string(FIND "${yuri_application_patched}"
+        "mofa_yuri_stage_bucket(mofa::kVitaStageTimer, mofa_timer_started);"
+        yuri_process_messages_stage_offset)
+    if(yuri_process_messages_stage_offset LESS 0)
+        message(FATAL_ERROR
+            "Yuri message/timer stage split is not observable in Application.cpp")
+    endif()
     file(CONFIGURE
         OUTPUT "${yuri_generated_dir}/Application.cpp"
         CONTENT "${yuri_application_patched}"
@@ -5504,9 +5591,12 @@ static void TVPInitRippleTransformFuncs()
     add_library(mofa-yuri-vita-platform STATIC EXCLUDE_FROM_ALL
         src/platform/vita/vita_bitmap_allocator.cpp
         src/platform/vita/yuri_input.cpp
+        src/platform/vita/yuri_stage_profile.cpp
         src/platform/vita/yuri_storage_preflight.cpp
         src/platform/vita/yuri_thread_policy.cpp
         src/platform/vita/yuri_threading_self_test.cpp
+        src/platform/vita/yuri_tvpgl_meter.cpp
+        src/platform/vita/yuri_tvpgl_benchmark.cpp
         src/platform/vita/yuri_window_layer.cpp
         src/engine/vita/vitagl_presenter.cpp
     )

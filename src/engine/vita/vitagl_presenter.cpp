@@ -9,6 +9,7 @@
 #include <psp2/io/stat.h>
 #include <psp2/kernel/sysmem.h>
 
+#include <chrono>
 #include <cstdio>
 
 #include <algorithm>
@@ -62,6 +63,64 @@ std::uint32_t uploaded_game_frames = 0;
 std::uint32_t full_frame_uploads = 0;
 std::uint32_t partial_frame_uploads = 0;
 std::uint64_t uploaded_pixels = 0;
+
+// Performance instrumentation.  Every kPresentStatsWindow presented frames one
+// line goes to engine.log: it is the only way to tell CPU composition cost,
+// upload cost and upload volume apart on device, and to compare two builds
+// without a profiler.  All counters are plain integers accumulated in the
+// present path, so the measurement itself does not distort the ratio.
+constexpr std::uint32_t kPresentStatsWindow = 60;
+std::uint32_t stats_window_frames = 0;
+std::uint32_t stats_window_full_uploads = 0;
+std::uint32_t stats_window_partial_uploads = 0;
+std::uint64_t stats_window_uploaded_pixels = 0;
+std::uint64_t stats_window_upload_ns = 0;
+std::uint64_t stats_window_draw_ns = 0;
+std::uint64_t stats_window_frame_ns = 0;
+std::uint32_t stats_window_video_uploads = 0;
+std::uint64_t stats_window_video_pixels = 0;
+std::uint64_t stats_window_video_upload_ns = 0;
+std::uint64_t stats_surface_pixels = 0;
+std::chrono::steady_clock::time_point stats_window_last_present{};
+
+void flush_present_stats() {
+    if (stats_window_frames == 0) return;
+    const double frames = static_cast<double>(stats_window_frames);
+    const double frame_ms = stats_window_frame_ns / 1.0e6 / frames;
+    const double upload_ms = stats_window_upload_ns / 1.0e6 / frames;
+    const double draw_ms = stats_window_draw_ns / 1.0e6 / frames;
+    const double video_ms = stats_window_video_upload_ns / 1.0e6 / frames;
+    const double pixels_per_frame =
+        static_cast<double>(stats_window_uploaded_pixels) / frames;
+    const double surface_share = stats_surface_pixels
+        ? 100.0 * pixels_per_frame / static_cast<double>(stats_surface_pixels)
+        : 0.0;
+    // mofa_boot_trace keeps the caller's pointer, so the buffer must outlive
+    // the call site.
+    static char line[320];
+    std::snprintf(line, sizeof line,
+                  "[mofa-perf] frames=%u frame=%.2fms composite+present=%.2fms "
+                  "upload=%.2fms draw+swap=%.2fms full=%u partial=%u "
+                  "px/frame=%.0f (%.1f%% of %llu) video_up=%u video=%.2fms "
+                  "total_up=%.1fMB",
+                  stats_window_frames, frame_ms, upload_ms + draw_ms, upload_ms,
+                  draw_ms, stats_window_full_uploads,
+                  stats_window_partial_uploads, pixels_per_frame, surface_share,
+                  static_cast<unsigned long long>(stats_surface_pixels),
+                  stats_window_video_uploads, video_ms,
+                  static_cast<double>(uploaded_pixels) / (1024.0 * 1024.0));
+    mofa_boot_trace(line);
+    stats_window_frames = 0;
+    stats_window_full_uploads = 0;
+    stats_window_partial_uploads = 0;
+    stats_window_uploaded_pixels = 0;
+    stats_window_upload_ns = 0;
+    stats_window_draw_ns = 0;
+    stats_window_frame_ns = 0;
+    stats_window_video_uploads = 0;
+    stats_window_video_pixels = 0;
+    stats_window_video_upload_ns = 0;
+}
 bool first_source_probe = true;
 bool cursor_visible = false;
 bool cursor_proof_written = false;
@@ -241,6 +300,7 @@ void draw_video_overlay(float surface_left, float surface_top,
         return;
 
     if (video_overlay.uploaded_serial != video_overlay.serial) {
+        const auto video_upload_started = std::chrono::steady_clock::now();
         video_overlay.texture_index =
             (video_overlay.texture_index + 1) % video_overlay.textures.size();
         glBindTexture(GL_TEXTURE_2D,
@@ -252,6 +312,14 @@ void draw_video_overlay(float surface_left, float surface_top,
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         if (glGetError() != GL_NO_ERROR) return;
         video_overlay.uploaded_serial = video_overlay.serial;
+        stats_window_video_upload_ns += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - video_upload_started)
+                .count());
+        ++stats_window_video_uploads;
+        stats_window_video_pixels +=
+            static_cast<std::uint64_t>(video_overlay.width) *
+            static_cast<std::uint64_t>(video_overlay.height);
     }
 
     const int logical_right = video_overlay.right > video_overlay.left
@@ -291,6 +359,7 @@ void draw_video_overlay(float surface_left, float surface_top,
 
 bool present_bound_texture(unsigned int texture, int width, int height,
                            float max_u, float max_v, bool contentful) {
+    const auto present_started = std::chrono::steady_clock::now();
     const float scale = std::min(static_cast<float>(kScreenWidth) / width,
                                  static_cast<float>(kScreenHeight) / height);
     const float output_width = width * scale;
@@ -354,6 +423,17 @@ bool present_bound_texture(unsigned int texture, int width, int height,
         first_present = false;
     }
     ++successful_game_frames;
+    ++stats_window_frames;
+    stats_window_draw_ns += static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - present_started).count());
+    if (stats_window_last_present.time_since_epoch().count() != 0) {
+        stats_window_frame_ns += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                present_started - stats_window_last_present).count());
+    }
+    stats_window_last_present = present_started;
+    if (stats_window_frames >= kPresentStatsWindow) flush_present_stats();
     if (contentful) {
         ++contentful_game_frames;
         if (contentful_game_frames == 1)
@@ -526,6 +606,7 @@ bool mofa_vitagl_present_damage(
     const mofa::FrameDamageRegion& texture_damage =
         presentation_damage.current();
     const mofa::FrameDamageRect rect = texture_damage.rect();
+    const auto upload_started = std::chrono::steady_clock::now();
     const unsigned int texture =
         presentation_surface.textures()[presentation_damage.current_index()];
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -545,12 +626,22 @@ bool mofa_vitagl_present_damage(
         if (first_present) mofa_boot_trace("vitagl-first-game-frame-upload-failed");
         return false;
     }
+    stats_window_upload_ns += static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - upload_started).count());
+    stats_window_uploaded_pixels += static_cast<std::uint64_t>(rect.width()) *
+                                    static_cast<std::uint64_t>(rect.height());
+    stats_surface_pixels = static_cast<std::uint64_t>(width) *
+                           static_cast<std::uint64_t>(height);
     uploaded_pixels += static_cast<std::uint64_t>(rect.width()) *
                        static_cast<std::uint64_t>(rect.height());
-    if (texture_damage.full())
+    if (texture_damage.full()) {
         ++full_frame_uploads;
-    else
+        ++stats_window_full_uploads;
+    } else {
         ++partial_frame_uploads;
+        ++stats_window_partial_uploads;
+    }
     if (!texture_damage.full() && !partial_upload_reported) {
         mofa_boot_trace("vitagl-partial-frame-upload-ready");
         partial_upload_reported = true;

@@ -6,6 +6,7 @@
 #include "mofa/retail_bootstrap.hpp"
 #include "mofa/threading_self_test.hpp"
 #include "mofa/vita_memory_budget.hpp"
+#include "mofa/vita_stage_profile.hpp"
 #include "mofa/vita_thread_policy.hpp"
 #include "mofa/vitagl_presenter.hpp"
 #include "yuri_input.hpp"
@@ -76,8 +77,13 @@ int main(int argc, char** argv) {
         mofa_boot_trace("vita-main-thread-policy-ready");
         mofa_boot_trace("vita-threading-self-test-entered");
         if (!mofa_vita_threading_self_test()) {
-            mofa_report_launch_error(
-                "Vita 的 pthread/libstdc++ 同步自检失败。");
+            std::string message = "Vita 的 pthread/libstdc++ 同步自检失败。";
+            if (const char* reason = mofa_vita_threading_self_test_reason();
+                reason && *reason) {
+                message += "失败阶段：";
+                message += reason;
+            }
+            mofa_report_launch_error(message.c_str());
             return 1;
         }
         mofa_boot_trace("vita-threading-self-test-passed");
@@ -117,11 +123,17 @@ int main(int argc, char** argv) {
         while (!Application->IsTarminate()) {
             const std::uint64_t loop_started = sceKernelGetProcessTimeWide();
             mofa_yuri_input_pump();
+            const std::uint64_t input_finished = sceKernelGetProcessTimeWide();
             Application->Run();
+            const std::uint64_t engine_finished = sceKernelGetProcessTimeWide();
             mofa_yuri_present_frame();
+            const std::uint64_t present_finished =
+                sceKernelGetProcessTimeWide();
             const std::uint64_t recycled_before =
                 mofa_yuri_recycled_texture_count();
             iTVPTexture2D::RecycleProcess();
+            const std::uint64_t recycle_finished =
+                sceKernelGetProcessTimeWide();
             if (!texture_recycler_proof_written &&
                 mofa_yuri_recycled_texture_count() > recycled_before) {
                 mofa_boot_trace("yuri-texture-recycler-drained");
@@ -150,6 +162,16 @@ int main(int argc, char** argv) {
             const std::uint32_t delay = mofa::yuri_frame_delay_us(
                 loop_started, sceKernelGetProcessTimeWide());
             if (delay != 0) sceKernelDelayThread(delay);
+            // Report the iteration that just finished. The compositor figure
+            // inside the engine stage comes from the layer manager, so the
+            // split between script work and pixel work is measured on the
+            // device rather than inferred from the host's timing.
+            mofa::vita_stage_record_frame(mofa::VitaFrameStages{
+                sceKernelGetProcessTimeWide() - loop_started,
+                input_finished - loop_started,
+                engine_finished - input_finished,
+                present_finished - engine_finished,
+                recycle_finished - present_finished});
         }
         mofa_boot_trace("yuri-event-loop-exited");
         mofa_yuri_input_shutdown();

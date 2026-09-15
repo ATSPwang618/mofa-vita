@@ -4,12 +4,15 @@
 #include "StorageImpl.h"
 #include "ScriptMgnIntf.h"
 #include "SysInitImpl.h"
+#include "DebugIntf.h"
 #include "MsgIntf.h"
 #include "mofa/retail_bootstrap.hpp"
 #include "mofa/system_app_id_compat.hpp"
 #include "mofa/vita_executable_name.hpp"
 #include "mofa/vita_storage_path.hpp"
 #include "mofa/yuri_storage_preflight.hpp"
+
+#include <psp2/io/stat.h>
 
 #include <algorithm>
 #include <memory>
@@ -41,6 +44,80 @@ bool has_suffix(const ttstr& value, const tjs_char* suffix) {
     const tjs_int suffix_length = TJS_strlen(suffix);
     return value_length >= suffix_length &&
         !TJS_strcmp(value.c_str() + value_length - suffix_length, suffix);
+}
+
+// Keep the loose install a first-class layout instead of depending on the
+// title's own storages.tjs.  The launcher already knows both directories:
+// the staged game root (plugin/, savedata/) and the project it selected for
+// the engine (the loose tree itself).
+//
+// Registration order is the priority order of the storage table, so the KAG
+// layer directories go last: a title that ships its layer twice (for example
+// sub/ and scenario/) must resolve the framework scripts from sub/.
+void register_loose_storage_roots(const ttstr& game_root, const ttstr& project) {
+    // The project name arrives in the engine's own form (for example
+    // "file://./ux0:data/mofa-vita/game/data/"), so strip the URI prefix and
+    // canonicalize before asking the file system anything.
+    std::u16string native_project = mofa::vita_storage_to_native_path(
+        std::u16string_view(project.c_str(), project.GetLen()));
+    if (native_project.empty()) return;
+    if (native_project.back() != u'/') native_project.push_back(u'/');
+
+    // Resolve existence with the same syscall the retail fstat module uses.
+    // The engine's own storage lookup answers a different question (it asks
+    // the media layer), so a launcher that registers search paths through it
+    // can silently register nothing at all.
+    const auto folder_exists = [](const std::u16string& native) {
+        if (native.empty()) return false;
+        const std::string narrow = ttstr(native).AsNarrowStdString();
+        if (narrow.empty()) return false;
+        SceIoStat status{};
+        return sceIoGetstat(narrow.c_str(), &status) >= 0 &&
+               SCE_S_ISDIR(status.st_mode);
+    };
+    const auto register_folder = [&](const std::u16string& native) {
+        if (!folder_exists(native)) return false;
+        TVPAddAutoPath(ttstr(native));
+        return true;
+    };
+
+    std::u16string native_game = mofa::vita_storage_to_native_path(
+        std::u16string_view(game_root.c_str(), game_root.GetLen()));
+    if (!native_game.empty() && native_game.back() != u'/') native_game.push_back(u'/');
+
+    // The title's plug-ins are addressed through System.exePath, which on a
+    // staged Vita install can resolve to the project directory instead of the
+    // game root; register the real directory explicitly.
+    register_folder(native_game + u"plugin/");
+
+    // The engine's lister reports regular files only, so the directory list is
+    // the layout contract itself: the same names the title's storages.tjs
+    // iterates.  Later registrations take priority, which is the order this
+    // title's own XP3 branch relies on.
+    static const char16_t* const kResourceDirectoryNames[] = {
+        u"bg/",   u"bgm/",   u"fg/",       u"image/", u"rule/",   u"sound/",
+        u"scenario/", u"others/", u"video/", u"override/", u"tool/",
+    };
+    std::size_t registered = 0;
+    for (const char16_t* name : kResourceDirectoryNames)
+        if (register_folder(native_project + name)) ++registered;
+
+    // No system/ root: that directory holds another "initialize.tjs" for a KAG
+    // variant this title does not boot, and every system/ path is reachable by
+    // name through the project root anyway.  The project's own copies of
+    // startup.tjs / initialize.tjs / storages.tjs win, and the KAG layer
+    // directory is registered last so its framework scripts beat the resource
+    // directories for bare names.
+    TVPAddAutoPath(ttstr(native_project));
+    if (register_folder(native_project + u"sub/")) ++registered;
+
+    const ttstr executable = mofa_yuri_project_executable_path(game_root);
+    TVPAddImportantLog(ttstr(TJS_W("[mofa] loose roots: project=")) +
+                       ttstr(native_project.c_str()) +
+                       TJS_W(" registered=") + ttstr(static_cast<tjs_int>(registered)) +
+                       TJS_W(" exe=") +
+                       (executable.IsEmpty() ? ttstr(TJS_W("(none)")) : executable));
+    mofa_boot_trace("retail-loose-roots-registered");
 }
 
 } // namespace
@@ -118,6 +195,11 @@ void mofa_yuri_storage_preflight(const ttstr& native_project_path) {
     if (lister.files.empty())
         TVPThrowExceptionMessage(TJS_W("Vita game directory is not enumerable"), project);
     mofa_boot_trace("yuri-project-directory-enumerated");
+
+    // Register the loose install before any title script runs: the engine's
+    // own project handle then resolves every resource, framework and plug-in
+    // name without the title having to add search paths for this layout.
+    register_loose_storage_roots(project, TVPProjectDir);
 
     auto archive = std::find(lister.files.begin(), lister.files.end(), TJS_W("data.xp3"));
     if (archive == lister.files.end()) {

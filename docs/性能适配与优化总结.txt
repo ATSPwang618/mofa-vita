@@ -1,0 +1,277 @@
+mofa-vita-krkr —— PS Vita 性能适配与优化总结
+最后更新：2026-09-15   目标平台：PS Vita 实机（Vita3K 仅作验证环境）
+
+本文合并了此前三份文档（真机性能适配报告 / 优化方案-40fps / 计量层报告），
+并把结论按"事实 → 测量 → 方案"重排。所有数字都标注了来源与单位。
+
+====================================================================
+0. 目标与约束
+====================================================================
+
+目标：PS Vita 实机稳定 40fps（25ms/帧），不接受 >33ms 的尖峰，更不接受
+      位图分配失败导致的功能中断。
+
+硬件事实：
+  * CPU：Cortex-A9 x4 @444MHz，应用可用 3 核（引擎线程 + 2 个渲染 worker）
+  * GPU：SGX543MP4+；无 dual-source blending（影响 ltAddAlpha 的 GPU 化）
+  * 内存：ATTRIBUTE2=12，约 365MB USER_RW + 112MB CDRAM；
+          newlib 堆 128MB、VitaGL 池 48MB、位图 memblock 保留区 32MB
+  * 屏幕：960x544
+
+当前合成面：1024x576 = 589,824 像素 = 全量 2.36MB/帧（游戏自己的 KAG 窗口
+尺寸；呈现时缩放到 960x544）。
+
+方向（与项目既定目标一致）：解释器只做 KAG 解析与关键帧求值，图片解码一次后
+尽量交给 vitaGL 渲染，减少每帧的 CPU 像素活。
+
+====================================================================
+1. 当前管线（读代码得到的事实）
+====================================================================
+
+KAG/TJS 解释器
+  → 图层位图（CPU 内存，tTVPSoftwareTexture2D，逻辑尺寸 1024x576）
+  → tTVPLayerManager::CompleteForWindow（CPU 合成；>=512x512 的大块才走
+    2 个 worker，小块在引擎线程串行）
+  → BasicDrawDevice 完成 surface → VitaWindowLayer::UpdateDrawBuffer
+  → 上传纹理（带脏区裁剪）+ 画一个全屏四边形 + 缩放
+
+即：**GPU 目前只负责"贴一张已经合成好的图"**；图层混合、缩放、文字栅格都在
+CPU 上。
+
+====================================================================
+2. 已经做过的优化（不要重复做）
+====================================================================
+
+  * 图像内核：NEON 表，且已改成"按设备实测选优"（见 3.2）
+  * 呈现：5 张轮转纹理 + 脏区部分上传 + 光标/重复帧不重复上传
+  * 内存：位图分级分配器（>=1MB 走 USER_RW memblock，留 32MB 保留区），
+          失败时先回收再重试
+  * 图形缓存：插入后也检查上限（原来会永久超限一张整图）
+  * 渲染并行：只对 >=512x512 的原语开 worker；行分割的别名/一致性契约；
+              缩放系数与行缓冲区在 owner 线程预分配
+  * 文本：MS Gothic 度量缓存 + 未渲染 slot 复用 + HistoryLayer 文本宽度前缀
+          复用 + ApplyFont 不再触发纹理分离
+  * 引擎杂项：KAG 逐行 verbose 日志关闭、零参数事件免分配、ObjectList 稳定
+              Compact、TJS 常量数组安全 downcast、saveStruct 8KB 缓冲、
+              本地位图流走 SceIofilemgr
+  * 效果：box filter 列和跨帧复用（复杂度与卷积核大小无关）
+
+====================================================================
+3. 测量能力（本轮新增）
+====================================================================
+
+3.1 三层日志（除注明外均为**每帧**单位）
+
+  [mofa-meter]  ns/px blend=.. adddest=.. add=.. stretch=.. sadd=.. copyfill=.. cmap=..
+                启动时一行；由设备上"真正装着的那个内核"微基准测出
+                （1024/512 像素 x 64 次 x 3 轮取最小）。
+
+  [mofa-stage]  frames=60 loop=.. busy=.. engine=.. script=..(events=.. timer=..
+                kag=.. cont=.. tags=.. rest=..) composite=..(%,calls) present=..
+                input=.. recycle=.. idle=..
+                其中四个原生接缝：
+                  events   = Application::ProcessMessages 的消息循环
+                  timer    = TVPTimer::ProgressAllTimer（TJS 定时器）
+                  cont     = TVPDeliverAllEvents（**KAG Conductor 就在这里面**：
+                             标签派发、关键帧求值、图层属性写入）
+                  kag      = KAGParser::GetNextTag（原生解析器，并统计 tags）
+                  composite= LayerManager::UpdateToDrawDevice（软件合成）
+
+  [mofa-pixels] frames=60 blend=..k stretch=..k add=..k adddest=..k sadd=..k
+                copy=..k cmap=..k calls=.. est=..ms
+                38 个热点内核上装了"只做整数累加"的转发壳（relaxed 原子加法，
+                因为行分割混合会跑在两个 worker 上）。est 用本机实测 ns/px
+                折算成毫秒——所以主机和真机各测各的，不能互相外推。
+
+3.2 设备自测的内核选择
+   TVPGL_ASM_Init() 只根据 CPU 特性位装 NEON。真机上那是对的，但模拟器的 JIT
+   可能把 NEON 指令退回解释器（结果正确但慢很多）。现在启动时对 8 个吃像素的
+   内核各测一小段（单轮封顶 25ms），NEON 必须快 15% 以上才保留；测不出来就
+   用标量版。ux0:data/mofa-vita/tvpgl-scalar 标记仍然是"永远不许装 NEON"的
+   硬覆盖（真机数据目录里不要放它）。
+
+====================================================================
+4. 实测数据（Vita3K，标量内核）
+====================================================================
+
+两种状态都在同一台机器上采集：
+  A) 连续推进正文（对 40fps 预算有意义的那一段）
+  B) 画面静止（标题/等待输入）
+
+4.1 每帧阶段（毫秒），A 状态
+
+  阶段        平均     中位     峰值
+  loop       23.71    17.76    97.29
+  busy        9.27     3.21    84.85
+  engine      8.94     2.97    84.23
+  script      7.10     1.09    82.10
+    events    0.01     0.01     0.03
+    timer     0.00     0.00     0.02
+    kag       0.69     0.06    45.00
+    cont      6.42     1.01    81.69
+    rest      0.67     0.01    43.99
+  composite   1.83     1.76     8.89
+  present     0.30     0.24     1.05
+  idle       14.44    14.62    17.60
+  tags/帧    84.85    96.00   144.00
+  >33ms 的窗口：8 / 73（11%）
+
+  B 状态：composite 中位 0.03ms、14 次调用/帧 —— 没有变化时几乎不花钱。
+
+4.2 每家族 ns/像素（这台机器上真实装着的内核）
+
+  blend 6.15 | adddest 13.61 | add 7.05 | stretch 2.44 | sadd 3.42 |
+  copyfill 2.06 | cmap 2.62
+
+  adddest（往 ltAddAlpha 图层里画）是最贵的，是普通混合的 2.2 倍——因为
+  "加法 alpha 必须与标量逐字节一致"的策略把它钉死成标量实现。
+
+4.3 每帧像素量（A 状态的中位/峰值）
+
+  blend    8,133 / 654,650 像素
+  copy         0 / 228,033 像素
+  stretch / add / adddest / sadd / cmap：稳态为 0
+  壳调用次数 204 / 2,516 次每帧
+  折算       0.05 / 4.03 ms 每帧
+
+4.4 上传与呈现（新旧对照，改动前后一致）
+
+  上传 0.37ms -> 0.36ms，绘制+交换 0.15ms -> 0.16ms
+  每帧上传像素 470k(79.7%) -> 442k(74.9%)，全量上传的窗口仍然存在（换景/转场）
+  结论：新增的计量与内核适配没有增加上传成本。
+
+====================================================================
+5. 关键发现
+====================================================================
+
+① 稳态里 KAG 解析几乎不要钱。
+   96 个标签/帧只花 0.06ms。上一轮担心的"标签派发"在稳态不是瓶颈；稳态脚本
+   时间 93% 在 cont（KAG Conductor 的关键帧推进与它触发的图层属性写入）。
+
+② 换页/加载才是脚本侧尖峰，而且是"解析"主导。
+   峰值窗口 cont=81.69ms，其中 kag=45.00ms。真机按 8~20 倍放大 = 0.4~0.9 秒
+   卡顿。方向是预解析/缓存标签索引，或把首次解析挪到空闲帧/工作线程。
+
+③ composite 是引擎里最大的一块，但它不是"每像素"成本。
+   活跃帧 1.76ms/帧、204 次壳调用/帧，而计到的像素只有约 8,133 像素/帧，
+   按 6.15 ns/px 折算仅 0.05ms。差额约 1.7ms 只可能来自：
+     (a) 每次调用的固定开销 / 几何与裁剪计算；
+     (b) 走的是没被包装的内核（HDA / mask / const-stretch / interp 系列）。
+   两者要先补一次计量覆盖才能分开（见 6.P1a），但无论哪种都指向"先减少合成
+   路径上的调用与几何开销"，而不是先换内核或上 GPU。
+
+④ adddest 家族在稳态调用量为 0 —— 被数据推翻的假设。
+   上一轮设想的"写一版精确 NEON 加法 alpha 内核"因此降级：它不是当前热点，
+   真机 NEON 也救不了没被调用的代码。
+
+⑤ 启动窗口（第一秒）有约 228k 像素/帧 的 copy：启动时的大块填充/拷贝是稳态
+   的几十倍，属于一次性成本，但解释了为什么开局那一秒最吃 CPU。
+
+⑥ 长跑会真的耗尽位图内存（硬证据）。
+   连续玩约 5 分钟后，游戏在 1-0.ks:81（fgact）抛：
+     Cannot allocate memory for Bitmap : at TVPAllocBitmapBits
+     (size=3010600(1120x672))
+   即 3MB 位图分配失败，发生在 yuri-bitmap-memory-pressure / oom-recovered 之后。
+   这不是卡顿，是功能中断。
+
+⑦ 尖峰与内存压力的因果链（读代码定位）：
+   游戏自己的 override/kagwindow.override.tjs:714 在重建图层后把
+   System.graphicCacheLimit 设成 0 再恢复（整库丢图）→ 后续大位图撞 memblock
+   预算 → TVPDeliverCompactEvent(MAX) 全量压缩/回收 → 之后按需重新解码。
+
+====================================================================
+6. 真机预算推算与优化方案
+====================================================================
+
+真机允许的每帧预算：60fps = 16.7ms；40fps = 25ms。
+
+  * 一屏 589,824 像素：NEON 版 tvpgl 混合按 ~2-3 cycle/px 估 ≈ 3.3ms/次全屏；
+    标量版再慢 4-6 倍 → 13-20ms/次。**一次全屏混合就能吃掉 60fps 的全部预算**
+    ——这就是真机必须走 NEON 的原因（见 3.2）。
+  * 全量上传 2.36MB：真机 USER_RW 上 CPU 侧写入 400-800MB/s → 3-6ms/帧；
+    实测的 4%-90% 脏区上传对应 0.1-5ms。
+  * 按主机/真机单核 8-20 倍的整体放大：A 状态 engine 2.97ms + present 0.24ms
+    在真机上大约 25-60ms/帧 → 真机稳态大概率落在 25-30fps，尖峰帧是数百毫秒。
+
+P1a 补齐计量覆盖（半天，零风险）
+    给 TVP*_HDA / _HDA_o、TVPCopyMask、TVPCopyColor、TVPFillMask、
+    TVPStretchCopy、TVPStretchConstAlphaBlend*、TVPInterpStretch*、
+    TVPApplyColorMap65* 也装上壳。
+    判据：补完后折算 ms 仍远小于 composite → 按 P1b 做；若对上了 → 直接优化
+    那条内核。
+
+P1b 减少合成路径的调用与几何开销（性价比最高，无需 GPU）
+    证据：活跃帧 204 次调用/帧、1.76ms/帧；静止时 14 次、0.03ms。
+    方向：合并同一图层同帧的分段扫描线/相邻脏矩形（前提是"多画像素的成本 <
+    省下的调用开销"）；把每次调用里可提到循环外的重复工作（裁剪、纹理获取、
+    COW/别名检查、不透明性判定）提出来。
+    验收：调用 <80 次/帧、composite <0.8ms/帧（主机）。
+
+P2 位图内存压力（最痛，且有真实功能中断证据）
+    方向：把脚本的"整库清零"当软水位（保留最近 8-16MB 冷副本）；用每帧空闲
+    时间 + 工作线程预取下一页要用的图；给解码尺寸设上限（显示尺寸的 1~2 倍）。
+    验收：连续 10 分钟不再出现位图分配失败，>33ms 窗口为 0。
+
+P3 加载期 KAG 解析（45ms/次）
+    验收：换页窗口 cont+kag < 16ms（主机）。
+
+P4 分辨率档位 + 40fps 节流 —— 依赖 P1/P2
+    节流：mofa::kYuriEngineTickUs 16667 -> 25000。
+    分辨率：软件路径下砍分辨率**不是白赚**（图层是 CPU 位图，目标面缩小就要
+    把 blit 换成拉伸采样，省下的像素被采样成本吃掉大半）。真正白赚的两种：
+      a) 解码尺寸上限（并入 P2）；
+      b) 等 GPU 合成之后由 GPU 缩放（GPU 缩放几乎免费）。
+    fit_vita_render_surface() 这个"保 KAG 坐标、只缩渲染面"的机制仓库里已有，
+    但目前只接在实验性 OGL 合成器路径上。
+    40fps 在 60Hz 面板上是 3:2 节奏，要看卷轴/淡入是否有可见抖动。
+
+P5 GPU 合成 —— 优先级下调
+    现在 GPU 只做最后一层"上传+四边形式呈现"。仓库里那条整体 OGL 合成器
+    （-DMOFA_ENABLE_OPENGL_COMPOSITOR=ON）注释写明对商业作品不稳，默认关闭，
+    且有构建契约锁定软件渲染为默认。
+    下调理由：稳态像素量本来就小（中位 8k/帧），成本在调用次数与几何处理上；
+    在 P1 之前上 GPU 收益不明确。
+    若将来要做，前置是 ltAddAlpha 的 GPU 原型（SGX543 无 dual-source
+    blending，需两遍渲染或 alpha 通道分离），且必须保留脚本回读像素的 API
+    （layerExSave / layerExAreaAverage / getMainImage）的 CPU 通路。
+
+风险清单：
+  * SGX 无 dual-source blending → ltAddAlpha 的 GPU 方案要先做原型。
+  * 脚本会读回图层像素 → 提升到 GPU 的图层必须能降级。
+  * 文本 subpixel 一致性 → 必须逐字节 golden 对照。
+  * GPU 显存/带宽：112MB CDRAM + 共享内存，大图常驻要有上限与淘汰策略。
+  * 数据目录里的 tvpgl-scalar 标记只适用于模拟器，真机不要放。
+
+====================================================================
+7. 建议的执行顺序
+====================================================================
+
+  P1a（补计量覆盖） → P1b（合成调用/几何） → P2（内存压力） →
+  P3（加载期解析） → P4（分辨率+40fps 节流） → P5（GPU 合成，需前置原型）
+
+统一验收线：60 秒脚本化场景内 0 个 >33ms 的帧，主线程 CPU < 20ms/帧，
+连续 10 分钟不出现位图分配失败。每一步都按现有约定交付：插日志点 → 跑一次
+对照 → 出报告（区分新旧日志）。
+
+====================================================================
+8. 复现与证据
+====================================================================
+
+构建（WSL pocket-ubuntu，VitaSDK 在 /opt/vitasdk）：
+    cmake -S . -B build-release-vita
+    cmake --build build-release-vita --parallel 12 --target mofa-vita-krkr.vpk-vpk
+主机测试：
+    ctest --test-dir build-release-host -R "mofa-tvpgl"
+运行：
+    Vita3K.exe build-release-vita/mofa-vita-krkr.vpk
+    （若弹出"是否重新安装该内容？"，确认即可）
+日志：
+    ux0:data/mofa-vita/boot-status.txt（每次运行重写，含 [mofa-meter]/[mofa-stage]/[mofa-pixels]）
+    ux0:data/mofa-vita/engine.log（追加；新一次运行以 "Loading startup script" 切分）
+
+证据副本（build-release-vita/perf-evidence/，已被 .gitignore 忽略）：
+    before-boot-status.txt / before-engine.log      没有任何计量层时的对照
+    after-boot-status-final.txt                     内核自适应之后
+    meter-v1-boot-status.txt / meter-v1-error.txt   第一版计量层 + 位图 OOM 原文
+    meter-v2-boot-status.txt / meter-v2-engine.log  含 cont 分桶
+    meter-v3-perframe-boot-status.txt / meter-v3-engine.log  统一为每帧单位

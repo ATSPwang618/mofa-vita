@@ -116,6 +116,7 @@ static const mofa_boot_glossary_t k_boot_glossary[] = {
 	{"yuri-additive-alpha-scalar-exact-ready", "加法混合的 alpha 定标已精确实现"},
 	{"yuri-tvpgl-neon-kernels-installed", "已安装 NEON 加速的图像内核（真机默认；Vita3K 可能无法执行）"},
 	{"yuri-tvpgl-scalar-kernels", "已改用通用 C++ 图像内核（存在 ux0:data/mofa-vita/tvpgl-scalar 标记）"},
+	{"yuri-tvpgl-kernels-measured-on-device", "已在运行时实测 NEON 与通用内核的快慢，只保留更快的那一版"},
 	{"yuri-render-tasks-hybrid-large", "渲染任务采用大图混合策略"},
 	{"yuri-render-task-pool-ready", "渲染任务线程池就绪"},
 	{"yuri-software-framebuffer-ready", "软件帧缓冲就绪"},

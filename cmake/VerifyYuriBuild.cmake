@@ -809,6 +809,36 @@ forbid_text_between("${GENERATED_DIR}/LayerManager.cpp"
     "void tTVPLayerManager::NotifyUpdateRegionFixed()"
     "mofa_yuri_begin_frame_damage"
     "presenter damage cannot be captured before BeforeCompletion finalizes it")
+require_text("${GENERATED_DIR}/LayerManager.cpp"
+    "mofa_yuri_stage_composite(mofa_stage_started);"
+    "the software compositor reports its own frame stage to the Vita loop")
+require_text("${SOURCE_DIR}/include/mofa/vita_stage_profile.hpp"
+    "void vita_stage_record_frame(const VitaFrameStages& stages);"
+    "the Vita loop publishes one stage breakdown per reporting window")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_main.cpp"
+    "mofa::vita_stage_record_frame(mofa::VitaFrameStages{"
+    "every event-loop iteration reports its measured stage costs")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_stage_profile.cpp"
+    "script=%.2fms(events=%.2f timer=%.2f kag=%.2f cont=%.2f tags=%u "
+    "the script bucket decomposes into events, timers, tag parsing and the rest")
+require_text("${GENERATED_DIR}/EventIntf.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageContinuous, mofa_continuous_started);"
+    "continuous-event delivery reports the KAG Conductor's own frame stage")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
+    "MOFA_COUNT_PIXELS(TVPConstAlphaBlend_a, mofa::kTvpgPixelAdditiveDest, 2);"
+    "the constant-opacity text path is counted in the additive-dest family")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_stage_profile.cpp"
+    "rest=%.2f) composite=%.2fms(%.0f%%,%u calls)"
+    "the stage line separates script work from compositor work")
+require_text("${GENERATED_DIR}/SysInitImpl.cpp"
+    "mofa::apply_device_tvpgl_kernel_policy();"
+    "the installed NEON kernels are measured on the running device")
+require_text("${SOURCE_DIR}/include/mofa/tvpgl_kernel_benchmark.hpp"
+    "candidate_us * 100u <= reference_us * (100u - min_advantage_percent)"
+    "a substitute kernel is kept only when it is measurably faster")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_benchmark.cpp"
+    "mofa::TvpglKernelChoice compare_kernel("
+    "the device benchmark drives the shared kernel-selection rule")
 require_text("${YURI_SOURCE_DIR}/src/core/visual/LayerIntf.cpp"
     "void tTJSNI_BaseLayer::CompleteForWindow(tTVPDrawable *drawable)\n{\n\tBeforeCompletion();\n\n\tif(Manager) Manager->NotifyUpdateRegionFixed();"
     "Yuri calls the damage hook only after BeforeCompletion finalizes the region")
@@ -991,6 +1021,12 @@ require_text("${GENERATED_DIR}/Application.cpp"
 require_text("${GENERATED_DIR}/Application.cpp"
     "yuri-system-app-id-compat-ready"
     "System.checkAppId compatibility is observable on hardware")
+require_text("${GENERATED_DIR}/Application.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageEvents, mofa_events_started);"
+    "the engine stage separates message delivery from timer callbacks")
+require_text("${GENERATED_DIR}/Application.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageTimer, mofa_timer_started);"
+    "KAG's timer callbacks are measured as their own frame stage")
 require_text("${GENERATED_DIR}/tjs2/tjsString.h"
     "if(!Ptr) return 0;"
     "empty ttstr is valid in optimized builds")
@@ -1168,6 +1204,21 @@ require_text("${GENERATED_DIR}/SysInitImpl.cpp"
 require_text("${GENERATED_DIR}/SysInitImpl.cpp"
     "yuri-additive-alpha-scalar-exact-ready"
     "the additive-alpha compatibility policy is observable on hardware")
+require_text("${GENERATED_DIR}/SysInitImpl.cpp"
+    "mofa::install_tvpgl_pixel_meter();"
+    "the pixel meter wraps the kernels the device actually selected")
+require_text("${SOURCE_DIR}/include/mofa/tvpgl_pixel_meter.hpp"
+    "constexpr std::uint64_t estimate_family_us("
+    "pixel counts convert to time with the device's measured per-pixel cost")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
+    "family_pixels[family].fetch_add(pixels, std::memory_order_relaxed);"
+    "per-family pixel counting stays race-free for row-split blends")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
+    "probe_family_costs();"
+    "the per-family cost probe measures the installed kernels on the device")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_stage_profile.cpp"
+    "[mofa-pixels] frames=%u blend=%lluk stretch=%lluk add=%lluk"
+    "the frame report carries per-family pixel attribution")
 require_text_order_between("${GENERATED_DIR}/ThreadImpl.cpp"
     "void TVPExecThreadTask(int numThreads, TVP_THREAD_TASK_FUNC func)"
     "//---------------------------------------------------------------------------"
@@ -1299,6 +1350,12 @@ require_text("${GENERATED_DIR}/KAGParser.cpp"
 require_text("${GENERATED_DIR}/KAGParser.cpp"
     "yuri-kag-large-inline-execution-entered"
     "large KAG inline execution entry is observable on hardware")
+require_text("${GENERATED_DIR}/KAGParser.cpp"
+    "mofa_yuri_stage_bucket(mofa::kVitaStageKagParse, mofa_tag_started);"
+    "the native KAG parser reports its own stage bucket")
+require_text("${GENERATED_DIR}/KAGParser.cpp"
+    "mofa_yuri_stage_note_tag();"
+    "every parsed KAG tag is counted for the frame report")
 require_text("${GENERATED_DIR}/KAGParser.cpp"
     "yuri-kag-large-inline-execution-complete"
     "large KAG inline execution completion is observable on hardware")
@@ -1718,7 +1775,7 @@ require_text("${SOURCE_DIR}/src/platform/vita/yuri_main.cpp"
     "sceUserMainThreadStackSize = 2u * 1024u * 1024u"
     "Kirikiri's nested script/render path has an explicit Vita main stack")
 require_text("${SOURCE_DIR}/src/platform/vita/yuri_threading_self_test.cpp"
-    "event.WaitFor(250)"
+    "event.WaitFor(kEventTimeoutMs)"
     "Yuri's signal-before-wait event semantics are tested on hardware")
 require_text("${SOURCE_DIR}/src/platform/vita/yuri_threading_self_test.cpp"
     "SuspendedThreadProbe probe"

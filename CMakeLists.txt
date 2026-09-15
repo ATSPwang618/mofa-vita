@@ -1089,6 +1089,30 @@ else()
         add_test(NAME mofa-render-task-dispatch
             COMMAND mofa-render-task-dispatch-test)
 
+        # Yuri installs its NEON blend kernels from the CPU feature bits alone,
+        # which is the fast path on hardware and can be the slow path on a host
+        # that has to interpret them.  Pin the rule that decides between the
+        # two: a clearly faster candidate is kept, a tie, a marginal win, an
+        # unmeasurable comparison and a losing candidate all leave the
+        # generated scalar reference installed.
+        add_executable(mofa-tvpgl-kernel-benchmark-test
+            tests/test_tvpgl_kernel_benchmark.cpp)
+        target_include_directories(mofa-tvpgl-kernel-benchmark-test PRIVATE
+            include)
+        add_test(NAME mofa-tvpgl-kernel-benchmark
+            COMMAND mofa-tvpgl-kernel-benchmark-test)
+
+        # The frame report turns per-family pixel counts into milliseconds with
+        # the device's own measured ns/px. Pin the conversion and its rounding:
+        # an overflow or a zero-cost fallback would silently understate the
+        # pixel share of a frame.
+        add_executable(mofa-tvpgl-pixel-meter-test
+            tests/test_tvpgl_pixel_meter.cpp)
+        target_include_directories(mofa-tvpgl-pixel-meter-test PRIVATE
+            include)
+        add_test(NAME mofa-tvpgl-pixel-meter
+            COMMAND mofa-tvpgl-pixel-meter-test)
+
         # The Vita build replaces Android OpenCV with a compact compatibility
         # header. Pin its resize, box-filter, affine, and perspective pixel
         # contracts (including pitched external destinations and row-split

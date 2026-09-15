@@ -166,12 +166,20 @@ Yuri 的 ARM 后端只要看到 CPU 特性位就装一整套手写 NEON 内核�
 | 池 | 大小 | 说明 |
 | --- | --- | --- |
 | newlib 堆 | 128MiB | 启动时固定，`free()` 无法归还内核；脚本/TJS/SQLite/FreeType/小位图 |
-| VitaGL 池 | 48MiB | `vglInitExtended` 的阈值按「实际空闲 USER_RW − 48MiB」推导 |
-| 位图 memblock | ≥1MiB 的位图 | USER_RW memblock，保留 32MiB 给非位图子系统；失败时先回收再重试 |
+| VitaGL 池 | 32MiB | `vglInitExtended` 的阈值按「实际空闲 USER_RW − 32MiB」推导；软件合成下呈现只需约 20MiB（5 张 1024×576 轮转纹理 + 覆盖层 + 交换链），省下的留给位图 |
+| 位图 memblock | ≥1MiB 的位图 | USER_RW memblock。分三层：先用完整的 12MiB 保留线判断 → 再用 4MiB 紧急下限 → 最后才退回 newlib 堆 |
 
 预算常量集中在 `include/mofa/vita_memory_budget.hpp`，分配器在
 `src/platform/vita/vita_bitmap_allocator.cpp`；两者都有构建契约保护，改动要同步更新
 `cmake/VerifyYuriBuild.cmake`。
+
+为什么保留线从 32MiB 降到 12MiB：实测发现**压力时刻的真实状态是 `free_user` 停在保留线
+上，而位图只占 28MiB**——卡住分配的不是"真的没内存"，而是那条保留线本身；结果几十 MiB
+的多兆位图被挤进**预先固定分配的** 128MiB newlib 堆，堆一旦填满就直接抛
+`Cannot allocate memory for Bitmap`。而这个后端里除了位图分配器，没有任何模块申请
+USER_RW memblock（脚本 / FreeType / SQLite / 音频 / 视频都从同一个堆分配，VitaGL 的池
+在初始化时一次性认领），所以那条大保留线保护不了谁，只是把内存从游戏手里拿走。
+现在只留一条小余量应对内核侧增长，真正的"满了"由内核自己的拒绝来报。
 
 ### 2.4 已知瓶颈（带证据）
 
@@ -183,9 +191,11 @@ Yuri 的 ARM 后端只要看到 CPU 特性位就装一整套手写 NEON 内核�
    的假设已被数据推翻。
 2. **换页/加载才是脚本尖峰**：峰值窗口 `cont=81.7ms`，其中 `kag=45.0ms`。稳态解析
    几乎免费（96 个标签/帧 = 0.06ms）。
-3. **长跑会位图分配失败**（`1-0.ks:81` 的 `fgact`，3MB 位图）。因果链：游戏自己在
-   `override/kagwindow.override.tjs:714` 把 `graphicCacheLimit` 置 0 整库丢图 →
-   后续大位图撞 memblock 预算 → 全量压缩回收 → 重新解码。
+3. **长跑会位图分配失败**（`1-0.ks:81` 的 `fgact`，3MB 位图）——**已修复首刀**。
+   实测快照显示内核报告的 `free_user` 恰好停在我们 32MiB 保留线上，而位图 memblock
+   只占 28MB：保留线把多兆位图赶进**预先保留的** 128MiB newlib 堆，堆满即失败。
+   现在改为「内核权威」分配（≥1MiB 先申请 memblock）、保留线降到 12MiB、紧急下限
+   4MiB、VitaGL 池 48→32MiB。验证：越过原失败点（page6 → page13），0 内存标记。
 4. 上传/呈现不是瓶颈（0.36ms/帧），计量层加入前后一致。
 
 ---

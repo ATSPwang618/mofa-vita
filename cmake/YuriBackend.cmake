@@ -2256,7 +2256,7 @@ public:
 		void* memory = mofa::vita_bitmap_allocate(size);
 		if(!memory) {
 			mofa_yuri_reclaim_bitmap_memory();
-			memory = mofa::vita_bitmap_allocate(size);
+			memory = mofa::vita_bitmap_allocate_after_reclaim(size);
 			if(memory) mofa_boot_trace("yuri-bitmap-oom-recovered");
 		}
 		return memory;
@@ -2876,6 +2876,11 @@ extern "C" void mofa_yuri_reclaim_bitmap_memory()
 		mofa_boot_trace("yuri-bitmap-memory-pressure");
 		pressure_reported = true;
 	}
+	// Record what the allocator could see when it was pushed into reclaim, and
+	// again once the reclaim finished. That pair is what separates "the policy
+	// refused an allocation the kernel could satisfy" from "the console really
+	// is out of memory", and the two lead to different fixes.
+	mofa::vita_bitmap_log_memory_state("before-reclaim");
 	// Yuri's own allocation-failure callback delivers the strongest compact
 	// event. Complete that contract on Vita by also draining textures whose
 	// refcount reached zero during the callbacks before retrying malloc. A
@@ -2889,6 +2894,7 @@ extern "C" void mofa_yuri_reclaim_bitmap_memory()
 			[]() { iTVPTexture2D::RecycleProcess(); });
 	if(recycle_batches > 1)
 		mofa_boot_trace("yuri-texture-recycler-multibatch-drained");
+	mofa::vita_bitmap_log_memory_state("after-reclaim");
 }
 ]=])
     string(REPLACE "${yuri_bitmap_reclaim_anchor}"
@@ -2902,7 +2908,11 @@ extern "C" void mofa_yuri_reclaim_bitmap_memory()
 	ptr = ptrorg = (tjs_uint8*)mofa::vita_bitmap_allocate(allocbytes);
 	if(!ptr) {
 		mofa_yuri_reclaim_bitmap_memory();
-		ptr = ptrorg = (tjs_uint8*)mofa::vita_bitmap_allocate(allocbytes);
+		// The reclaim already dropped the graphic cache and compressed the
+		// textures, so the retry may spend part of the safety margin the first
+		// attempt protects: a bitmap is reclaimable, aborting the title is not.
+		ptr = ptrorg = (tjs_uint8*)mofa::vita_bitmap_allocate_after_reclaim(
+			allocbytes);
 		if(ptr) mofa_boot_trace("yuri-bitmap-oom-recovered");
 	}
 	if (!ptr) TVPThrowExceptionMessage(TVPCannotAllocateBitmapBits,

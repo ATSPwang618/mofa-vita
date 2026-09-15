@@ -967,11 +967,38 @@ require_text("${SOURCE_DIR}/include/mofa/vita_memory_budget.hpp"
     "kVitaNewlibHeapBytes = 128u * 1024u * 1024u"
     "the fixed newlib heap leaves kernel space for bitmap memblocks")
 require_text("${SOURCE_DIR}/include/mofa/vita_memory_budget.hpp"
-    "kVitaGlPoolBytes = 48u * 1024u * 1024u"
+    "kVitaGlPoolBytes = 32u * 1024u * 1024u"
     "VitaGL keeps a presenter-sized pool instead of all free USER_RW")
 require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
-    "vita_bitmap_memblock_budget_allows(free_user_memory(), size)"
+    "vita_bitmap_memblock_budget_allows_with_reserve("
     "the large-bitmap tier is bounded by free USER_RW, not a fixed ceiling")
+require_text("${SOURCE_DIR}/include/mofa/vita_bitmap_allocator.hpp"
+    "kVitaBitmapMemblockEmergencyReserveBytes ="
+    "the post-reclaim retry may spend part of the safety margin instead of aborting")
+require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
+    "void* vita_bitmap_allocate_after_reclaim(std::size_t size) {"
+    "the OOM retry has its own relaxed reservation policy")
+require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
+    "yuri-bitmap-emergency-tier-used"
+    "spending the emergency margin instead of the fixed heap is observable")
+require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
+    "void* allocate_tiered(std::size_t size) {"
+    "large bitmaps are allocated in tiers: full margin, emergency floor, heap")
+require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
+    "if (void* memory = try_memblock(size, mapped_size, 0, false))"
+    "the kernel, not the free-memory query, decides whether USER_RW is available")
+require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
+    "[mofa-mem] %s free_user=%uMB live_memblock=%uMB"
+    "the pressure path records what the allocator could actually see")
+require_text("${GENERATED_DIR}/RenderManager.cpp"
+    "mofa::vita_bitmap_log_memory_state(\"before-reclaim\");"
+    "the reclaim path records memory before it starts reclaiming")
+require_text("${GENERATED_DIR}/RenderManager.cpp"
+    "mofa::vita_bitmap_log_memory_state(\"after-reclaim\");"
+    "the reclaim path records memory once the reclaim finished")
+require_text("${GENERATED_DIR}/BitmapBitsAlloc.cpp"
+    "mofa::vita_bitmap_allocate_after_reclaim(size)"
+    "the decoded-bitmap OOM retry uses the relaxed reservation policy")
 require_text("${SOURCE_DIR}/src/platform/vita/vita_bitmap_allocator.cpp"
     "SCE_KERNEL_MEMBLOCK_TYPE_USER_RW"
     "large CPU bitmaps use cached Vita USER_RW memblocks")

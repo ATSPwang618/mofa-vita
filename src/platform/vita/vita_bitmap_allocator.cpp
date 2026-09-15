@@ -5,6 +5,7 @@
 #include <psp2/kernel/sysmem.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <mutex>
 
@@ -30,8 +31,10 @@ static_assert(sizeof(AllocationHeader) == kVitaBitmapAllocationHeaderBytes,
 
 std::mutex budget_mutex;
 std::uint64_t live_memblock_bytes = 0;
+std::uint64_t live_malloc_bytes = 0;
 bool memblock_backend_reported = false;
 bool malloc_fallback_reported = false;
+bool emergency_tier_reported = false;
 
 void report_memblock_backend_locked() {
     if (memblock_backend_reported) return;
@@ -71,6 +74,10 @@ void* allocate_malloc(std::size_t size) {
     auto* header = reinterpret_cast<AllocationHeader*>(
         payload_address - sizeof(AllocationHeader));
     initialize_header(header, kMallocAllocation, -1, 0, raw, size);
+    {
+        std::lock_guard<std::mutex> lock(budget_mutex);
+        live_malloc_bytes += size;
+    }
     return reinterpret_cast<void*>(payload_address);
 }
 
@@ -106,22 +113,23 @@ void initialize_header(AllocationHeader* header, std::uint32_t kind,
     header->reserved[1] = 0;
 }
 
-} // namespace
-
-void* vita_bitmap_allocate(std::size_t size) {
-    if (size == 0 || size > std::numeric_limits<std::uint32_t>::max())
-        return nullptr;
-
-    if (!vita_bitmap_uses_memblock(size)) return allocate_malloc(size);
-
-    const std::size_t mapped_size = vita_bitmap_memblock_bytes(size);
-    if (mapped_size == 0 ||
-        mapped_size > std::numeric_limits<std::uint32_t>::max())
-        return nullptr;
+// One memblock attempt. Returns null when the policy refuses, the kernel
+// refuses, or the mapping cannot be used; the budget is always left
+// consistent. `reserve_bytes == 0` with `consult_free_memory == false` asks the
+// kernel directly, which is the authoritative answer: the free-memory query is
+// only a hint, and on the emulated target it has been observed reporting a
+// handful of megabytes free while multi-megabyte decoded bitmaps were still
+// being granted and the preallocated newlib heap was what actually failed.
+void* try_memblock(std::size_t size, std::size_t mapped_size,
+                   std::size_t reserve_bytes, bool consult_free_memory) {
     bool memblock_reserved = false;
     {
         std::lock_guard<std::mutex> lock(budget_mutex);
-        if (vita_bitmap_memblock_budget_allows(free_user_memory(), size)) {
+        const bool policy_allows =
+            !consult_free_memory ||
+            vita_bitmap_memblock_budget_allows_with_reserve(
+                free_user_memory(), size, reserve_bytes);
+        if (policy_allows) {
             live_memblock_bytes += mapped_size;
             memblock_reserved = true;
             report_memblock_backend_locked();
@@ -160,6 +168,49 @@ void* vita_bitmap_allocate(std::size_t size) {
             release_budget(mapped_size);
         }
     }
+    return nullptr;
+}
+
+void report_emergency_tier() {
+    std::lock_guard<std::mutex> lock(budget_mutex);
+    if (emergency_tier_reported) return;
+    mofa_boot_trace("yuri-bitmap-emergency-tier-used");
+    emergency_tier_reported = true;
+}
+
+// Large-bitmap allocation, in tiers:
+//   1. a memblock under the full safety margin;
+//   2. a memblock under the emergency floor, because the margin was measured
+//      parking free USER_RW at exactly the reserve while decoded bitmaps filled
+//      the fixed newlib heap and eventually failed outright;
+//   3. the fixed newlib heap, which is the worst place for a multi-megabyte
+//      surface but keeps Yuri's ordinary capacity for small allocations.
+void* allocate_tiered(std::size_t size) {
+    if (size == 0 || size > std::numeric_limits<std::uint32_t>::max())
+        return nullptr;
+
+    if (!vita_bitmap_uses_memblock(size)) return allocate_malloc(size);
+
+    const std::size_t mapped_size = vita_bitmap_memblock_bytes(size);
+    if (mapped_size == 0 ||
+        mapped_size > std::numeric_limits<std::uint32_t>::max())
+        return nullptr;
+
+    // The kernel decides first: it is the only authority on whether USER_RW can
+    // be handed out, and it refuses rather than over-committing. The reserve
+    // tiers below only matter when the kernel itself says no, in which case
+    // they confirm the refusal before the allocation falls back to the heap.
+    if (void* memory = try_memblock(size, mapped_size, 0, false))
+        return memory;
+    if (void* memory = try_memblock(size, mapped_size,
+                                    kVitaBitmapMemblockReserveBytes, true))
+        return memory;
+    if (void* memory = try_memblock(
+            size, mapped_size, kVitaBitmapMemblockEmergencyReserveBytes,
+            true)) {
+        report_emergency_tier();
+        return memory;
+    }
 
     // Memblocks are the preferred tier because they are independently
     // reclaimable and immune to newlib fragmentation. This fallback covers the
@@ -170,6 +221,38 @@ void* vita_bitmap_allocate(std::size_t size) {
     void* memory = allocate_malloc(size);
     if (memory) report_malloc_fallback();
     return memory;
+}
+
+} // namespace
+
+void* vita_bitmap_allocate(std::size_t size) {
+    return allocate_tiered(size);
+}
+
+void* vita_bitmap_allocate_after_reclaim(std::size_t size) {
+    // The reclaim has already dropped the graphic cache and compressed the
+    // textures, so the same tiering applies with more room to succeed.
+    return allocate_tiered(size);
+}
+
+void vita_bitmap_log_memory_state(const char* tag) {
+    std::uint64_t live = 0;
+    std::uint64_t live_malloc = 0;
+    {
+        std::lock_guard<std::mutex> lock(budget_mutex);
+        live = live_memblock_bytes;
+        live_malloc = live_malloc_bytes;
+    }
+    // mofa_boot_trace does not copy the string, so the buffer must outlive it.
+    static char line[192];
+    std::snprintf(line, sizeof line,
+                  "[mofa-mem] %s free_user=%uMB live_memblock=%uMB "
+                  "live_malloc=%uMB",
+                  tag ? tag : "state",
+                  static_cast<unsigned>(free_user_memory() >> 20),
+                  static_cast<unsigned>(live >> 20),
+                  static_cast<unsigned>(live_malloc >> 20));
+    mofa_boot_trace(line);
 }
 
 void vita_bitmap_deallocate(void* memory) noexcept {
@@ -186,6 +269,11 @@ void vita_bitmap_deallocate(void* memory) noexcept {
     header->magic = 0;
 
     if (kind == kMallocAllocation) {
+        {
+            std::lock_guard<std::mutex> lock(budget_mutex);
+            if (header->requested_size <= live_malloc_bytes)
+                live_malloc_bytes -= header->requested_size;
+        }
         std::free(base);
         return;
     }

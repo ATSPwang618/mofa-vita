@@ -14,6 +14,14 @@ inline constexpr std::size_t kVitaBitmapMemblockPage = 4096u;
 inline constexpr std::size_t kVitaBitmapAllocationHeaderBytes = 32u;
 inline constexpr std::size_t kVitaBitmapPayloadAlignment = 16u;
 
+// The retry floor. By the time a reclaim runs the engine has already dropped its
+// graphic cache and compressed its textures, the caller is about to abort the
+// game with "Cannot allocate memory for Bitmap", and a bitmap is exactly the
+// kind of allocation that can be given back later. Let that retry use the
+// margin down to this floor instead of failing.
+inline constexpr std::size_t kVitaBitmapMemblockEmergencyReserveBytes =
+    4u * 1024u * 1024u;
+
 constexpr bool vita_bitmap_uses_memblock(std::size_t requested) {
     return requested >= kVitaBitmapMemblockThreshold;
 }
@@ -39,16 +47,35 @@ constexpr std::size_t vita_bitmap_memblock_bytes(std::size_t requested) {
 // failed outright, even with most of the console's memory unused. Ask the
 // kernel instead, and keep a reserve so bitmaps cannot starve the subsystems
 // whose allocations are not recoverable.
-constexpr bool vita_bitmap_memblock_budget_allows(std::size_t free_user_bytes,
-                                                  std::size_t requested) {
+// The policy with an explicit reserve, so the post-reclaim retry can trade part
+// of the safety margin for not aborting the title.
+constexpr bool vita_bitmap_memblock_budget_allows_with_reserve(
+    std::size_t free_user_bytes, std::size_t requested,
+    std::size_t reserve_bytes) {
     const std::size_t mapped = vita_bitmap_memblock_bytes(requested);
     if (mapped == 0) return false;
-    if (free_user_bytes <= kVitaBitmapMemblockReserveBytes) return false;
-    return mapped <= free_user_bytes - kVitaBitmapMemblockReserveBytes;
+    if (free_user_bytes <= reserve_bytes) return false;
+    return mapped <= free_user_bytes - reserve_bytes;
+}
+
+constexpr bool vita_bitmap_memblock_budget_allows(std::size_t free_user_bytes,
+                                                  std::size_t requested) {
+    return vita_bitmap_memblock_budget_allows_with_reserve(
+        free_user_bytes, requested, kVitaBitmapMemblockReserveBytes);
 }
 
 void* vita_bitmap_allocate(std::size_t size);
+
+// Allocation attempt that may consume part of the reserve.  Only for the
+// retry after mofa_yuri_reclaim_bitmap_memory() has already run.
+void* vita_bitmap_allocate_after_reclaim(std::size_t size);
+
 void vita_bitmap_deallocate(void* memory) noexcept;
 std::uint64_t vita_bitmap_memblock_bytes_live() noexcept;
+
+// One [mofa-mem] trace line describing what the allocator can see right now.
+// Used on the pressure/failure path so the next run says whether an allocation
+// was refused by policy or by the kernel.
+void vita_bitmap_log_memory_state(const char* tag);
 
 } // namespace mofa

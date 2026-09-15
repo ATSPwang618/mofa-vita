@@ -29,18 +29,35 @@ inline constexpr std::size_t kVitaNewlibHeapBytes = 128u * 1024u * 1024u;
 //
 // Size VitaGL's pool for what it actually does and derive the threshold from
 // the memory that really is free at initialization.
-inline constexpr std::size_t kVitaGlPoolBytes = 48u * 1024u * 1024u;
+//
+// 48 MiB was chosen before the retail run showed where the wall is: with the
+// software compositor VitaGL holds five rotating 1024x576 presentation textures
+// (about 12 MiB), the overlay textures and its swap chain - roughly 20 MiB - and
+// the recovered run failed to allocate a 3 MiB decoded bitmap while only 8 MiB
+// of USER_RW was free. 16 MiB of that pool is bitmap capacity the title needs
+// more than the presenter does.
+inline constexpr std::size_t kVitaGlPoolBytes = 32u * 1024u * 1024u;
 
 // Never leave the application less than this, however little the kernel
 // reports free; and fall back to it when the query fails.
 inline constexpr int kVitaGlMinApplicationRamThresholdBytes =
     64 * 1024 * 1024;
 
-// Free USER_RW that large bitmaps must never consume. Non-bitmap subsystems
-// still take memblocks after startup (audio, movie, font and VitaGL growth),
-// and a failed allocation there is not recoverable the way a bitmap is.
+// Free USER_RW that large bitmaps keep in hand.
+//
+// This started at 32 MiB to protect subsystems whose allocations are not
+// recoverable. The retail measurement then showed what that margin actually
+// does on this backend: the allocator reached its reserve with only ~28 MiB of
+// live bitmap memblocks, while ~59 MiB of multi-megabyte decoded bitmaps were
+// being pushed into the *preallocated* 128 MiB newlib heap until the heap
+// failed outright ("Cannot allocate memory for Bitmap", 1120x672, 1-0.ks:81).
+// Nothing else here takes USER_RW memblocks - scripts, FreeType, SQLite, audio
+// and the movie path all allocate from that same heap, and VitaGL's pool is
+// claimed once at init - so the large reserve protected nothing and cost the
+// title its bitmap capacity. Keep a small margin for kernel-side growth and
+// let the kernel's own refusal be the signal that the pool is really full.
 inline constexpr std::size_t kVitaBitmapMemblockReserveBytes =
-    32u * 1024u * 1024u;
+    12u * 1024u * 1024u;
 
 // The value to pass to vglInitExtended given the free USER_RW measured just
 // before the call. Leaves the application everything except VitaGL's pool.

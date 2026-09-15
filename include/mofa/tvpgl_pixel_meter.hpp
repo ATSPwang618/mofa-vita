@@ -21,6 +21,11 @@ enum TvpgPixelFamily : int {
     kTvpgPixelAdditive,
     kTvpgPixelStretch,
     kTvpgPixelStretchAdditive,
+    // Affine/linear-transform sampling. Kirikiri reaches these through
+    // AffineCopy (rotation, zoom, blur-like effects) rather than through the
+    // row-aligned blends above, and their per-pixel cost is different enough
+    // that folding them into "stretch" would hide them.
+    kTvpgPixelAffine,
     kTvpgPixelCopyFill,
     kTvpgPixelColorMap,
     kTvpgPixelFamilyCount

@@ -116,6 +116,92 @@ void install_shells() {
                       mofa::kTvpgPixelStretchAdditive, 1);
     MOFA_COUNT_PIXELS(TVPStretchAdditiveAlphaBlend_ao,
                       mofa::kTvpgPixelStretchAdditive, 1);
+    // ---- P1a: cover the paths the software compositor actually selects. ----
+    // LayerBitmapIntf picks between basename / basename_o / basename_HDA /
+    // basename_HDA_o per scanline, and "hda = true if destination has alpha"
+    // (LayerBitmapIntf.cpp) - which is true for every ordinary alpha layer.
+    // Without these, drawing into an alpha layer was invisible to the meter.
+    MOFA_COUNT_PIXELS(TVPAlphaBlend_HDA, mofa::kTvpgPixelBlend, 2);
+    MOFA_COUNT_PIXELS(TVPAlphaBlend_HDA_o, mofa::kTvpgPixelBlend, 2);
+    MOFA_COUNT_PIXELS(TVPConstAlphaBlend_HDA, mofa::kTvpgPixelBlend, 2);
+    MOFA_COUNT_PIXELS(TVPConstAlphaBlend_SD_d, mofa::kTvpgPixelBlend, 3);
+    MOFA_COUNT_PIXELS(TVPStretchConstAlphaBlend, mofa::kTvpgPixelStretch, 1);
+    MOFA_COUNT_PIXELS(TVPStretchConstAlphaBlend_HDA, mofa::kTvpgPixelStretch, 1);
+    MOFA_COUNT_PIXELS(TVPStretchConstAlphaBlend_d, mofa::kTvpgPixelStretch, 1);
+    MOFA_COUNT_PIXELS(TVPStretchConstAlphaBlend_a,
+                      mofa::kTvpgPixelAdditiveDest, 1);
+    MOFA_COUNT_PIXELS(TVPInterpStretchConstAlphaBlend,
+                      mofa::kTvpgPixelStretch, 1);
+    MOFA_COUNT_PIXELS(TVPAdditiveAlphaBlend_HDA, mofa::kTvpgPixelAdditive, 2);
+    MOFA_COUNT_PIXELS(TVPAdditiveAlphaBlend_HDA_o,
+                      mofa::kTvpgPixelAdditive, 2);
+    MOFA_COUNT_PIXELS(TVPInterpStretchAdditiveAlphaBlend,
+                      mofa::kTvpgPixelAdditive, 1);
+    MOFA_COUNT_PIXELS(TVPInterpStretchAdditiveAlphaBlend_o,
+                      mofa::kTvpgPixelAdditive, 1);
+    MOFA_COUNT_PIXELS(TVPStretchAlphaBlend_HDA, mofa::kTvpgPixelStretch, 1);
+    MOFA_COUNT_PIXELS(TVPStretchAlphaBlend_HDA_o, mofa::kTvpgPixelStretch, 1);
+    MOFA_COUNT_PIXELS(TVPStretchAdditiveAlphaBlend_HDA,
+                      mofa::kTvpgPixelStretchAdditive, 1);
+    MOFA_COUNT_PIXELS(TVPStretchAdditiveAlphaBlend_HDA_o,
+                      mofa::kTvpgPixelStretchAdditive, 1);
+    // Copy/fill variants: bmCopy with a full-opacity opaque source onto an
+    // alpha destination is TVPCopyColor, and masks are used by province/alpha
+    // effects.
+    MOFA_COUNT_PIXELS(TVPCopyColor, mofa::kTvpgPixelCopyFill, 2);
+    MOFA_COUNT_PIXELS(TVPCopyMask, mofa::kTvpgPixelCopyFill, 2);
+    MOFA_COUNT_PIXELS(TVPFillMask, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPFillARGB_NC, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPStretchCopy, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPInterpStretchCopy, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransCopy, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPInterpLinTransCopy, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransColorCopy, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransCopyOpaqueImage, mofa::kTvpgPixelCopyFill, 1);
+    // Whole-buffer alpha-format conversions rewrite every pixel of a layer when
+    // its type changes, so they belong to the copy/fill accounting.
+    MOFA_COUNT_PIXELS(TVPConvertAlphaToAdditiveAlpha, mofa::kTvpgPixelCopyFill, 1);
+    MOFA_COUNT_PIXELS(TVPConvertAdditiveAlphaToAlpha, mofa::kTvpgPixelCopyFill, 1);
+    // Palette colour maps include the 65-level and HDA variants.
+    MOFA_COUNT_PIXELS(TVPApplyColorMap_HDA, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap_HDA_o, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap_d, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap_do, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_o, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_d, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_do, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_a, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_ao, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_HDA, mofa::kTvpgPixelColorMap, 2);
+    MOFA_COUNT_PIXELS(TVPApplyColorMap65_HDA_o, mofa::kTvpgPixelColorMap, 2);
+    // Affine families (AffineCopy: rotation, zoom, and the effects built on it).
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_HDA, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_o, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_HDA_o, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_d, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_a, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_do, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend_ao, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAdditiveAlphaBlend, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAdditiveAlphaBlend_HDA,
+                      mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAdditiveAlphaBlend_o, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAdditiveAlphaBlend_HDA_o,
+                      mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAdditiveAlphaBlend_a, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransAdditiveAlphaBlend_ao,
+                      mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPInterpLinTransAdditiveAlphaBlend,
+                      mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPInterpLinTransAdditiveAlphaBlend_o,
+                      mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransConstAlphaBlend, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransConstAlphaBlend_HDA, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransConstAlphaBlend_d, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPLinTransConstAlphaBlend_a, mofa::kTvpgPixelAffine, 1);
+    MOFA_COUNT_PIXELS(TVPInterpLinTransConstAlphaBlend, mofa::kTvpgPixelAffine, 1);
     MOFA_COUNT_PIXELS(TVPCopyOpaqueImage, mofa::kTvpgPixelCopyFill, 2);
     MOFA_COUNT_PIXELS(TVPStretchCopyOpaqueImage, mofa::kTvpgPixelCopyFill, 1);
     MOFA_COUNT_PIXELS(TVPFillARGB, mofa::kTvpgPixelCopyFill, 1);
@@ -181,6 +267,7 @@ void probe_family_costs() {
     const int additive_family = mofa::kTvpgPixelAdditive;
     const int stretch_family = mofa::kTvpgPixelStretch;
     const int stretch_additive_family = mofa::kTvpgPixelStretchAdditive;
+    const int affine_family = mofa::kTvpgPixelAffine;
     const int copy_fill_family = mofa::kTvpgPixelCopyFill;
     const int color_map_family = mofa::kTvpgPixelColorMap;
 
@@ -213,6 +300,16 @@ void probe_family_costs() {
                                          probe_source, 0, 1 << 16);
         },
         kProbeStretchPixels);
+    // sx/sy are 16.16 fixed-point source coordinates and srcpitch is in bytes
+    // (see TVPLinTransAlphaBlend_c), so a step of 1.0 on a flat row is a
+    // straight one-to-one read.
+    family_costs.ns_per_pixel[affine_family] = probe_kernel_cost(
+        TVPLinTransAlphaBlend,
+        [] {
+            TVPLinTransAlphaBlend(probe_dest, kProbeStretchPixels, probe_source,
+                                  0, 0, 1 << 16, 0, kProbeBlendPixels * 4);
+        },
+        kProbeStretchPixels);
     // Opaque copy is the conservative representative of the copy/fill family:
     // a solid fill is cheaper per pixel, so a frame dominated by fills reports
     // a slightly high estimate instead of a low one.
@@ -235,12 +332,13 @@ void trace_costs() {
     std::snprintf(
         line, sizeof line,
         "[mofa-meter] ns/px blend=%.2f adddest=%.2f add=%.2f stretch=%.2f "
-        "sadd=%.2f copyfill=%.2f cmap=%.2f",
+        "sadd=%.2f affine=%.2f copyfill=%.2f cmap=%.2f",
         family_costs.ns_per_pixel[mofa::kTvpgPixelBlend],
         family_costs.ns_per_pixel[mofa::kTvpgPixelAdditiveDest],
         family_costs.ns_per_pixel[mofa::kTvpgPixelAdditive],
         family_costs.ns_per_pixel[mofa::kTvpgPixelStretch],
         family_costs.ns_per_pixel[mofa::kTvpgPixelStretchAdditive],
+        family_costs.ns_per_pixel[mofa::kTvpgPixelAffine],
         family_costs.ns_per_pixel[mofa::kTvpgPixelCopyFill],
         family_costs.ns_per_pixel[mofa::kTvpgPixelColorMap]);
     mofa_boot_trace(line);

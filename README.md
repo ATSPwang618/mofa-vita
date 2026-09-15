@@ -101,7 +101,8 @@ preinit-entered → main-entered → vita-threading-self-test-passed
 （60 帧一个窗口）。
 
 ```text
-[mofa-meter]  ns/px blend=.. adddest=.. add=.. stretch=.. sadd=.. copyfill=.. cmap=..
+[mofa-meter]  ns/px blend=.. adddest=.. add=.. stretch=.. sadd=.. affine=..
+              copyfill=.. cmap=..
 ```
 
 启动时一行，由**设备上真正装着的那个内核**微基准测出（1024/512 像素 × 64 次 ×
@@ -126,13 +127,21 @@ preinit-entered → main-entered → vita-threading-self-test-passed
 
 ```text
 [mofa-pixels] frames=60 blend=..k stretch=..k add=..k adddest=..k sadd=..k
-              copy=..k cmap=..k calls=.. est=..ms
+              affine=..k copy=..k cmap=..k calls=.. est=..ms
 ```
 
-38 个热点 TvPgl 内核上装了「只做整数累加」的转发壳，按家族统计目标像素数。计数用
+100 个热点 TvPgl 内核上装了「只做整数累加」的转发壳，按 8 个家族统计目标像素数
+（blend / adddest / add / stretch / sadd / **affine** / copy / cmap）。计数用
 relaxed 原子加法，因为行分割混合会跑在两个渲染 worker 上；每次扫描线一次加法，
 代价远小于它描述的那次混合。`est` 用 `[mofa-meter]` 的 ns/像素把像素折算成毫秒，
 回答「这一帧的钱有多少花在像素上」。
+
+覆盖这一块时注意：`LayerBitmapIntf` 按 `basename / _o / _HDA / _HDA_o` 逐扫描线
+选择内核，而其中 `hda = true if destination has alpha`——**往普通 alpha 图层里画
+走的是 `_HDA` 内核**。漏掉 `_HDA` 会让计量结果看起来比合成小两个数量级（本项目
+确实踩过这个坑，见 `docs/性能适配与优化总结.txt` 的 P1a）。仍未覆盖的是 Photoshop
+混合模式族 `TVPPs*`（本作脚本不使用 `blendMode`）与一次性格式转换
+`TVPReverseRGB` / `TVPRedBlueSwap*` 等。
 
 呈现侧另有一条 `[mofa-perf]`：`frame=.. upload=.. draw+swap=.. full=.. partial=..
 px/frame=.. video_up=.. total_up=..MB`，描述上传与脏区行为。
@@ -168,9 +177,10 @@ Yuri 的 ARM 后端只要看到 CPU 特性位就装一整套手写 NEON 内核�
 
 细节与实测表格见 [docs/性能适配与优化总结.txt](docs/性能适配与优化总结.txt)，摘要：
 
-1. **合成是引擎里最大的一块**（活跃帧 1.76ms/帧、204 次调用/帧），但计到的像素只有
-   约 8k/帧（折算 0.05ms）——成本在「调用次数与几何/裁剪开销」，或走的是尚未计数的
-   内核（HDA/mask/const-stretch/interp 系列）。下一步先补齐计量覆盖。
+1. **合成 = 像素活，已结案**：补齐 `_HDA` 等内核后，活跃帧 composite 2.16ms/帧
+   对应 385k 混合 + 193k 拷贝像素/帧，折算 2.67ms/帧（est/composite ≈ 1.24）。
+   真机 NEON 生效时这部分约 0.5-1.5ms/帧，不是 40fps 的障碍；原先「调用开销」
+   的假设已被数据推翻。
 2. **换页/加载才是脚本尖峰**：峰值窗口 `cont=81.7ms`，其中 `kag=45.0ms`。稳态解析
    几乎免费（96 个标签/帧 = 0.06ms）。
 3. **长跑会位图分配失败**（`1-0.ks:81` 的 `fgact`，3MB 位图）。因果链：游戏自己在

@@ -1217,8 +1217,17 @@ require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
     "probe_family_costs();"
     "the per-family cost probe measures the installed kernels on the device")
 require_text("${SOURCE_DIR}/src/platform/vita/yuri_stage_profile.cpp"
-    "[mofa-pixels] frames=%u blend=%lluk stretch=%lluk add=%lluk"
+    "[mofa-pixels] frames=%u blend=%lluk stretch=%lluk add=%lluk "
     "the frame report carries per-family pixel attribution")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
+    "MOFA_COUNT_PIXELS(TVPAlphaBlend_HDA, mofa::kTvpgPixelBlend, 2);"
+    "drawing into an alpha layer reports the HDA kernel the compositor selects")
+require_text("${SOURCE_DIR}/src/platform/vita/yuri_tvpgl_meter.cpp"
+    "MOFA_COUNT_PIXELS(TVPLinTransAlphaBlend, mofa::kTvpgPixelAffine, 1);"
+    "affine sampling is counted as its own family")
+require_text("${SOURCE_DIR}/include/mofa/tvpgl_pixel_meter.hpp"
+    "kTvpgPixelAffine,"
+    "the pixel meter distinguishes affine sampling from row-aligned blends")
 require_text_order_between("${GENERATED_DIR}/ThreadImpl.cpp"
     "void TVPExecThreadTask(int numThreads, TVP_THREAD_TASK_FUNC func)"
     "//---------------------------------------------------------------------------"

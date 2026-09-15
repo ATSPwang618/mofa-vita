@@ -9,10 +9,11 @@ int main() {
 
     // The families the frame report distinguishes; adding one is a deliberate
     // change because every report line and every A/B comparison depends on it.
-    static_assert(mofa::kTvpgPixelFamilyCount == 7);
+    static_assert(mofa::kTvpgPixelFamilyCount == 8);
     static_assert(mofa::kTvpgPixelBlend == 0);
     static_assert(mofa::kTvpgPixelColorMap ==
                   mofa::kTvpgPixelFamilyCount - 1);
+    static_assert(mofa::kTvpgPixelAffine < mofa::kTvpgPixelCopyFill);
 
     // Nothing blended and an unmeasured family both report no time rather than
     // inventing one from a default cost.

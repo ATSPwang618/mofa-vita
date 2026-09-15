@@ -97,14 +97,15 @@ void flush_stage_window() {
     std::snprintf(
         line, sizeof line,
         "[mofa-pixels] frames=%u blend=%lluk stretch=%lluk add=%lluk "
-        "adddest=%lluk sadd=%lluk copy=%lluk cmap=%lluk calls=%llu "
+        "adddest=%lluk sadd=%lluk affine=%lluk copy=%lluk cmap=%lluk calls=%llu "
         "est=%.2fms (blend %.2f stretch %.2f add %.2f adddest %.2f sadd %.2f "
-        "copy %.2f cmap %.2f)",
+        "affine %.2f copy %.2f cmap %.2f)",
         window_frames, per_frame(pixels[mofa::kTvpgPixelBlend] / 1000),
         per_frame(pixels[mofa::kTvpgPixelStretch] / 1000),
         per_frame(pixels[mofa::kTvpgPixelAdditive] / 1000),
         per_frame(pixels[mofa::kTvpgPixelAdditiveDest] / 1000),
         per_frame(pixels[mofa::kTvpgPixelStretchAdditive] / 1000),
+        per_frame(pixels[mofa::kTvpgPixelAffine] / 1000),
         per_frame(pixels[mofa::kTvpgPixelCopyFill] / 1000),
         per_frame(pixels[mofa::kTvpgPixelColorMap] / 1000),
         per_frame(total_calls), total_estimate_us / 1.0e3 / frames,
@@ -113,6 +114,7 @@ void flush_stage_window() {
         estimate_us[mofa::kTvpgPixelAdditive] / 1.0e3 / frames,
         estimate_us[mofa::kTvpgPixelAdditiveDest] / 1.0e3 / frames,
         estimate_us[mofa::kTvpgPixelStretchAdditive] / 1.0e3 / frames,
+        estimate_us[mofa::kTvpgPixelAffine] / 1.0e3 / frames,
         estimate_us[mofa::kTvpgPixelCopyFill] / 1.0e3 / frames,
         estimate_us[mofa::kTvpgPixelColorMap] / 1.0e3 / frames);
     mofa_boot_trace(line);

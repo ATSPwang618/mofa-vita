@@ -12,8 +12,6 @@ Kirikiroid2 一脉）加 VitaGL 呈现层。游戏保持原样：继续使用它
 | 标题 ID / 版本 | `MOFA00001` / 01.00，`ATTRIBUTE2=12`（扩大应用内存配额） |
 | 数据根目录 | `ux0:data/mofa-vita/`（游戏固定在 `game/`，补丁在 `patch/`） |
 | 实机依赖 | `ur0:/data/libshacccg.suprx`（真机导出的着色器编译器） |
-| 性能目标 | 实机稳定 40fps、无 >33ms 尖峰、不出现位图分配失败 |
-| 结论性文档 | [docs/性能适配与优化总结.txt](docs/性能适配与优化总结.txt) |
 
 ---
 

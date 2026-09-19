@@ -75,7 +75,20 @@ vita/booter/             气泡/引导模板
 | `src/platform/vita/vita_bitmap_allocator.cpp` | 位图分级分配器（memblock / newlib 回退） |
 | `include/mofa/vita_memory_budget.hpp` | newlib 堆、VitaGL 池、保留区的预算常量 |
 
-### 1.3 启动顺序（`boot-status.txt` 里的里程碑）
+### 1.3 源码地图（每个目录里都是什么）
+
+| 目录 | 内容 |
+| --- | --- |
+| `src/common/` | 与平台无关的零售侧逻辑：`xp3_archive`（XP3 索引/分段/过滤）、`storage`（松装 + XP3 统一命名空间）、`text_codec`（UTF-8/UTF-16/FE FE/zlib）、`filter_heuristic`（约 1.8k 行的解密过滤器推断引擎）、`retail_filter`/`phase1_filter`、`patch_repository`/`patch_manifest`、`native_plugin_inventory`/`pe_resources`（清点游戏自带的 Windows 插件）、`sfo`/`sha256`/`png`/`ajpm`/`profile`/`game`/`bubble` |
+| `src/engine/retail/` | 每个零售插件一个文件，`NCB_MODULE_NAME` 决定它顶替哪个 DLL 名。薄文件（20-30 行）只把上游实现登记进静态注册表；厚文件是真实现：`sqlite3`(1078)、`shrinkCopy`(533)、`psb`(473)、`fstat`(259)、`psbfile`(236)、`sigcheck`(195)、`gfxEffect`(178)、`extNagano`(131)、`rsa_pss_signature`(253) |
+| `src/engine/vita/` | Vita 专属三件：`early_boot_trace.c`（最早的日志/错误通道，静态初始化之前就能写）、`vita_launch.cpp`（工程 / xp3filter / 启动补丁的选择）、`vitagl_presenter.cpp`（上传 + 呈现 + 视频叠加 + 光标 + `[mofa-perf]`） |
+| `src/platform/vita/` | 平台桥：`yuri_main.cpp`（事件循环 + 阶段计时）、`yuri_window_layer.cpp`（图层→呈现适配）、`yuri_storage_preflight.cpp`（松装自动路径）、`vita_bitmap_allocator.cpp`（三层分配）、`yuri_tvpgl_benchmark.cpp`/`yuri_tvpgl_meter.cpp`（内核选择与像素计量）、`yuri_stage_profile.cpp`、`yuri_video_overlay.cpp`（FFmpeg 视频）、`yuri_openal_mixer.cpp`、`yuri_pvf_font_rasterizer.cpp`、`yuri_input.cpp`、`yuri_config.cpp`、`yuri_7z_libarchive.cpp`、`yuri_ms_gothic_stream.cpp` |
+| `src/yuri/` | TJS 平台适配（`tjs_platform.cpp`）、过滤器虚拟机（`xp3_filter_vm.cpp`），以及 `compat/` 下替换上游的第三方薄头（libarchive / oniguruma / opencv / freetype / lz4 / xxhash / unzip） |
+| `include/mofa/` | 71 个头文件，绝大多数是"策略 + 常量 + 契约注释"（内存预算、脏区、呈现事务、插件分级、像素家族……）。每个文件开头的注释就是它存在的理由，改行为前先读它 |
+| `tests/` | 21 个 ctest 用例（`test_main.cpp` 是 3k 行的主套件）+ 4 个**不在 ctest 里**的硬件试验台（`test_yuri_arm_alpha` / `test_yuri_texture_aliasing` / `test_yuri_layer_composite` / `test_ajpm_frame_budget`），由 `scripts/run-*.sh` 单独驱动 |
+| `scripts/` | 构建（`build-vita*.sh`）、兼容性审计（`audit-kirikiroid2-patches.py`、`run-retail-compatibility.sh`）、真机 / Cortex-A9 板卡（`run-cortex-a9-*.sh`）与试验台驱动 |
+
+### 1.4 启动顺序（`boot-status.txt` 里的里程碑）
 
 ```text
 preinit-entered → main-entered → vita-threading-self-test-passed

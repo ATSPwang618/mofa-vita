@@ -24,4 +24,4 @@ Kirikiroid2 一脉）加 VitaGL 呈现层。游戏保持原样：继续使用它
 
 ## 游戏数据包
 
-- 待定
+- 参见：https://github.com/ATSPwang618/mofa-krkrz-script

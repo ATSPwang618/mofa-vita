@@ -14,7 +14,7 @@
 - 真机帧率仍明显低于目标（有的游戏只有个位数 FPS），性能与游戏兼容性都在继续改进。
 - 需要 PS Vita 能运行自制程序（HENkaku / Enso 等），并已安装 VitaShell。
 - 加密或非标准封装的游戏必须先**在 PC 上**用转换工具处理，主机端不做解密。
-- 仓库不附带 PlayStation 官方 SDK 的 GPU 运行模块，打包前需要自己准备，见[第 2 步](#2-打包-vpk)。
+- GPU 运行模块已经随仓库提供，正常打包不需要额外准备；只有升级驱动时才是要重新生成，见[第 2 步](#2-打包-vpk)。
 
 ## 在 PS Vita 上玩 KRKR 游戏
 
@@ -98,7 +98,7 @@ cargo run -p krkr-convert -- xp3 pack <资源目录>
 
 ### 2. 打包 VPK
 
-#### 2.1 先准备 GPU 运行模块（必须，最容易漏）
+#### 2.1 确认 GPU 运行模块（仓库已自带）
 
 `krkr-vita` 启动时会从 `app0:module/` 加载四个模块，缺任何一个都会启动失败：
 
@@ -109,13 +109,13 @@ cargo run -p krkr-convert -- xp3 pack <资源目录>
 | `libIMGEGL.suprx` | EGL 上下文与表面 |
 | `libGLESv2.suprx` | OpenGL ES 2.0 |
 
-这四份二进制是官方 PSVSDK 工具链配合 `pvr-psp2-sys` 构建得到的产物，**当前仓库里没有**。打包前请把它们放到：
+这四个文件已经随仓库放在 `crates/host-vita/runtime/module/`。打包配置里的 `assets = "runtime"` 会把整个目录原样放进 VPK 的 `module/`，正常打包不需要任何额外操作，自检一下即可：
 
-```text
-crates/host-vita/runtime/module/
+```powershell
+Get-ChildItem crates/host-vita/runtime/module
 ```
 
-取得方式：在 [pvr-psp2-sys](https://github.com/jhq223/pvr-psp2-sys) 仓库用 Windows 官方 PSVSDK 构建（需要 CMake 3.22+ 与 Ninja）：
+当前仓库内是 `pvr-psp2-sys` 0.1.3 的构建产物。只有升级驱动时才需要重新生成，并在 [pvr-psp2-sys](https://github.com/jhq223/pvr-psp2-sys) 仓库执行（需要 Windows 官方 PSVSDK，其中要含 `psp2snc`、`psp2ld`、`armlibgen`，外加 CMake 3.22+、Ninja 和 rustc）：
 
 ```powershell
 $env:SCE_PSP2_SDK_DIR = 'C:/SDK/PSVita/sdk'
@@ -123,15 +123,7 @@ $env:CMAKE_GENERATOR = 'Ninja'
 cargo build --features build-driver
 ```
 
-构建结束会打印模块目录（形如 `target/debug/build/pvr-psp2-sys-*/out/pvr-driver/module`），把里面的四个 `.suprx` 复制过去。已有同一次驱动构建产出的模块时，直接放进该目录即可。
-
-放好后自检，四个文件都要在：
-
-```powershell
-Get-ChildItem crates/host-vita/runtime/module
-```
-
-缺模块时 VPK 仍能打包和安装，但一进游戏就会报 `failed to load app0:module/...`。驱动与四个模块必须来自同一次构建，不要混用不同版本。
+构建结束会打印模块目录（形如 `target/debug/build/pvr-psp2-sys-*/out/pvr-driver/module`），把里面的四个 `.suprx` 覆盖到 `crates/host-vita/runtime/module/`。驱动、`eboot.bin` 和这四个模块必须来自同一版本，混用可能加载失败或渲染异常；缺模块时 VPK 仍能打包安装，但一进游戏就会报 `failed to load app0:module/...`。
 
 #### 2.2 准备 WSL2 构建环境
 
@@ -204,7 +196,7 @@ cargo vita build vpk --release -p krkr-host-vita --locked --target-dir target/vi
 eboot.bin                       构建生成
 sce_sys/                        param.sfo（构建生成）、icon0.png、pic0.png
   livearea/contents/            template.xml、bg0.png、startup.png
-module/                         四个 GPU 模块（需自行放入 runtime/module/）
+module/                         四个 GPU 模块（来自 runtime/module/）
 licenses/                       秋水书体、Nivora、PromptFont 的许可
 ```
 
@@ -288,7 +280,7 @@ ux0:/data/KRKR/
 
 | 现象 | 原因与处理 |
 | --- | --- |
-| 进游戏报 `failed to load app0:module/...` | VPK 里缺 GPU 模块，按 [2.1](#21-先准备-gpu-运行模块必须最容易漏) 补齐后重新打包安装 |
+| 进游戏报 `failed to load app0:module/...` | VPK 里缺 GPU 模块，按 [2.1](#21-确认-gpu-运行模块仓库已自带) 补齐后重新打包安装 |
 | 游戏启动就报资源错误或黑屏 | 资源没在 PC 上归一化/解密；加密 XP3 无法在主机上打开 |
 | 没有声音 | 音频仍是 Opus 没有转 AT9，或转换时没提供 `at9tool.exe` |
 | 画面拉伸、裁切或错位 | 生成 PSV 资源时画布尺寸填错，重新转换 |

@@ -8,6 +8,7 @@
 *.tjs text eol=lf
 *.yml text eol=lf
 *.ttf binary
+*.suprx binary
 crates/krkr-render/fonts/QiushuiShotai-LICENSE.txt -text
 crates/host-vita/runtime/sce_sys/livearea/contents/template.xml text eol=crlf
 crates/host-vita/runtime/licenses/* -text

@@ -1,0 +1,67 @@
+// Run with the desktop host. Pixel expectations follow krkr2's active OGL
+// PerspectiveAlphaBlend_a, not its separate OpenCV software path.
+System.exitOnWindowClose = false;
+function check(ok, message) { if (!ok) throw message; }
+function fails(fn) { try { fn(); } catch(e) { return true; } return false; }
+function near(a,b) { return Math.abs(a-b)<=1; }
+Plugins.link("perspective.dll");
+var w = new Window(); w.caption = "perspective alignment";
+w.setInnerSize(640,360);
+var root = new Layer(w,null); root.setSize(640,360);
+var src = new Layer(w,root), dst = new Layer(w,root), saved = new Layer(w,root);
+src.setImageSize(2,2); dst.setImageSize(8,8);
+src.face=dfAlpha; src.fillRect(0,0,2,2,0xffffffff);
+src.setMainPixel(0,0,0xff0000); src.setMaskPixel(0,0,128);
+src.setMainPixel(1,0,0x00ff00); src.setMainPixel(0,1,0x0000ff);
+dst.face=dfAlpha; dst.fillRect(0,0,8,8,0x400000ff);
+dst.face=dfProvince; dst.fillRect(0,0,8,8,7);
+dst.holdAlpha=true; dst.setClip(0,0,0,0); src.setClip(0,0,0,0);
+dst.update = function() { throw "native Update must not call script override"; };
+saved.assignImages(dst);
+check(dst.perspectiveCopy(src,0,0,1,1,1,1,3,1,1,3,3,3,"ignored")===void,"return value");
+var color = dst.getMainPixel(1,1);
+check(near((color>>16)&255,128) && (color&0xff00)==0 && near(color&255,127),"source alpha RGB blend");
+check(near(dst.getMaskPixel(1,1),160),"alpha ignores holdAlpha");
+check(dst.getMainPixel(2,1)==0x00ff00 && dst.getMainPixel(1,2)==0x0000ff,"four corner order");
+check(dst.getMainPixel(2,2)==0xffffff && dst.getMainPixel(3,2)==0x0000ff,"exclusive destination edge");
+check(dst.getProvincePixel(1,1)==7 && saved.getMainPixel(1,1)==0xff,"province preserved and COW");
+dst.perspectiveCopy(src,0,0,2,1,4,0,7,0,4,2,7,2);
+check(dst.getMainPixel(5,0)==0x00ff00 && dst.getMainPixel(6,0)==0x00ff00,"source endpoint +1 and edge clamp");
+dst.perspectiveCopy(src,0,0,1,1,4.2,4.2,6.8,4.2,4.2,6.8,6.8,6.8);
+check(dst.getMainPixel(6,5)==0xff,"reference integer scissor truncation");
+src.perspectiveCopy(src,2,0,-3,1,0,0,2,0,0,2,2,2);
+check(src.getMainPixel(0,0)==0x00ff00 && src.getMainPixel(0,1)==0xffffff,"reversed self copy");
+check(fails(function(){ dst.perspectiveCopy(); }),"missing arguments");
+check(fails(function(){ dst.perspectiveCopy(null,0,0,1,1,0,0,2,0,0,2,2,2); }),"null source");
+check(fails(function(){ dst.perspectiveCopy(new Bitmap(1,1,32),0,0,1,1,0,0,2,0,0,2,2,2); }),"Layer only source");
+check(fails(function(){ dst.perspectiveCopy(src,0,0,1,1,0,0,0,0,0,0,0,0); }),"singular destination");
+check(fails(function(){ dst.perspectiveCopy(src,0,0,1,1,0.0/0.0,0,2,0,0,2,2,2); }),"nonfinite input");
+var old = dst.perspectiveCopy;
+check(fails(function(){ (old incontextof %[])(src,0,0,1,1,0,0,2,0,0,2,2,2); }),"invalid receiver");
+Plugins.unlink("perspective.dll");
+check(typeof Layer.perspectiveCopy == "undefined","export removed");
+old(src,0,0,1,1,-2,-2,-1,-2,-2,-1,-1,-1);
+Plugins.link("perspective.tpm");
+check(typeof Layer.perspectiveCopy == "Object","alias reload");
+
+// A saved actual rendering makes shape, orientation and the shared diagonal
+// reviewable without desktop input automation or capturing unrelated windows.
+var board = new Layer(w,root); board.setImageSize(128,128); board.face=dfAlpha;
+for (var y=0;y<8;y++) for (var x=0;x<8;x++)
+    board.fillRect(x*16,y*16,16,16,((x+y)%2) ? 0xff297dba : 0xfff3e8c4);
+board.fillRect(0,0,16,16,0xffef5350);
+root.face=dfAlpha; root.fillRect(0,0,640,360,0xff14202c);
+root.perspectiveCopy(board,0,0,127,127,30,65,246,65,30,281,246,281);
+root.perspectiveCopy(board,0,0,127,127,330,90,565,35,295,295,605,265);
+root.font.height=20;
+root.drawText(30,18,"SOURCE",0xffffff);
+root.drawText(330,318,"PERSPECTIVE",0xffffff);
+root.saveLayerImage("target/perspective-output.png","png");
+w.visible=true;
+System.wait(100);
+invalidate board; invalidate saved; invalidate src; invalidate dst;
+check(fails(function(){ old(null,0,0,1,1,0,0,2,0,0,2,2,2); }),"invalidated method receiver");
+Plugins.unlink("perspective.tpm");
+invalidate root; invalidate w;
+Debug.message("PERSPECTIVE_OK");
+"passed";

@@ -1,0 +1,26 @@
+// Whole wave decoder registration/playback scenario on generated media.
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var sound=new WaveSoundBuffer(global);
+check(fails(function(){sound.open('target/wave-decoders/stereo.tcw');}),'TCWF requires its decoder');
+Plugins.link('wutcwf.dll');Plugins.link('wuvorbis.dll');
+sound.open('target/wave-decoders/stereo.tcw');
+check(sound.frequency==8000 && sound.channels==2 && sound.bits==16,'TCWF format');
+sound.volume=0;sound.play();System.wait(50);
+sound.paused=true;sound.samplePos=1234;check(sound.samplePos==1234,'TCWF exact sample seek');
+check(Plugins.unlink('wutcwf.dll'),'release creator while current decoder remains alive');
+sound.samplePos=4000;sound.paused=false;System.wait(30);sound.stop();
+var another=new WaveSoundBuffer(global);
+check(fails(function(){another.open('target/wave-decoders/stereo.tcw');}),'new opens lose unlinked decoder');
+Plugins.link('wutcwf.tpm');another.open('target/wave-decoders/stereo.tcw');
+sound.open('target/wave-decoders/source.ogg');
+check(sound.frequency==8000 && sound.channels==1 && sound.bits==16,'Vorbis format');
+sound.volume=0;sound.play();System.wait(30);sound.paused=true;sound.samplePos=2000;
+check(sound.samplePos==2000,'Vorbis sample seek');
+check(Plugins.unlink('wuvorbis.dll'),'Vorbis provider unload');
+sound.paused=false;System.wait(30);sound.stop();
+Plugins.link('wuvorbis.tpm');sound.open('target/wave-decoders/source.ogg');
+invalidate sound;invalidate another;
+check(Plugins.unlink('wutcwf.tpm') && Plugins.unlink('wuvorbis.tpm'),'batch released');
+Debug.message('WAVE_DECODERS_OK: TCWF and Vorbis, format, playback, seeks, creator lifetime and reload');
+'passed';

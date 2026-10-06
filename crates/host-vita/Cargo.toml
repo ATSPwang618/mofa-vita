@@ -1,0 +1,64 @@
+[package]
+name = "krkr-host-vita"
+version.workspace = true
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[features]
+windows-gles-tests = ["krkr-render-gles2/windows-gles-tests"]
+
+[dependencies]
+nivora-platform = { git = "https://github.com/jhq223/Nivora.git", rev = "2a31f23204eabc30a002c547ae30cc8cac532cd5", default-features = false }
+nivora-ui = { git = "https://github.com/jhq223/Nivora.git", rev = "2a31f23204eabc30a002c547ae30cc8cac532cd5", default-features = false }
+nivora-render-gles2 = { git = "https://github.com/jhq223/Nivora.git", rev = "2a31f23204eabc30a002c547ae30cc8cac532cd5", default-features = false, features = ["ab-glyph"] }
+krkr-engine = { path = "../krkr-engine" }
+tjs-runtime = { path = "../tjs-runtime" }
+tjs-core = { path = "../tjs-core" }
+tjs-front = { path = "../tjs-front" }
+tjs-bind = { path = "../tjs-bind" }
+krkr-render-gles2 = { path = "../render-gles2" }
+krkr-protocol = { path = "../krkr-protocol" }
+krkr-render = { path = "../krkr-render" }
+krkr-image = { path = "../krkr-image" }
+krkr-assets = { path = "../krkr-assets" }
+ab_glyph = "0.2.32"
+glow = "0.18"
+smallvec = "1.15"
+slotmap = "1"
+# SQLite's desktop VFS requires mmap/flock/ioctl, absent from Vita newlib.
+# Portable plugins remain installed; sqlite3 is not advertised on this host.
+krkr-plugins = { path = "../krkr-plugins", default-features = false }
+
+
+[target.'cfg(target_os = "vita")'.dependencies]
+krkr-render-gles2 = { path = "../render-gles2", features = ["sgx-binaries"] }
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+vitasdk-sys = { version = "0.3.3", features = ["SceAudiodec_stub", "SceAudio_stub", "ScePower_stub", "SceLibKernel_stub", "SceKernelThreadMgr_stub", "SceKernelDmacMgr_stub", "SceKernelModulemgr_stub", "SceCtrl_stub", "SceTouch_stub", "SceAvPlayer_stub", "SceSysmodule_stub", "SceSysmem_stub", "SceGxm_stub", "SceIofilemgr_stub", "SceRtc_stub"] }
+krkr-video = { path = "../krkr-video" }
+pvr-psp2-sys = { workspace = true }
+
+[target.'cfg(not(target_os = "vita"))'.dev-dependencies]
+tempfile = "3"
+libloading = "0.8"
+
+[[bin]]
+name = "krkr-vita"
+path = "src/main.rs"
+
+[lints.rust]
+# FFI is confined to this platform crate; portable crates forbid unsafe.
+unsafe_code = "deny"
+
+[package.metadata.vita]
+title_id = "KRKRJHRST"
+title_name = "KRKR"
+assets = "runtime"
+build_std = "std,panic_unwind"
+vita_make_fself_flags = ["-a", "0x2F00000000000001"]
+vita_mksfoex_flags = ["-d", "ATTRIBUTE2=12", "-s", "APP_VER=00.22", "-s", "VERSION=00.22"]
+
+# Preserve the symbols used when converting the executable and initializing PVR,
+# matching the known working ons-rs packaging configuration.
+[package.metadata.vita.profile.release]
+strip_symbols = false

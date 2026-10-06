@@ -1,0 +1,68 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+Plugins.link('expat.dll');
+var events=[];
+class Receiver {
+ function startElement(n,a){events.add('+'+n+':'+a.id);System.wait(1);}
+ function endElement(n){events.add('-'+n);}
+ function characterData(s){events.add(s);}
+ function processingInstruction(t,d){events.add('?'+t+':'+d);}
+ function comment(s){events.add('!'+s);}
+ function startCdataSection(){events.add('[');}
+ function endCdataSection(){events.add(']');}
+}
+var receiver=new Receiver(), p=new XMLParser(receiver);
+check(p.parse('<?xml version="1.0"?><r id="A&amp;B"><?go now?><!--note--><![CDATA[<hi>]]>雪<x/></r>'),'XML parse');
+check(events.join('|')=='+r:A&B|?go:now|!note|[|<hi>|]|雪|+x:|-x|-r','SAX order: '+events.join('|'));
+check(p.errorCode==0 && p.currentByteCount==0,'XML final status');
+check(!p.parse('<r><x></r>') && p.errorCode==7,'mismatched XML');
+check(!p.parse('<r a="1" a="2"/>') && p.errorCode==8,'duplicate XML attribute');
+check(!p.parse('<r>&absent;</r>') && p.errorCode==11,'unknown entity');
+check(!p.parse('<r/>junk') && p.errorCode==9,'trailing text');
+check(p.parse('<r/>'),'parser resets after errors');
+events.clear();check(p.parse('<!DOCTYPE r [<!ATTLIST r id NMTOKENS " a  b ">]><r/>'),'DTD attributes');
+check(events[0]=='+r:a b','DTD default and normalization');
+events.clear();check(p.parse('<!DOCTYPE r [<!ENTITY markup "<x/>">]><r>&markup;</r>'),'entity markup');
+check(events.join('|')=='+r:|+x:|-x|-r','entity markup callbacks');
+events.clear();check(p.parseStorage('source.xml'),'VFS XML parse');
+check(events.join('|')=='+r:|from storage|-r','VFS callbacks');
+var raw='';var target=%['defaultHandler'=>function(s){global.raw+=s;}];
+var d=new XMLParser(target);var source='<!DOCTYPE r [<!ENTITY word "hello">]><r>&word;</r>';
+check(d.parse(source) && raw==source,'default handler retains entity');
+raw='';target.defaultHandlerExpand=function(s){global.raw+=s;};
+check(d.parse(source) && raw=='<!DOCTYPE r [<!ENTITY word "hello">]><r>hello</r>','expanded default handler');
+check(p.parse('<!DOCTYPE r [<!ENTITY word "hello">]><r>&word;</r>'),'internal entity');
+var thrown=false;var broken=new XMLParser(%['startElement'=>function(n,a){throw 'callback marker';}]);
+try{broken.parse('<x/>');}catch(e){thrown=true;}check(thrown,'callback exception');
+
+// A failed callback must release the parse lease so the parser can be used again.
+try{broken.parse('<x/>');}catch(e){check(e=='callback marker' || e.message=='callback marker','lease released');}
+invalidate broken;invalidate p;invalidate d;
+check(Plugins.unlink('expat.dll'),'XML unload');Plugins.link('expat.tpm');
+class Inherited extends XMLParser {var value='';function characterData(s){value+=s;}}
+var inherited=new Inherited();check(inherited.parse('<r>ok</r>') && inherited.value=='ok','XML inheritance');
+invalidate inherited;check(Plugins.unlink('expat.tpm'),'XML reload');
+check(System.readRegValue('HKEY_CURRENT_USER\\missing')===void,'missing registry value');
+Plugins.link('registory.dll');
+check(fails(function(){System.writeRegValue('missing',1);}) && fails(function(){System.deleteRegValue('missing');}) && fails(function(){System.deleteRegKey('missing');}),'registry writes cannot succeed');
+Plugins.link('win32ole.dll');var ole=new WIN32OLE('absent');
+check(fails(function(){ole.invoke('Run');}) && fails(function(){ole.get('x');}) && fails(function(){ole.set('x',1);}), 'OLE dispatch unavailable');
+ole.getConstant();ole.addEvent('event');
+var active=new ActiveX('absent');active.setPos(3,4);active.setSize(12,13);active.visible=true;active.setExternalUI();
+check(active.left==3 && active.top==4 && active.width==12 && active.height==13 && !active.visible && !active.isValidWindow,'ActiveX dormant geometry');
+invalidate active;invalidate ole;Plugins.unlink('win32ole.dll');Plugins.unlink('registory.dll');
+Plugins.link('krmovie.dll');check(typeof VideoOverlay=='Object' || typeof VideoOverlay=='object','video class alias');Plugins.unlink('krmovie.dll');
+System.exitOnWindowClose=false;
+Plugins.link('qrcode.dll');
+var w=new Window(),root=new Layer(w,null),layer=new Layer(w,root);
+layer.drawQRCode('HELLO WORLD',0,1,false,0);check(layer.imageWidth==29 && layer.imageHeight==29,'QR version 1 with margin');
+check(typeof layer.drawQRCode('')=='String' || typeof layer.drawQRCode('')=='string','QR empty error');
+check(typeof layer.drawQRCode('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',0,1,false)=='String' || typeof layer.drawQRCode('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',0,1,false)=='string','QR fixed capacity error');
+layer.drawQRCode('二维码',3,0,true,7);check(layer.imageWidth>=29,'QR Unicode');
+Plugins.link('fftgraph.dll');layer.setImageSize(64,32);
+var sound=%['getVisBuffer'=>function(buffer,n,c,a){return 0;}];
+drawFFTGraph(layer,sound,0,0,64,32);
+drawFFTGraph(layer,sound,0,0,64,32,%['type'=>1,'division'=>16,'thick'=>2]);
+check(fails(function(){drawFFTGraph(layer,sound,0,0,64,32,%['type'=>1,'division'=>0]);}),'FFT rejects invalid division');
+invalidate w;
+42;

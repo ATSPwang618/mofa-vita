@@ -1,0 +1,40 @@
+// Shared scenario: tests/icons.rs checks decoded pixels, command ordering and
+// ownership; run this file with the real desktop host to exercise native icons.
+// wamsoft/windowEx 88c9be22: _setWindowIcon, _resetWindowIcon, _setApplicationIcon.
+Plugins.link("windowEx.dll");
+System.exitOnWindowClose = false;
+function check(value, message) { if (!value) throw message; }
+var failures = 0;
+check(System.setApplicationIcon("icons/blue-pe.bin") === void, "application result");
+var w = new Window();
+w.caption = "windowEx icon fixture";
+w.visible = true;
+check(w.setWindowIcon("icons/red.ico", true) === void, "window result");
+check(w.resetWindowIcon("ignored") === void, "reset result");
+try { System.setApplicationIcon("icons/missing.ico"); } catch (e) { failures++; }
+try { w.setWindowIcon("icons/missing.ico", true); } catch (e) { failures++; }
+w.resetWindowIcon();
+w.setWindowIcon("icons/blue-pe.bin");
+try { w.setWindowIcon("icons/bad.ico"); } catch (e) { failures++; }
+w.resetWindowIcon();
+// A non-string object is a clear request, without conversion or property calls.
+w.setWindowIcon("icons/red.ico");
+w.setWindowIcon(%[toString: function() { throw "unexpected conversion"; }]);
+w.setWindowIcon("", true);
+w.setWindowIcon("icons/red.ico", true);
+w.setWindowIcon();
+w.resetWindowIcon();
+var saved = w.resetWindowIcon;
+invalidate w;
+// The application's icon survives the window that supplied it.
+var other = new Window();
+other.caption = "windowEx inherited application icon";
+other.visible = true;
+try { saved(); } catch (e) { failures++; }
+System.setApplicationIcon("icons/blue-pe.bin");
+other.setWindowIcon("icons/red.ico", "0");
+System.setApplicationIcon(%[]);
+check(failures == 4, "icon failure paths");
+invalidate other;
+Plugins.unlink("windowEx.dll");
+"passed";

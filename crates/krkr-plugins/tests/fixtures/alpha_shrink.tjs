@@ -1,0 +1,50 @@
+// Entire eight-entry batch on generated pixels; real desktop host.
+System.exitOnWindowClose=false;
+Plugins.link('layerExBTOA.dll');Plugins.link('shrinkCopy.dll');
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var w=new Window(),root=new Layer(w,null);root.setImageSize(32,32);
+var a=new Layer(w,root),b=new Layer(w,root),shared=new Layer(w,root);
+a.setImageSize(5,5);a.face=dfAlpha;a.fillRect(0,0,5,5,0x7f112233);
+a.fillRect(2,0,3,5,0xff112244);shared.assignImages(a);
+a.face=dfProvince;a.fillRect(0,0,5,5,7);a.setClip(0,0,0,0);a.holdAlpha=true;
+a.copyRightBlueToLeftAlpha();
+check(a.getMaskPixel(0,0)==68 && a.getMaskPixel(2,0)==255 && shared.getMaskPixel(0,0)==127,'right half and COW');
+a.copyBottomBlueToTopAlpha();check(a.getMaskPixel(0,0)==51,'bottom half blue');
+a.fillAlpha(0);check(a.getMaskPixel(4,4)==255 && a.getProvincePixel(0,0)==7,'fill alpha ignores argument and retains province');
+a.copyAlphaToProvince(128);check(a.getProvincePixel(4,4)==1 && a.getMainPixel(0,0)==0x112233,'threshold province');
+a.copyAlphaToProvince(256);check(a.getProvincePixel(0,0)==0,'threshold beyond byte');
+a.copyAlphaToProvince();check(a.getProvincePixel(0,0)==255,'raw alpha to province');
+a.fillByProvince(255,0x5678);check(a.getMainPixel(0,0)==0x785678 && a.getMaskPixel(0,0)==86 && a.getMainPixel(4,0)==0x112244,'SDL16 province word layout');
+b.setImageSize(3,3);b.face=dfAlpha;b.fillRect(0,0,3,3,0x80123456);
+a.fillAlpha();a.clipAlphaRect(-1,-1,b,0,0,3,3,12);
+check(a.getMaskPixel(0,0)==128 && a.getMaskPixel(2,0)==12 && a.getMaskPixel(4,4)==12,'clip alpha multiply and outer clear');
+a.clipAlphaRect(99,99,b,0,0,3,3,9);check(a.getMaskPixel(0,0)==9,'empty intersection safely clears');
+check(fails(function(){a.clipAlphaRect(0,0,b,0,0,0,1);}) && fails(function(){a.fillByProvince(1);}), 'alpha parameter errors');
+b.copyAlphaToProvince();check(b.getProvincePixel(0,0)==128,'province allocated on demand');
+
+a.setImageSize(6,6);a.setClip(0,0,6,6);a.face=dfAlpha;a.holdAlpha=false;a.fillRect(0,0,6,6,0xffabcdef);
+b.setImageSize(4,4);b.fillRect(0,0,4,4,0x80112233);
+b.fillRect(3,0,1,4,0x80446688);b.fillRect(0,3,4,1,0x80446688);
+a.setClip(0,0,0,0);a.holdAlpha=true;a.face=dfProvince;
+var updates=0;a.update=function(){global.updates++;};
+a.shrinkCopy(1,1,2,2,b,0,0,4,4);
+check(a.getMainPixel(1,1)==0x112233 && a.getMaskPixel(1,1)==128 && a.getMainPixel(2,2)==0x375572,'general full edge integration');
+check(a.getMainPixel(0,0)==0xabcdef && updates==0,'shrink preserves outside and no update');
+a.shrinkCopy(-1,-1,2,2,b,0,0,4,4);check(a.getMainPixel(0,0)==0x375572,'negative destination clipping');
+a.shrinkCopy(99,99,2,2,b,0,0,4,4); // fully clipped no-op
+check(fails(function(){a.shrinkCopy(0,0,5,5,b,0,0,4,4);}), 'general rejects enlargement');
+b.fillRect(0,0,4,4,0x80112233);
+a.shrinkCopy(0.25,0.25,2,2,b,0,0,4,4);
+check(a.getMainPixel(0,0)==0x112233 && a.getMaskPixel(0,0)==72,'fractional edge keeps separate color and alpha weights');
+b.setImageSize(5,3);b.fillRect(0,0,5,3,0x00112233);b.fillRect(4,0,1,3,0xff445566);
+a.shrinkCopyFast(b,2);
+check(a.imageWidth==3 && a.imageHeight==2 && a.getMainPixel(0,0)==0x112233 &&
+      a.getMainPixel(2,1)==0x445566 && a.getMaskPixel(0,0)==255,'fast ceil dimensions, remainder, forced opaque');
+a.shrinkCopyFast(b,1,3);check(a.imageWidth==5 && a.imageHeight==1 && a.getMainPixel(4,0)==0x445566,'independent fast axes');
+check(fails(function(){a.shrinkCopyFast(b,0);}) && fails(function(){a.shrinkCopy();}), 'shrink parameter errors');
+check(Plugins.unlink('layerExBTOA.dll') && Plugins.unlink('shrinkCopy.dll'),'batch unload');
+Plugins.link('layerExBTOA.tpm');Plugins.link('shrinkCopy.tpm');a.fillAlpha();a.shrinkCopyFast(b,1);
+invalidate w;
+Debug.message('ALPHA_SHRINK_OK: eight entries, planes, COW, clipping, averaging, resize and reload');
+'passed';

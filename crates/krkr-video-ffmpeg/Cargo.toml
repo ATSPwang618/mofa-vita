@@ -1,0 +1,18 @@
+[package]
+name = "krkr-video-ffmpeg"
+version.workspace = true
+edition = "2024"
+
+[dependencies]
+krkr-video = { path = "../krkr-video" }
+krkr-audio = { path = "../krkr-audio" }
+krkr-assets = { path = "../krkr-assets" }
+krkr-protocol = { path = "../krkr-protocol" }
+ffmpeg-next = { version = "=9.0.0", default-features = false, features = ["codec", "format", "software-scaling", "software-resampling"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+flate2 = "1"

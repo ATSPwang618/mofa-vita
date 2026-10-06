@@ -1,0 +1,14 @@
+[package]
+name = "tjs-front"
+version.workspace = true
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+tjs-core = { path = "../tjs-core" }
+
+[dev-dependencies]
+tjs-bind = { path = "../tjs-bind" }
+
+[lints]
+workspace = true

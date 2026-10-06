@@ -1,0 +1,36 @@
+[package]
+name = "krkr-rs"
+version.workspace = true
+edition = "2024"
+rust-version = "1.98.1"
+
+[workspace]
+members = [".", "crates/tjs-core", "crates/tjs-front", "crates/tjs-bind", "crates/tjs-macros", "crates/tjs-runtime", "crates/krkr-engine", "crates/krkr-plugins", "crates/krkr-assets", "crates/krkr-kag", "crates/krkr-protocol", "crates/host-desktop", "crates/krkr-render", "crates/render-wgpu", "crates/krkr-image", "crates/krkr-audio", "crates/krkr-video", "crates/krkr-video-ffmpeg", "tools/krkr-convert", "crates/host-vita", "crates/render-gles2", "tools/krkr-profiler"]
+resolver = "3"
+
+[workspace.package]
+version = "0.2.2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.dependencies]
+pvr-compiler = { git = "https://github.com/jhq223/pvr-compiler.git", rev = "854f535074c9dd4a2f7c5e6ecc104a8fddb11fc0" }
+pvr-psp2-sys = { git = "https://github.com/jhq223/pvr-psp2-sys.git", rev = "46c8a36d222df237f19c6ec9e99950c5eae33e26" }
+slotmap = "1.1.1"
+thiserror = "2"
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+codespan-reporting = { version = "0.13.1", default-features = false, features = ["std"] }
+tjs-core = { path = "crates/tjs-core" }
+tjs-front = { path = "crates/tjs-front" }
+tjs-bind = { path = "crates/tjs-bind" }
+tjs-runtime = { path = "crates/tjs-runtime" }
+krkr-engine = { path = "crates/krkr-engine" }
+krkr-plugins = { path = "crates/krkr-plugins" }
+krkr-host-desktop = { path = "crates/host-desktop" }
+jiff = "0.2"
+
+[lints]
+workspace = true

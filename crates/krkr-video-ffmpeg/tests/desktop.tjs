@@ -1,0 +1,61 @@
+// Run from tests/data with: krkr-rs engine run ../desktop.tjs --host desktop
+// Self-generated media only; this does not start a game or reference engine.
+System.exitOnWindowClose = false;
+var keepAlive = new Window();
+var w = new Window();
+w.caption = "krkr-rs FFmpeg 9 playback";
+w.setInnerSize(480, 270);
+var root = new Layer(w, null);
+root.setImageSize(480, 270); root.setSize(480, 270);
+root.fillRect(0, 0, 480, 270, 0xff203040); root.visible = true;
+var layer1 = new Layer(w, root), layer2 = new Layer(w, root);
+layer1.setImageSize(160, 90); layer1.setSize(160, 90);
+layer2.setImageSize(160, 90); layer2.setSize(160, 90);
+layer2.top = 100;
+var statuses = "", periods = "", updates = 0;
+class Movie extends VideoOverlay {
+    function Movie(win) { super.VideoOverlay(win); }
+    function onStatusChanged(s) { global.statuses += s + ";"; Debug.message("VIDEO_STATUS:" + s + ":" + position); }
+    function onPeriod(reason) { global.periods += reason + ";"; Debug.message("VIDEO_PERIOD:" + reason); }
+    function onFrameUpdate(n) { global.updates++; }
+}
+var v = new Movie(w);
+v.mode = vomMixer; v.open("movie.mp4");
+if(v.originalWidth != 160 || v.originalHeight != 90 || v.fps != 24 ||
+   v.numberOfAudioStream != 2 || v.numberOfVideoStream != 2) throw "metadata";
+v.setBounds(0, 0, 480, 270); v.visible = true; w.visible = true;
+v.audioVolume = 12000; v.setPeriodEvent(12); v.play();
+System.wait(650); v.pause();
+var paused = v.position;
+System.wait(100); if(v.position != paused) throw "pause clock moved";
+v.frame = 24; v.enabledAudioStream = 1; v.play();
+System.wait(1500);
+if(v.status != "stop" || periods != "1;") throw "audio completion/period";
+v.close(); v.mode = vomLayer; v.layer1 = layer1; v.layer2 = layer2;
+v.open("movie.mp4"); v.enabledAudioStream = -1; v.visible = true;
+v.prepare(); System.wait(250);
+if(v.status != "pause" || updates == 0) throw "prepare";
+if(layer1.imageWidth != 160 || layer2.imageWidth != 160) throw "layer sizing";
+if(layer1.getMainPixel(50, 20) != layer2.getMainPixel(50, 20)) throw "two-layer pixels";
+v.setPos(20, 10);
+if(layer1.left != 20 || layer2.left != 20 || layer1.top != 10 || layer2.top != 10) throw "layer position forwarding";
+layer2.top = 115;
+v.enabledVideoStream = 1; System.wait(100);
+if(v.originalWidth != 96 || v.originalHeight != 64 || v.fps != 12 || v.enabledVideoStream != 1) throw "video stream switch";
+v.visible = false;
+if(layer1.visible || layer2.visible) throw "layer visibility";
+v.visible = true;
+v.setSegmentLoop(2, 6); v.play(); System.wait(700); v.cancelSegmentLoop();
+if(periods.indexOf("3;") < 0) throw "segment loop";
+v.rewind(); v.loop = true; System.wait(2200); v.loop = false;
+if(periods.indexOf("0;") < 0) throw "full loop";
+// Stream 1 is solid blue. Read back actual GPU pixels after upload/copy.
+var color = layer1.getMainPixel(30, 20) & 0xffffff;
+if((color & 255) < 200 || ((color >> 16) & 255) > 30) throw "decoded GPU pixel";
+v.close(); v.open("movie.mp4"); v.play();
+w.close(); System.wait(10);
+if(v.status != "unload") throw "window did not disconnect movie";
+invalidate v;
+Debug.message("VIDEO_DESKTOP_OK");
+System.exit(0);
+keepAlive.close();

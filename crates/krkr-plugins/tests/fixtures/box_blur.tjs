@@ -1,0 +1,13 @@
+function check(v,s) {if(!v) throw s;}
+System.exitOnWindowClose=false;
+var w=new Window();w.setInnerSize(7,5);
+var root=new Layer(w,null);root.setSize(7,5);
+var l=new Layer(w,root),saved=new Layer(w,root);
+l.setImageSize(7,5);l.face=dfProvince;l.fillRect(0,0,7,5,39);
+l.face=dfAlpha;l.fillRect(0,0,7,5,0x00ff0000);l.fillRect(3,2,1,1,0xff30a0e0);
+saved.assignImages(l);l.setClip(3,2,1,1);l.holdAlpha=true;l.doBoxBlur(1,1);
+check(l.getMainPixel(3,2)==0x2da3e3 && l.getMaskPixel(3,2)==28,'alpha blur uses full neighborhood and one average');
+check(l.getMainPixel(2,2)==0xff0000 && l.getMaskPixel(2,2)==0,'blur changes only clip');
+check(l.getProvincePixel(3,2)==39 && saved.getMainPixel(3,2)==0x30a0e0 && saved.getMaskPixel(3,2)==255,'blur keeps province and snapshot');
+l.assignImages(saved);l.face=dfAddAlpha;l.setClip(3,2,1,1);l.doBoxBlur(1,1);
+check(l.getMainPixel(3,2)==0xe81219 && l.getMaskPixel(3,2)==28,'additive face averages all channels directly');

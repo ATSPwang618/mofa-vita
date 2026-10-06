@@ -1,0 +1,11 @@
+Kirikiri2 extrans algorithms and turn sampling table: Copyright W.Dee.
+Reference revision: 9b54995e19a8c8d6c17ef82a59b8174da995cbd6.
+Source directory: kirikiri2/src/plugins/win32/extrans.
+
+This directory contains a Rust adaptation of the reference's wave, mosaic,
+turn, rotate and ripple algorithms. turn_table.bin preserves the 4096 reference
+turn rows as six little-endian signed 32-bit fields: start, len, sx, sy,
+stepx, stepy (unused ex/ey fields omitted). It is not generated at build time
+and building this project never reads or compiles the reference directory.
+
+The original Kirikiri2 license is reproduced in kirikiri2-license.txt.

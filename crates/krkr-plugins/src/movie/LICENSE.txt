@@ -1,0 +1,5 @@
+Kirikiri2 layerExMovie plugin: わたなべごう (Go Watanabe).
+This is an altered Rust/WGSL adaptation based on revision
+9b54995e19a8c8d6c17ef82a59b8174da995cbd6, kirikiri2/src/plugins/win32/layerExMovie.
+The original plugin readme applies the Kirikiri2 engine license, reproduced
+in ../extrans/kirikiri2-license.txt. No DirectShow SDK sample code is included.

@@ -1,0 +1,4 @@
+[
+  {"at_ms": 1000, "action": "mark", "label": "fixture ready"},
+  {"at_ms": 1100, "action": "screenshot"}
+]

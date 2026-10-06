@@ -1,0 +1,12 @@
+[package]
+name = "krkr-video"
+version.workspace = true
+edition = "2024"
+
+[dependencies]
+krkr-assets = { path = "../krkr-assets" }
+krkr-protocol = { path = "../krkr-protocol" }
+krkr-audio = { path = "../krkr-audio" }
+
+[lints]
+workspace = true

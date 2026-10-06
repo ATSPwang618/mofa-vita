@@ -1,0 +1,70 @@
+// One desktop scenario for the whole plugin: actual seven-effect frames,
+// callbacks, source exchange, option failures and active-provider lifetime.
+System.exitOnWindowClose=false;
+function check(ok,why) { if(!ok) throw why; }
+function fails(fn) { try { fn(); } catch(e) { return true; } return false; }
+Plugins.link("extrans.dll");
+var w=new Window();w.caption="extrans seven effects";w.setInnerSize(800,672);
+var root=new Layer(w,null);root.setImageSize(800,672);root.setSize(800,672);
+root.face=dfAlpha;root.fillRect(0,0,800,672,0xff161b25);root.visible=true;
+var oldPage=new Layer(w,root),newPage=new Layer(w,root);
+oldPage.setImageSize(128,80);newPage.setImageSize(128,80);
+oldPage.face=dfAlpha;newPage.face=dfAlpha;
+oldPage.fillRect(0,0,128,80,0xff163f85);newPage.fillRect(0,0,128,80,0xffc16923);
+for(var y=0;y<80;y+=16) for(var x=0;x<128;x+=16) {
+    if(((x/16+y/16)%2)==0) oldPage.fillRect(x,y,16,16,0xff43cce8);
+    if(x>=32 && x<96) newPage.fillRect(x,y,16,16,0xffffd467);
+}
+oldPage.fillRect(0,0,8,80,0xffff3f68);newPage.fillRect(120,0,8,80,0xff6cfb8d);
+var a=new Layer(w,root),b=new Layer(w,root);
+a.setSize(128,80);b.setSize(128,80);a.type=ltOpaque;b.type=ltOpaque;
+var names=["wave","mosaic","turn","rotatezoom","rotatevanish","rotateswap","ripple"];
+var phase=0,observedPhase=-1,completed=0;
+w.action=function(e) { if(e.type=="onTransitionCompleted") global.completed++; };
+w.visible=true;
+for(var row=0;row<names.count;row++) {
+    a.assignImages(oldPage);b.assignImages(newPage);a.visible=true;b.visible=false;
+    phase=0;observedPhase=-1;
+    var options=%[time:1000,selfupdate:true,callback:function(){global.observedPhase=global.phase;return global.phase;},
+        maxh:12,maxomega:0.3,maxsize:22,bgcolor:0xff272b38,
+        bgcolor1:0xff272b38,bgcolor2:0xff272b38,factor:0,twist:1,
+        centerx:64,centery:40,rwidth:32,maxdrift:8];
+    a.beginTransition(names[row],true,b,options);
+    check(!Plugins.unlink("extrans.dll"),"active transition must retain plugin");
+    for(var column=0;column<5;column++) {
+        phase=column*250;a.update();
+        while(observedPhase!=phase) System.wait(1);
+        if(column==4) while(completed<row+1) System.wait(1);
+        root.piledCopy(144*column+72,row*96+8,column==4 ? b:a,0,0,128,80);
+    }
+    check(completed==row+1,"completion must be delivered once");
+    check(!a.visible && b.visible && b.getMainPixel(124,40)==0x6cfb8d,"final page exchange");
+}
+a.visible=false;b.visible=false;
+check(root.getMainPixel(424,48)==0xa0cfa8,"wave center uses original integer blend");
+check(root.getMainPixel(424,144)==0xa0cfa8,"mosaic center uses original integer blend");
+check(fails(function(){a.beginTransition("missing",false,b,%[time:100]);}),"unknown handler");
+check(fails(function(){a.beginTransition("wave",false,b,%[]);}),"required time");
+check(fails(function(){a.beginTransition("mosaic",false,b,%[time:100,maxsize:0]);}),"invalid mosaic");
+check(fails(function(){a.beginTransition("ripple",false,b,%[time:100,rwidth:17]);}),"invalid ripple width");
+check(fails(function(){a.beginTransition("ripple",false,b,%[time:100,roundness:0]);}),"invalid ripple roundness");
+check(fails(function(){a.beginTransition("ripple",false,b,%[time:100,maxdrift:128]);}),"invalid ripple drift");
+var touched=false;
+class BadOptions { function BadOptions() {} var time=100,centerx=-1,centery=0; property rwidth { getter() { global.touched=true;return 32; } } }
+check(fails(function(){a.beginTransition("ripple",false,b,new BadOptions());}) && !touched,"option validation order");
+a.visible=true;phase=0;
+a.beginTransition("wave",false,b,%[time:1000,callback:function(){return global.phase;}]);
+a.stopTransition();System.wait(50);
+a.visible=false;b.visible=false;
+root.font.height=10;
+for(var label=0;label<names.count;label++) root.drawText(3,label*96+36,names[label],0xffffff);
+root.saveLayerImage("target/extrans-output.png","png");
+System.wait(50);
+check(Plugins.unlink("extrans.dll"),"completed frames must release plugin");
+check(fails(function(){a.beginTransition("turn",false,b,%[time:100]);}),"unloaded handler");
+Plugins.link("extrans.tpm");
+a.visible=true;a.beginTransition("mosaic",false,b,%[time:1000]);a.stopTransition();
+System.wait(50);a.visible=false;
+check(Plugins.unlink("extrans.tpm"),"reloaded provider cleanup");
+Debug.message("EXTRANS_OK seven effects, callbacks, snapshots, exchange and lifetime");
+w.close();

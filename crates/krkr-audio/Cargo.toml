@@ -1,0 +1,17 @@
+[package]
+name = "krkr-audio"
+version.workspace = true
+edition = "2024"
+rust-version = "1.95"
+
+[dependencies]
+krkr-assets = { path = "../krkr-assets" }
+krkr-protocol = { path = "../krkr-protocol" }
+symphonia = { version = "0.6.0", default-features = false, features = ["pcm", "adpcm", "vorbis", "flac", "mp3", "wav", "ogg"] }
+rustfft = { version = "6.4.1", default-features = false }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3"

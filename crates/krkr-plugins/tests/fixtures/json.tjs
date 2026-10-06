@@ -1,0 +1,118 @@
+// Reference: krkrz/krkrz@49c4d53506edecb824cd7b2cff8d32959b1f1b70,
+// src/plugins/win32/json/Main.cpp and Writer.hpp. No original binary executed.
+function check(value, message) { if (!value) throw message; }
+function fails(fn) { try { var value = fn(); } catch(e) { return true; } return false; }
+Plugins.link("json.dll");
+check(fails(function(){ return Scripts.evalJSON(); }), "parse required argument");
+check(fails(function(){ return Scripts.evalJSON(12); }), "parse strict string");
+check(fails(function(){ return Scripts.evalJSONStorage(12); }), "storage strict string");
+check(fails(function(){ return Scripts.toJSONString(); }), "writer required argument");
+check(fails(function(){ return Scripts.saveJSON("bad"); }), "save requires value");
+check(fails(function(){ return Scripts.evalJSON(""); }), "empty source error");
+Scripts.evalJSON("{broken"); // The original skips parsing when no result is requested.
+Scripts.evalJSONStorage("bad.json");
+Scripts.evalJSONStorage("large.json"); // Open only, no read budget admission.
+check(fails(function(){ return Scripts.evalJSONStorage("large.json"); }), "read input budget");
+check(fails(function(){ return Scripts.evalJSONStorage("missing.json"); }), "missing file throws");
+check(fails(function(){ return Scripts.evalJSONStorage("bom.json", true); }), "no text stream BOM detection");
+check(fails(function(){ return Scripts.evalJSON("/* unterminated"); }), "unterminated comment");
+check(fails(function(){ return Scripts.evalJSON("'unterminated"); }), "unterminated quote bounded");
+check(fails(function(){ return Scripts.evalJSON('{ bare:1 }'); }), "unquoted keys are keywords only");
+check(fails(function(){ return Scripts.evalJSON('{ 1:2 }'); }), "dictionary keys require strings");
+var parsed = Scripts.evalJSON("/* comment */ { 'a' => [010; 08, 1e3, 1.0e3, +.5, 1+2, null, void,,]; 'a':3, 'b'='ok';,}");
+check(parsed.a == 3 && parsed.b == "ok", "permissive dictionary and duplicates");
+var values = Scripts.evalJSON("# comment\n[010; 08, 1e3, 1.0e3, +.5, 1+2, null, void,,] trailing");
+check(values.count == 9 && values[0] === 8 && values[1] === 0 && values[2] === 1, "legacy integer prefixes");
+check(typeof values[3] == "Real" && values[3] == 1000 && values[4] == 0.5 && values[5] == 1, "real point discriminator");
+check(typeof values[6] == "void" && typeof values[7] == "void" && typeof values[8] == "void", "null void and holes");
+check(Scripts.evalJSON("true") === 1 && Scripts.evalJSON("false") === 0, "boolean integers");
+check(Scripts.evalJSON("9223372036854775808") == 9223372036854775807, "wcstoi64 saturation");
+check(Scripts.evalJSON('"a\\u0000b\\x41\\q"') == "abAq", "character escapes and omitted NUL");
+check(#Scripts.evalJSON('"\\uD800"') == 0xd800, "UTF16 isolated surrogate parsing");
+check(Scripts.toJSONString(surrogate).length == 3, "UTF16 isolated surrogate serialization");
+check(Scripts.toJSONString(nulString) == '"a"', "writer C-string prefix");
+check(Scripts.toJSONString(void) == "null" && Scripts.toJSONString(null) == "null", "null writer values");
+check(Scripts.toJSONString(<% 01 ff %>) == "null", "octet writer fallback");
+check(Scripts.toJSONString(1.0) == "1" && Scripts.toJSONString(1.0/0.0) == "Infinity", "TJS real formatting");
+check(Scripts.toJSONString([]) == "[\r\n \r\n]", "empty array indentation");
+check(Scripts.toJSONString(%[], 1) == "{\n \n}", "empty dictionary indentation");
+check(Scripts.toJSONString([1,2], 2) == "[\r\n 1,\r\n 2\r\n]", "unknown newline uses CRLF");
+check(Scripts.toJSONString([1], 4294967297) == "[\n 1\n]", "newline narrows to i32");
+check(Scripts.toJSONString(flagged, 1) == "{\n \"visible\":7\n}", "hidden member omitted");
+var getterCalls = 0;
+class WithProperty { property p { getter() { global.getterCalls++; throw "must not call getter"; } } }
+var propertyObject = new WithProperty;
+var rawProperty = Scripts.toJSONString(propertyObject, 1);
+check(getterCalls == 0 && rawProperty.indexOf('"p":{') >= 0, "dictionary ignores property getter");
+check(Scripts.toJSONString([&propertyObject.p], 1) == "[\n {\n  \n }\n]" && getterCalls == 0, "array ignores property getter");
+var invalid = %[]; invalidate invalid;
+check(Scripts.toJSONString(invalid, 1) == "{\n \n}", "invalid enumeration status ignored");
+var cyclic = []; cyclic.push(cyclic);
+Scripts.toJSONString(cyclic, %[]); // Discarding skips traversal and option conversion.
+check(fails(function(){ return Scripts.toJSONString(cyclic); }), "cycles bounded");
+Storages.addAutoPath("patch/");
+var joined = Scripts.evalJSONStorage("joined.json", %[]);
+check(joined[0] == 12 && joined[1] == "ab", "binary reader joins lines and ignores second argument value");
+check(Scripts.saveJSON("utf8.json", ["雪", void], true, 1) === void, "save void return");
+Scripts.saveJSON("default.json", [1,2], false);
+Scripts.saveJSON("surrogate.json", surrogate, true);
+check(Scripts.evalJSONStorage("utf8.json", true)[0] == "雪", "UTF8 round trip");
+check(fails(function(){ return Scripts.saveJSON("bad.json", [], %[]); }), "save utf8 integer conversion");
+check(fails(function(){ return Scripts.saveJSON("missing/out.json", []); }), "save open failure");
+
+// Count is captured at link time. Its getter may mutate storage state, throw,
+// or allocate values; the Rust harness collects after every single VM step.
+check(Plugins.unlink("json.dll"), "first unlink");
+var originalCount = &Array.count;
+var countCalls = 0, mode = "normal", token = %[message:"count failure"], mutationTarget;
+class CountProbe {
+    property count { getter() {
+        global.countCalls++;
+        if (global.mode == "throw") throw global.token;
+        if (global.mode == "cwd") Storages.currentPath = "moved/";
+        if (global.mode == "mutate") {
+            global.mutationTarget.a = 99;
+            global.mutationTarget.b = 99;
+            global.mutationTarget.c = 99;
+        }
+        if (global.mode == "observe" && global.countCalls == 2)
+            check(Storages.fstat("flushed.json").size > 1024, "string writes flush before nested callback");
+        return this.length;
+    } }
+}
+&Array.count = &CountProbe.count;
+Plugins.link("json.dll");
+&Array.count = &originalCount;
+check(Scripts.toJSONString([4], 1) == "[\n 4\n]" && countCalls == 1, "captured getter bound to array");
+mutationTarget = %[a:[], b:[], c:[]];
+countCalls = 0; mode = "mutate";
+var mutated = Scripts.toJSONString(mutationTarget, 1);
+check(countCalls == 1 && mutated.indexOf(":99") >= 0, "later dictionary slots observe callback mutations");
+var savedWriter = Scripts.toJSONString;
+mode = "throw";
+var caught = void;
+try { Scripts.saveJSON("prefix.json", [1]); } catch(e) { caught = e; }
+check(caught === token, "getter exception identity retained");
+mode = "cwd";
+Plugins.link("fstat.dll");
+var oldPath = Storages.currentPath;
+Scripts.saveJSON("fixed.json", [3]);
+Storages.currentPath = oldPath;
+mode = "observe"; countCalls = 0;
+var longText = "";
+for (var i = 0; i < 1200; i++) longText += "a";
+Scripts.saveJSON("flushed.json", [longText, []]);
+check(countCalls == 2, "buffer observer callback ran");
+mode = "normal";
+class Derived extends Array {
+    function Derived() { super.Array(); }
+    function missing(set, name, result) { if (name == "1") { *result = 9; return true; } return false; }
+}
+var derived = new Derived;
+derived.push(0,0,0);
+derived[0] = 7;
+enableMissing(derived);
+check(Scripts.toJSONString(derived, 1) == "[\n 7,\n 9,\n \n]", "inherited numeric raw dispatch and missing status");
+check(Plugins.unlink("json.dll"), "second unlink");
+check(savedWriter([5], 1) == "[\n 5\n]", "retained native function and captured getter survive unload");
+return "passed";

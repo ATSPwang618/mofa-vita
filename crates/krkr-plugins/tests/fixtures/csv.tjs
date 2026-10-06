@@ -1,0 +1,90 @@
+// Complete csvParser.dll scenario, krkr2@dca72645/cpp/plugins/csvParser.cpp.
+function check(value, message) { if (!value) throw message; }
+function fails(fn) { try { var result=fn(); } catch(e) { return true; } return false; }
+check(!('CSVParser' in global), 'explicit plugin installation');
+Plugins.link('csvParser.dll');
+var p = new CSVParser;
+check(p.getNextLine() === void && p.currentLineNumber==0, 'uninitialized cursor');
+p.init('A,B,\r\n\r\n"雪,海","x""y"tail\n"one\ntwo",end\n');
+var a=p.getNextLine(), b=p.getNextLine(), c=p.getNextLine(), d=p.getNextLine();
+check(a.count==3 && a[0]=='A' && a[1]=='B' && a[2]=='', 'trailing empty field');
+check(b.count==0, 'blank physical line');
+check(c.count==2 && c[0]=='雪,海' && c[1]=='x"ytail', 'quotes escapes and permissive suffix');
+check(d.count==2 && d[0]=='one\r\ntwo' && d[1]=='end' && p.currentLineNumber==4, 'logical row count');
+check(p.getNextLine()===void && p.getNextLine()===void && p.currentLineNumber==4, 'EOF remains closed');
+p.init(',\n"unterminated');
+check(p.getNextLine().count==2 && p.getNextLine()[0]=='unterminated\r\n', 'empty fields and reference open quote at EOF');
+p.init('a\rb');
+check(p.getNextLine()[0]=='a' && p.getNextLine()[0]=='b', 'bare CR does not lose final character');
+p.init(void); check(p.getNextLine()===void && p.currentLineNumber==0, 'void input is empty');
+p.init(nulCsv); a=p.getNextLine(); b=p.getNextLine();
+check(a.count==0 && b[0]=='a"b' && b[1]=='c', 'physical line NUL omission preserves quoting');
+check(fails(function(){p.init(17);}) && fails(function(){p.init();}) && fails(function(){new CSVParser(void);}), 'parameter checks');
+check(fails(function(){p.currentLineNumber=10;}), 'line counter is read only');
+p.init('skip\nkeep'); p.getNextLine(); check(p.getNextLine()[0]=='keep', 'discarded result still consumes row');
+var custom=new CSVParser(null, #';', '|');
+custom.init('"a\nb";c;'); a=custom.getNextLine();
+check(a.count==3 && a[0]=='a|b' && a[1]=='c' && a[2]=='', 'custom separator and newline');
+var files=['utf8.csv','utf16.csv','cipher.csv','compressed.csv','data.xp3>table.csv'];
+for(var i=0;i<files.count;i++) {
+    p.initStorage(files[i]);
+    a=p.getNextLine(); b=p.getNextLine();
+    check(a[0]=='name' && a[1]=='雪' && b[0]=='x' && b[1]=='line\r\nbreak' && p.getNextLine()===void, 'text stream source '+files[i]);
+}
+p.initStorage('raw.csv', true); a=p.getNextLine();
+check(a[0]==($0xfeff)+'A' && a[1]=='B' && p.getNextLine()===void, 'explicit raw UTF8 preserves BOM and terminates at NUL');
+p.initStorage('large.csv');
+check(p.getNextLine()[0].length==150000 && p.getNextLine()[0]=='end', 'chunked storage and sliced long record');
+check(fails(function(){p.initStorage('absent.csv');}) && p.getNextLine()===void && p.currentLineNumber==2, 'failed replacement closes old input');
+check(fails(function(){p.initStorage('invalid.csv');}) && fails(function(){p.initStorage('invalid.csv',true);}), 'malformed encoded source');
+p.parse('retained'); check(p.currentLineNumber==0 && p.getNextLine()[0]=='retained', 'missing doLine does not consume input');
+var rows=[], receiver=%[label:'target'];
+receiver.doLine=function(row,n) {
+    global.rows.add([this.label,row,n]);
+    this.doLine=function(){throw 'callback was not captured';};
+    global.System.wait(0);
+    return false; // The original ignores callback return values.
+};
+var wrong=%[label:'wrong'];
+receiver.doLine = receiver.doLine incontextof wrong;
+var q=new CSVParser(receiver);
+q.parse('first\nsecond');
+check(rows.count==2 && rows[0][0]=='target' && rows[1][1][0]=='second' && rows[1][2]==2, 'captured callback and explicit target this');
+var ownRows=[];
+class Derived extends CSVParser {
+    function Derived(){super.CSVParser();}
+    function doLine(row,n){ global.ownRows.add([row,n]); }
+}
+var derived=new Derived;
+derived.parseStorage('utf16.csv');
+check(ownRows.count==2 && ownRows[0][0][1]=='雪' && ownRows[1][1]==2, 'derived receiver and parseStorage');
+derived.init('pending'); derived.parseStorage();
+check(ownRows.count==3 && ownRows[2][0][0]=='pending', 'parseStorage without arguments uses current source');
+var sentinel=%[message:'row error'];
+p.doLine=function(row,n){throw global.sentinel;};
+var caught=false;
+try { p.parse('delivered\nafter-error'); } catch(e) { caught=e===sentinel; }
+check(caught && p.currentLineNumber==1 && p.getNextLine()[0]=='after-error', 'callback exception and consumed row');
+var reentered=false, nested='';
+p.doLine=function(row,n) {
+    if(!global.reentered) {
+        global.reentered=true;
+        global.nested=this.getNextLine()[0];
+        this.init('replacement');
+    }
+};
+p.parse('first\nnested\nunused');
+check(reentered && nested=='nested' && p.currentLineNumber==1 && p.getNextLine()===void, 'callback can read and replace shared cursor');
+// Raw callback lookup must not execute an accessor body as a function.
+class GetterTarget { property doLine { getter(){throw 'raw property executed';} } }
+(new CSVParser(new GetterTarget)).parse('row');
+p.doLine=17; check(fails(function(){p.parse('unread');}) && p.currentLineNumber==0, 'non-object callback errors before reading');
+var oldClass=CSVParser, oldInit=p.init;
+check(Plugins.unlink('csvParser.dll') && !('CSVParser' in global), 'unload removes export');
+var retained=new oldClass; retained.init('alive'); check(retained.getNextLine()[0]=='alive', 'retained class after unlink');
+Plugins.link('csvParser.tpm');
+var fresh=new CSVParser; fresh.init('new'); check(fresh.getNextLine()[0]=='new', 'reload class');
+invalidate p;
+check(fails(function(){oldInit('closed');}), 'invalidated receiver rejects retained method');
+invalidate custom; invalidate q; invalidate derived; invalidate retained; invalidate fresh;
+'passed';

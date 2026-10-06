@@ -1,0 +1,41 @@
+[package]
+name = "krkr-host-desktop"
+version.workspace = true
+edition = "2024"
+rust-version = "1.95"
+build = "../../build.rs"
+
+[dependencies]
+tjs-runtime = { path = "../tjs-runtime" }
+krkr-video-ffmpeg = { path = "../krkr-video-ffmpeg" }
+krkr-audio = { path = "../krkr-audio" }
+cpal = "0.18.1"
+krkr-render = { path = "../krkr-render" }
+krkr-render-wgpu = { path = "../render-wgpu" }
+wgpu = { version = "30.0.1", default-features = false }
+pollster = "0.4"
+krkr-engine = { path = "../krkr-engine" }
+krkr-image = { path = "../krkr-image" }
+krkr-protocol = { path = "../krkr-protocol" }
+winit = "0.30.13"
+directories = "6"
+fs4 = { version = "1.1", default-features = false, features = ["sync"] }
+uuid = { version = "1", features = ["v5"] }
+fontdb = { version = "0.23", default-features = false, features = ["fs", "fontconfig"] }
+ttf-parser = "0.25"
+clipboard-rs = { version = "0.3.5", features = ["wayland"] }
+image = { version = "0.25", default-features = false }
+rfd = { version = "0.17.2", features = ["common-controls-v6"] }
+enigo = { version = "0.6.1", features = ["wayland"] }
+memory-stats = { version = "1.2", features = ["always_use_statm"] }
+
+[target.'cfg(windows)'.dependencies]
+known-folders = "1.4"
+
+[dev-dependencies]
+tempfile = "3"
+tjs-core = { path = "../tjs-core" }
+tjs-front = { path = "../tjs-front" }
+
+[lints]
+workspace = true

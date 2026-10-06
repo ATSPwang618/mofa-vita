@@ -1,0 +1,21 @@
+function check(v,s) {if(!v) throw s;}
+System.exitOnWindowClose=false;
+Plugins.link('layerExYADraw.dll');
+var w=new Window();w.setInnerSize(13,9);
+var root=new Layer(w,null);root.setSize(13,9);
+var l=new Layer(w,root),saved=new Layer(w,root);
+l.setImageSize(13,9);l.face=dfProvince;l.fillRect(0,0,13,9,47);
+l.face=dfAlpha;l.fillRect(0,0,13,9,0x206090c0);saved.assignImages(l);
+l.holdAlpha=true;l.YAdrawLine(0,0,12,8,0x93cae517,0);
+check(l.getMainPixel(6,4)==0xcae517 && l.getMaskPixel(6,4)==147,'Bresenham replacement');
+check(l.getMainPixel(0,1)==0x6090c0 && l.getProvincePixel(6,4)==47,'line coverage and province');
+check(saved.getMainPixel(6,4)==0x6090c0 && saved.getMaskPixel(6,4)==32,'line snapshot');
+l.YAdrawLine(0,1,0,1,0xffffffff,0);
+check(l.getMainPixel(0,1)==0x6090c0,'zero-length non-AA line');
+l.holdAlpha=false;l.fillRect(0,0,13,9,0x206090c0);
+l.YAdrawLine(3,0,3,8,0xc0c04020,1,4);
+check(l.getMainPixel(3,1)==0xc04020 && l.getMaskPixel(3,1)==96,'AA fade');
+check(l.getMainPixel(4,1)==0x608fbf && l.getMaskPixel(4,1)==32,'AA neighbor packed mixing');
+l.drawFocusLines(6,4,0,0,40,40,30,30,0xffc739e5);
+check(l.getMainPixel(6,4)==0xc739e5 && l.getMaskPixel(6,4)==255,'indexed focus-line batches');
+check(l.getProvincePixel(6,4)==47,'focus lines keep province');

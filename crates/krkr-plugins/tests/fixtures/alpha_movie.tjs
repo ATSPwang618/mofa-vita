@@ -1,0 +1,34 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+Plugins.link('AlphaMovie.dll');Plugins.link('expat.dll');
+global.drawFFTGraph=function(){return 17;};var saved=drawFFTGraph;
+Plugins.link('fftgraph.dll');check(drawFFTGraph(1,2)===void,'reference FFT no-op');Plugins.unlink('fftgraph.dll');check(drawFFTGraph===saved,'FFT restores prior export');
+var w=new Window(),a=new Layer(w,null),b=new Layer(w,a),m=new AlphaMovie();
+check(!m.isPlaying() && m.numOfFrame==0 && m.FPSScale==1 && m.FPSRate==1,'defaults');
+m.loop=false;m.nextLoop=true;m.preloadSamples=4;m.FPSScale=2;m.setPosition(4,5);
+m.open('target/alpha-movie/zlib.amv');check(m.numOfFrame==2 && m.FPSRate==24 && m.screenWidth==32 && m.screenHeight==32,'header');
+check(m.nextLoop && m.preloadSamples==4 && m.FPSScale==2 && m.left==4 && m.top==5,'open retains controls');
+check(m.showNextImage(a)==1 && !m.isPlaying(),'script-driven frames independent of playing flag');
+check(a.imageWidth==32 && a.width==32 && a.height==32,'assigned dimensions');
+check(a.getMainPixel(4,5)==0x3c6e9c && a.getMaskPixel(4,5)==0 && a.getMaskPixel(19,20)==255,'YUV conversion and zlib alpha');
+check(a.getMaskPixel(0,0)==0,'transparent untouched canvas');
+m.play();check(m.isPlaying(),'play flag');
+m.setPosition(0,0);check(m.showNextImage(b)==2,'second frame');
+check(b.getMainPixel(0,0)==0x6395c3 && b.getMainPixel(7,0)==0x4d7fad,'integer IDCT AC output');
+check(b.getMaskPixel(19,20)==255,'persistent movie canvas across target layers');
+check(m.showNextImage(b)==1 && !m.loop,'reference always wraps');
+m.frame=0;m.numOfFrame=99;check(m.showNextImage(a)==1 && m.numOfFrame==99,'mutable count does not alter actual frame bounds');
+m.clear();check(m.numOfFrame==0 && m.frame==1 && m.isPlaying(),'clear preserves frame and playing');
+m.screenWidth=12;m.screenHeight=13;check(m.showNextImage(a)==1 && a.imageWidth==12 && a.width==12 && a.height==13,'cleared movie still resizes target');
+m.stop();check(m.frame==0 && !m.isPlaying(),'stop clears and resets');
+m.open('target/alpha-movie/movie.xp3>inside.amv');m.setPosition(-2,-3);check(m.showNextImage(a)==1 && a.getMaskPixel(0,0)==160,'YUVA alpha and clipped negative position through XP3');
+m.setNextMovieFile('ignored-reference.amv');check(m.numOfFrame==2,'reference next file no-op');
+m.frame=-1;check(fails(function(){m.showNextImage(a);}),'invalid frame safely fails');
+check(fails(function(){m.open('target/alpha-movie/bad.amv');}),'truncated payload rejected');
+m.open('target/alpha-movie/short.amv');check(m.numOfFrame==0,'short file leaves cleared state');
+invalidate m;invalidate a;invalidate b;invalidate w;
+check(Plugins.unlink('AlphaMovie.dll') && Plugins.unlink('expat.dll'),'unload');
+Plugins.link('AlphaMovie.tpm');var again=new AlphaMovie();check(again.numOfFrame==0,'reload');invalidate again;Plugins.unlink('AlphaMovie.tpm');
+Plugins.link('fftgraph.tpm');Plugins.unlink('fftgraph.tpm');Plugins.link('expat.tpm');Plugins.unlink('expat.tpm');
+Debug.message('ALPHA_MOVIE_OK: zlib/YUVA, AC/DC, XP3, frame controls, canvas and compatibility exports');
+'passed';

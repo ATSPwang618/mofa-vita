@@ -1,0 +1,91 @@
+// Whole layerExSave scenario. All pixels and files are generated here.
+System.exitOnWindowClose=false;
+Plugins.link('layerExSave.dll');
+function check(ok,message){if(!ok)throw message;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+function rect(r,x,y,w,h){return r!==void && r.x==x && r.y==y && r.w==w && r.h==h;}
+function waitUntil(fn){var end=System.getTickCount()+8000;while(!fn()){if(System.getTickCount()>end)throw 'save timeout';System.wait(10);}}
+var w=new Window();w.caption='layerExSave alignment';w.setInnerSize(480,220);
+var root=new Layer(w,null);root.setImageSize(480,220);root.setSize(480,220);root.face=dfAlpha;
+root.fillRect(0,0,480,220,0xff203040);root.font.height=18;
+root.drawText(16,12,'LAYEREXSAVE: PIXELS + PNG/TLG5 + JOBS',0xffffff);
+var a=new Layer(w,root), b=new Layer(w,root), saved=new Layer(w,root);
+a.setImageSize(8,6);a.face=dfAlpha;a.fillRect(0,0,8,6,0x00112233);
+check(a.getCropRect()===void && rect(a.getCropRectZero(),0,0,8,6),'alpha crop versus zero crop');
+a.fillRect(2,1,3,2,0xff204060);check(rect(a.getCropRect(),2,1,3,2),'nontransparent crop bounds');
+a.clearAlpha(0,0);check(rect(a.getCropRectZero(),2,1,3,2),'clear transparent RGB');
+b.assignImages(a);b.face=dfAlpha;b.fillRect(0,0,1,1,0x00445566);
+check(a.getDiffRect(b)===void && a.getDiffPixel(b)===0,'transparent RGB ignored in diff');
+b.fillRect(3,2,1,1,0xffa0b0c0);check(rect(a.getDiffRect(b),3,2,1,1),'difference rectangle');
+saved.assignImages(a);a.face=dfProvince;a.fillRect(0,0,8,6,9);a.setClip(0,0,0,0);a.holdAlpha=true;
+check(a.getDiffPixel(b,void,0x7f112233)===1 && a.getMainPixel(3,2)==0x112233 && a.getMaskPixel(3,2)==127,'diff fill ignores face clip and holdAlpha');
+check(saved.getMainPixel(3,2)==0x204060,'diff fill preserves shared source');
+check(a.getProvincePixel(3,2)==9,'pixel utilities preserve province');
+a.setClip(0,0,8,6);a.face=dfAlpha;a.fillRect(0,0,8,6,0x7f112200);
+check(a.isBlank(0,0,8,6) && a.isBlank(99,99,4,4),'blank checks BLUE only');
+a.fillRect(0,0,8,6,0x7f112233);
+check(!a.isBlank(-1,-1,3,3) && a.getAverageColor(-1,-1,3,3)==0x3322117f,'average keeps original byte order');
+check(fails(function(){a.getAverageColor(99,99,1,1);}) && fails(function(){a.copyBlueToAlpha();}),'invalid ranges and required source');
+b.setImageSize(2,2);b.face=dfAlpha;b.fillRect(0,0,2,2,0xff01020b);
+a.copyBlueToAlpha(b);check(a.getMaskPixel(1,1)==11 && a.getMaskPixel(2,1)==127,'blue alpha bounded copy');
+check(fails(function(){a.getDiffRect(b);}), 'diff size check');
+a.clearAlpha(11,0x667788);check(a.getMainPixel(0,0)==0x667788 && a.getMaskPixel(0,0)==0 && a.getMaskPixel(2,1)==127,'inclusive alpha threshold');
+
+// Color diffusion advances one four-neighbor frontier per pass, preserving alpha.
+a.setImageSize(5,5);a.fillRect(0,0,5,5,0);a.fillRect(1,2,1,1,0xffc80000);a.fillRect(3,2,1,1,0xff0000c8);
+a.oozeColor(1,128,0xabcdef);
+check(a.getMainPixel(2,2)==0x640064 && a.getMaskPixel(2,2)==0 && a.getMainPixel(2,1)==0xabcdef,'frontier average and no same-pass leakage');
+check(fails(function(){a.oozeColor(0);}), 'invalid diffusion level');
+root.piledCopy(16,60,a,0,0,5,5);
+a.fillRect(0,0,5,5,0);a.fillRect(2,2,1,1,0xff204080);a.oozeColor(2,257,0);
+check(a.getMainPixel(0,2)==0x204080 && a.getMainPixel(1,1)==0x204080 && a.getMainPixel(0,0)==0,'two-pass diffusion and u8 threshold');
+
+// File and Octet exports, PNG chunk metadata, dynamic getters and TLG tags.
+a.setImageSize(8,6);a.fillRect(0,0,8,6,0x7f112233);
+var metaGets=0,compGets=0;
+class Tags {
+    property reso_x { getter(){global.metaGets++;return 1200;} }
+    property comp_lv { getter(){global.compGets++;return 0;} }
+    var reso_y=2400,reso_unit='meter',offs_x=-3,offs_y=7,offs_unit='micrometer',vpag_w=800,vpag_h=600,vpag_unit='pixel';
+}
+a.saveLayerImagePng('target/layer-ex-save.png',new Tags());
+check(metaGets==3 && compGets==3,'PNG ncb getter order');
+a.saveLayerImageTlg5('target/layer-ex-save.tlg',%['title'=>'generated','日本語'=>'透明']);
+b.loadImages('target/layer-ex-save.png');check(a.getDiffRect(b)===void,'PNG pixels round trip');
+b.loadImages('target/layer-ex-save.tlg');check(a.getDiffRect(b)===void,'TLG5 pixels round trip');
+var png=a.saveLayerImagePngOctet(0);check(typeof png=='Octet' && png[0]==137 && png[1]==80 && png[25]==6,'RGBA PNG Octet');
+compGets=0;png=a.saveLayerImagePngOctet(new Tags());check(png[0]==137 && compGets==0,'reference Octet ignores comp_lv dictionary key');
+a.saveLayerImagePngOctet('bad-unused-value'); // Discard skips conversion and encoding.
+check(fails(function(){var invalid=a.saveLayerImagePngOctet(99);}), 'invalid numeric compression fails');
+a.fillRect(0,0,8,6,0xff224466);a.saveLayerImagePng('target/layer-ex-save-opaque.png');
+png=a.saveLayerImagePngOctet();check(png[25]==2,'opaque PNG uses RGB');
+
+// Background callbacks receive a cloned Layer, retain source pixels, and reuse slots.
+var done=0,progress=0,canceled=0,seen=%[];
+w.onSaveLayerImageProgress=function(id,percent,layer,name){
+    global.progress++;check(percent>0 && percent<=100 && layer!==global.a && layer.name=='saveLayer:'+name,'progress arguments');
+};
+w.onSaveLayerImageDone=function(id,cancel,layer,name){
+    check(name!='target/layer-ex-save-stopped.png','stopped save must not notify');
+    global.done++;global.seen[name]=id;
+    if(cancel)global.canceled++;else check(layer.getMainPixel(0,0)==0x224466,'snapshot Layer pixels');
+};
+var first=w.startSaveLayerImage(a,'target/layer-ex-save-async.PNG',%['offs_x'=>4]);
+var second=w.startSaveLayerImage(a,'target/layer-ex-save-async.tlg',%['job'=>'snapshot']);
+check(first==0 && second==1 && !Plugins.unlink('layerExSave.dll'),'job handles and unload protection');
+a.fillRect(0,0,8,6,0xffabcdef);w.visible=true;
+waitUntil(function(){return done==2;});check(progress>0 && canceled==0,'successful progress and done');
+b.loadImages('target/layer-ex-save-async.PNG');check(b.getMainPixel(0,0)==0x224466,'async file snapshot');
+a.fillRect(0,0,8,6,0xff224466);
+var stopped=w.startSaveLayerImage(a,'target/layer-ex-save-stopped.png',void);check(stopped==0,'first free handle reuse');w.stopSaveLayerImage(stopped);
+var last=w.startSaveLayerImage(a,'target/layer-ex-save-cancel.png',void);check(last==0,'stopped slot immediately reusable');w.cancelSaveLayerImage(last);
+waitUntil(function(){return done==3;});check(canceled==1,'cancel notifies done once');
+w.cancelSaveLayerImage(-1);w.stopSaveLayerImage(999);check(fails(function(){w.startSaveLayerImage(a,'target/x');}), 'required job arguments');
+root.drawText(16,110,'15 METHODS / SNAPSHOT / CANCEL / SLOT REUSE',0x99eecc);
+root.saveLayerImage('target/layer-ex-save-output.png','png');
+check(Plugins.unlink('layerExSave.dll'),'completed jobs unload');Plugins.link('layerExSave.tpm');
+check(rect(a.getCropRect(),0,0,8,6),'reload');
+var invalid=w.startSaveLayerImage(a,'target/layer-ex-save-invalidate.png',void);invalidate w;
+check(Plugins.unlink('layerExSave.tpm'),'window invalidation releases jobs');
+Debug.message('LAYER_EX_SAVE_OK 15 methods, pixels, PNG/TLG5, metadata, snapshot jobs, cancel, stop and reload');
+'passed';

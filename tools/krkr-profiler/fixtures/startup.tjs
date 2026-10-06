@@ -1,0 +1,11 @@
+System.exitOnWindowClose=false;
+var w=new Window(); w.setInnerSize(1024,576);
+var root=new Layer(w,null); root.setSize(1024,576); root.setImageSize(1024,576);
+root.face=dfAlpha; root.fillRect(0,0,1024,576,0xff203040); root.visible=true;
+for(var y=0;y<576;y+=32) for(var x=0;x<1024;x+=32)
+    root.fillRect(x,y,16,16,0xffe0b050);
+Debug.message("profile fixture: before blur");
+root.doBoxBlur(4,4);
+root.doBoxBlur(1,1);
+Debug.message("profile fixture: after blur");
+w.visible=true;

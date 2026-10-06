@@ -1,0 +1,6 @@
+layerExSave plugin: わたなべごう (Go Watanabe).
+Altered Rust implementation based on kirikiri2 revision
+9b54995e19a8c8d6c17ef82a59b8174da995cbd6, src/plugins/win32/layerExSave.
+The original plugin uses the Kirikiri2 engine license, reproduced in
+../extrans/kirikiri2-license.txt. This implementation uses the existing Rust
+PNG and TLG encoders; it does not include LodePNG or Win32 implementation code.

@@ -1,0 +1,4 @@
+/target
+**/target/
+/krkr.console.log
+**/__pycache__/

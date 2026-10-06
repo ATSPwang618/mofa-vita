@@ -1,0 +1,25 @@
+[package]
+name = "tjs-bind"
+version.workspace = true
+edition = "2024"
+
+[dependencies]
+fancy-regex = "0.19.1"
+smallvec = "1.15"
+tjs-core = { path = "../tjs-core" }
+tjs-macros = { path = "../tjs-macros" }
+
+[target.'cfg(not(target_os = "vita"))'.dependencies]
+jiff = "0.2"
+
+[target.'cfg(target_os = "vita")'.dependencies]
+# Newlib has no readlink or Unix zoneinfo database. The host installs native
+# RTC conversions through date::timezone; Jiff still supplies calendar arithmetic.
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+rand_mt = { version = "6", default-features = false }
+tjs-front = { path = "../tjs-front" }
+
+[lints]
+workspace = true

@@ -1,0 +1,75 @@
+// Source: clipboardEx.cpp SHA256 8c965d10aefe099cdaa85c996dd5452dd5348bf0ef26ddac8277ed946b976c30.
+// Runs only with the in-memory clipboard Host; never use this on the desktop host.
+System.exitOnWindowClose = false;
+function check(value, name) { if (!value) throw name; }
+function fails(fn) { try { var result = fn(); } catch(e) { return true; } return false; }
+var countCalls = 0, countThrows = false, countError = %[message:"count failure"];
+var oldCount = &Array.count;
+class CountProbe { property count { getter() {
+    global.countCalls++;
+    if (global.countThrows) throw global.countError;
+    return this.length;
+} } }
+&Array.count = &CountProbe.count;
+Plugins.link("clipboardEx.dll");
+// Reading a native property through a global binds that global as this.
+// Clear the temporary binding before restoring an instance class accessor.
+&Array.count = (&oldCount incontextof null);
+check([1,2].count == 2, "restored Array.count uses the array receiver");
+check(cbfText == 1 && cbfBitmap == 2 && cbfTJS == 3, "format constants");
+check(!Clipboard.hasFormat(99) && !Clipboard.getAsBitmap(null), "unknown and absent formats");
+var b = new Bitmap(2,2,32), out = new Bitmap(1,1,32);
+b.setPixel(0,0,0x123456); b.setMaskPixel(0,0,17);
+b.setPixel(1,0,0xff8844); b.setMaskPixel(1,0,255);
+b.setPixel(0,1,0x112233); b.setMaskPixel(0,1,0);
+b.setPixel(1,1,0x987654); b.setMaskPixel(1,1,128);
+var exact = 0x1.0000000000001p0;
+var expression = %[type:"sample", body:[exact,-0.0,void,null,<% 01 ab ff %>,"a\"b\\c"]];
+Clipboard.setMultipleData(%[text:"copy", bitmap:b, tjs:expression]);
+check(Clipboard.hasFormat(cbfText) && Clipboard.hasFormat(cbfBitmap) && Clipboard.hasFormat(cbfTJS), "combined formats");
+check(Clipboard.asText == "copy", "text roundtrip");
+var decoded = Clipboard.asTJS;
+check(countCalls == 1 && decoded.type == "sample" && decoded.body.count == 6, "captured count and containers");
+check(decoded.body[0] === exact && (1.0 / decoded.body[1]) < 0, "exact real and negative zero");
+check(decoded.body[2] === void && decoded.body[3] === null && decoded.body[4] === <% 01 ab ff %> && decoded.body[5] == "a\"b\\c", "scalar expression roundtrip");
+check(Clipboard.getAsBitmap(out) && out.width == 2 && out.height == 2, "Bitmap destination resizes");
+check(out.getPixel(0,0) == 0x123456 && out.getMaskPixel(0,0) == 17 && out.getMaskPixel(0,1) == 0, "alpha and orientation");
+b.setPixel(0,0,0xffffff);
+check(out.getPixel(0,0) == 0x123456, "independent Bitmap destination");
+var w = new Window, root = new Layer(w,null), art = new Layer(w,root);
+art.copyFromBitmapToMainImage(b);
+var accesses = "";
+class Multiple {
+    property text { getter() { global.accesses += "t"; return "layer"; } }
+    property layer { getter() { global.accesses += "l"; return global.art; } }
+    property bitmap { getter() { throw "layer takes priority"; } }
+    property tjs { getter() { global.accesses += "j"; return global.expression; } }
+}
+Clipboard.setMultipleData(new Multiple);
+check(accesses == "ttlljj", "probe/read order and original layer key");
+var destination = new Layer(w,root);
+check(Clipboard.getAsBitmap(destination), "Layer destination upload");
+check(destination.width == 2 && destination.height == 2 && destination.imageWidth == 2 && destination.imageHeight == 2, "Layer geometry commits");
+check(destination.getMainPixel(1,0) == 0xff8844 && destination.getMaskPixel(1,1) == 128, "Layer pixels and alpha");
+Clipboard.setAsBitmap(destination);
+check(Clipboard.hasFormat(cbfBitmap) && !Clipboard.hasFormat(cbfText) && !Clipboard.hasFormat(cbfTJS), "bitmap replaces formats");
+Clipboard.asTJS = expression;
+check(!Clipboard.hasFormat(cbfBitmap) && Clipboard.hasFormat(cbfTJS), "TJS replaces formats");
+countThrows = true;
+var caught;
+try { Clipboard.setMultipleData(%[text:"must not commit", tjs:expression]); } catch(e) { caught = e; }
+check(caught === countError && !Clipboard.hasFormat(cbfText), "getter exception prevents entire write");
+countThrows = false;
+check(fails(function(){ Clipboard.setMultipleData(%[]); }), "empty format list rejected");
+check(fails(function(){ Clipboard.asTJS = %[body:3]; }), "TJS requires type");
+check(fails(function(){ Clipboard.asTJS = %[type:"bad"]; }), "TJS requires body");
+var cycle = []; cycle.push(cycle);
+check(fails(function(){ Clipboard.asTJS = %[type:"cycle", body:cycle]; }), "bounded cycle detection");
+Clipboard.asText = "text only";
+check(Clipboard.asTJS === void && !Clipboard.hasFormat(cbfBitmap), "missing TJS returns void");
+var notifications=0, aliasNotifications=0;
+w.onDrawClipboard = function() { global.notifications++; System.wait(0); };
+w.onClipboardChanged = function() { global.aliasNotifications++; };
+w.clipboardWatchEnabled = true;
+check(w.clipboardWatchEnabled, "watch enabled");
+return "passed";

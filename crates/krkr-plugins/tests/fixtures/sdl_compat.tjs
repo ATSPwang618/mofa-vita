@@ -1,0 +1,19 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var original=function(){return 9;};global.gfxFire=original;
+Plugins.link('gfxEffect.dll');Plugins.link('lzfs.dll');
+var messages=[],log=Debug.message;
+Debug.message=function(s){messages.add(s);};
+var fire=new gfxFire();fire.finalize();
+check(messages.count==2 && messages[0]=='gfxFire construct' && messages[1]=='gfxFire finalize','reference diagnostic callbacks');
+check(Storages.getFullPath('LZFS://Domain/Case/File')=='lzfs://Domain/Case/File','medium preserves case');
+check(!Storages.isExistentStorage('lzfs://Domain/Case/File'),'reference empty medium');
+check(Storages.getLocalName('lzfs://Domain/Case/File')=='','no native path');
+check(fails(function(){Scripts.execStorage('lzfs://Domain/Case/File');}),'no fabricated contents');
+invalidate fire;Debug.message=log;
+check(Plugins.unlink('gfxEffect.dll') && global.gfxFire===original,'restore overwritten class');
+check(Plugins.unlink('lzfs.dll') && fails(function(){Storages.getFullPath('lzfs://Domain/Case');}),'unregister medium');
+Plugins.link('gfxEffect.tpm');Plugins.link('lzfs.tpm');
+var again=new gfxFire();invalidate again;Plugins.unlink('gfxEffect.tpm');Plugins.unlink('lzfs.tpm');
+Debug.message('SDL_COMPAT_OK: diagnostic class, empty case-sensitive medium, unload and reload');
+'passed';

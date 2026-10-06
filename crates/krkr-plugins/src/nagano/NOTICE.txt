@@ -1,0 +1,13 @@
+extNagano portable adaptation
+
+Algorithm reference: https://github.com/wamsoft/extNagano
+Revision: 4b403e2f684756c490975b9d1697289aa1f34240
+Upstream authors listed in readme.txt:
+  ヤマモト / Shun / chiyoclone.net / シノハラ
+  tp_stub and common helpers: W.Dee
+
+The reference is itself a reconstruction of extNagano 1.2.4.726 and states
+that it follows Kirikiri's original-license / GNU GPL dual licensing.
+This Rust/GLES/WGSL adaptation replaces CPU image buffers with managed GPU
+sampling and bounded tables. It intentionally approximates visual behavior;
+it is not the original DLL, nor a claim of pixel-identical emulation.

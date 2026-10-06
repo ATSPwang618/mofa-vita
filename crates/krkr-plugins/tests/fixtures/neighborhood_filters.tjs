@@ -1,0 +1,22 @@
+function check(v,s) {if(!v) throw s;}
+System.exitOnWindowClose=false;
+Plugins.link('layerExImage.dll');Plugins.link('filter.dll');
+var w=new Window();w.setInnerSize(11,9);
+var root=new Layer(w,null);root.setSize(11,9);
+var l=new Layer(w,root),saved=new Layer(w,root);
+l.setSize(11,9);l.setImageSize(11,9);
+l.face=dfProvince;l.fillRect(0,0,11,9,53);
+l.face=dfAlpha;l.fillRect(0,0,11,9,0);l.fillRect(5,0,1,9,0xffffffff);
+saved.assignImages(l);l.setClip(2,1,7,7);l.gaussianBlur(1);
+check(l.getMainPixel(4,4)==0x555555 && l.getMainPixel(5,4)==0x565656 && l.getMainPixel(6,4)==0x555555,'integrated Gaussian kernel');
+check(l.getMaskPixel(4,4)==85 && l.getMaskPixel(5,4)==86,'Gaussian includes straight alpha');
+check(l.getMainPixel(3,4)==0 && l.getMainPixel(5,0)==0xffffff,'Gaussian support and output clip');
+check(saved.getMainPixel(5,4)==0xffffff && l.getProvincePixel(4,4)==53,'Gaussian keeps snapshot and province');
+l.gaussianBlur(0);check(l.getMainPixel(5,4)==0x565656,'zero Gaussian radius');
+l.setImageSize(3,3);l.setClip(0,0,3,3);l.fillRect(0,0,3,3,0);l.fillRect(0,0,1,1,0xffffffff);
+saved.assignImages(l);Smudge(%[layer:l,level:1]);
+check(l.getMainPixel(0,0)==0x9f9f9f && l.getMaskPixel(0,0)==159,'Smudge substitutes center for missing neighbors');
+check(l.getMainPixel(1,0)==0x1f1f1f && l.getMainPixel(2,2)==0,'Smudge excludes center from its eight samples');
+Blur(%[layer:l,level:99,type:1]);check(l.getMainPixel(0,0)==0x9f9f9f,'disabled Blur leaves pixels unchanged');
+Blur(%[layer:l,level:1,type:0]);check(l.getMainPixel(0,0)==0x6f6f6f && l.getMaskPixel(0,0)==111,'Blur repeats Smudge with byte truncation');
+check(saved.getMainPixel(0,0)==0xffffff && saved.getMaskPixel(0,0)==255,'Smudge keeps snapshot');

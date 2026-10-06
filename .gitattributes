@@ -1,0 +1,13 @@
+* text=auto
+.gitattributes text eol=lf
+*.rs text eol=lf
+*.wgsl text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.md text eol=lf
+*.tjs text eol=lf
+*.yml text eol=lf
+*.ttf binary
+crates/krkr-render/fonts/QiushuiShotai-LICENSE.txt -text
+crates/host-vita/runtime/sce_sys/livearea/contents/template.xml text eol=crlf
+crates/host-vita/runtime/licenses/* -text

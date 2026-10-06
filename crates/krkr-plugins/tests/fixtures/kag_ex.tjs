@@ -1,0 +1,49 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var base=KAGParser, old=new KAGParser();
+Plugins.link('KAGParserEx.dll');
+check(KAGParser!==base,'independent class');
+class Scenario extends KAGParser {
+    function Scenario(source){super.KAGParser();this.source=source;debugLevel=0;ignoreCR=true;}
+    function onScenarioLoad(name){return source;}
+}
+function parser(source){var p=new Scenario(source);p.loadScenario('virtual.ks');return p;}
+var p=parser('[pmacro name=style x=1 x=2 nested=true][pmacro name=nested y="`&6*7"][show before=ok style after=end]');
+var tag=p.getNextTag();
+check(tag.tagname=='show' && tag.x==='2' && tag.y==='42' && tag.before=='ok' && tag.after=='end','recursive parameter macros');
+check(tag.taglist.join(',')=='tagname,before,x,x,y,after','ordered duplicate attributes');
+var saved=p.store();
+check(saved.paramMacros.style.count==6,'parameter macro save format');
+var q=parser('[erasepmacro name=style][show]');q.paramMacros.style=['x','1'];q.getNextTag();
+check(q.paramMacros.style===void,'erase parameter macro');
+p=parser('[show a=1 \\\n;b=2 \\\n;c=3]discard\n[next]');p.multiLineTagEnabled=true;
+tag=p.getNextTag();
+check(tag.a=='1' && tag.b=='2' && tag.c=='3' && p.curLine==3 && p.getNextTag().tagname=='next','multiline tag consumption');
+q=parser('[show a=1 \\\n;b=2]');check(fails(function(){q.getNextTag();}),'multiline opt in');
+p=parser('[macro name=m][out before=keep * after=yes][endmacro][m a=1 a=2]');
+tag=p.getNextTag();
+check(tag.before=='keep' && tag.after=='yes' && tag.a=='2' && tag.taglist.join(',')=='tagname,before,a,a,after','ordered macro spread');
+saved=p.store();check(saved.macroArgs[0].join(',')=='tagname,m,a,2,a,2','ordered macro argument save');
+q=parser('x');q.multiLineTagEnabled=true;q.assign(p);
+check(q.multiLineTagEnabled && q.mp.a=='2' && q.getNextTag()===void,'assign cursor and arguments');
+q.source=p.source;q.restore(saved);check(q.mp.a=='2','restore macro arguments');
+p=parser('😀');check(p.getNextTag().text=='😀' && p.getNextTag()===void,'whole unicode character');
+p=parser('[show style]');
+var sequence='';
+class Pairs {
+    property count {getter(){sequence+='c';return 4;}}
+    property a {getter(){sequence+='0';return 'x';}}
+    property b {getter(){sequence+='1';return '&mark()';}}
+    property c {getter(){sequence+='2';return 'y';}}
+    property d {getter(){sequence+='3';return 'done';}}
+}
+var pairs=new Pairs();
+&pairs['0']=&pairs.a;&pairs['1']=&pairs.b;&pairs['2']=&pairs.c;&pairs['3']=&pairs.d;
+p.mark=function(){sequence+='e';return 7;};p.paramMacros.style=pairs;
+tag=p.getNextTag();check(tag.x=='7' && tag.y=='done' && sequence=='c01e23','getter and expression ordering: '+sequence+':'+tag.x+':'+tag.y);
+check(fails(function(){old.assign(p);}) && fails(function(){p.assign(old);}), 'incompatible assign');
+check(Plugins.unlink('KAGParserEx.dll') && KAGParser===base,'restore base export');
+check(p.paramMacros.style!==void && fails(function(){return old.paramMacros;}),'existing instance isolation');
+Plugins.link('KAGParserEx.tpm');var reloaded=new KAGParser();check(reloaded.paramMacros!==void,'reload');Plugins.unlink('KAGParserEx.tpm');
+Debug.message('KAG_EX_OK: parameter macros, ordered arguments, multiline, state, dispatch and plugin lifecycle');
+'passed';

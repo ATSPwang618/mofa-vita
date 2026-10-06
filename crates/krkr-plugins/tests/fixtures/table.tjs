@@ -1,0 +1,179 @@
+// Source-derived from kwidgets e7bed32 table.cpp / ncbind.hpp and the
+// krkrz tjsObject.cpp / tjsVariantString.h helpers. No original DLL was run.
+function check(v, name) { if (!v) throw name; }
+Plugins.link("ksupport.dll");
+var log=[], rows=[], countValue=4, mode=0, indexMissing=false;
+class Row {
+    var tag, p, s;
+    function Row(tag,p,s) { this.tag=tag; this.p=p; this.s=s; }
+    property pos { getter { global.log.push("p"+tag); return p; } }
+    property size { getter {
+        global.log.push("s"+tag);
+        if (global.mode==1 && tag==1) {
+            global.rows[2]=new global.Row(9,20,10);
+            global.rows.add(new global.Row(3,30,10));
+            global.countValue=4;
+        }
+        if (global.mode==2 && tag==1) global.rows.clear();
+        return s;
+    } }
+}
+class TableList {
+    property count { getter { global.log.push("count"); return global.countValue; } }
+    function missing(set,name,value) {
+        global.log.push("i"+name);
+        if (global.indexMissing && name=="2") return false;
+        *value=global.rows[int name];
+        return true;
+    }
+}
+var list=new TableList(); armMissing(list);
+rows=[new Row(0,0,10),new Row(1,10,10),new Row(2,20,10),new Row(3,30,10)];
+var result=table_find_list_range(list,5,26);
+check(result.count==4 && result[0]===rows[0] && result[3]===rows[3], "range returns original items");
+check(log.join(",")=="count,i2,p2,s2,i1,p1,s1,i0,p0,s0,i1,p1,i2,p2,i3,p3", "binary reads pos then size; scan only pos");
+log=[];result=table_find_list_range(list,10,0);
+check(result.count==1 && result[0]===rows[1] && log.join(",")=="count,i2,p2,s2,i1,p1,s1,i2,p2", "zero size still returns containing item");
+check(table_find_list_range(list,40,10).count==0, "right boundary excluded");
+check(table_find_list_range(list,0,10).count==1, "scan excludes endpoint");
+check(table_find_list_range([%[pos:0,size:5],%[pos:10,size:10]],7,20).count==0, "gap start returns empty despite later overlap");
+log=[];result=table_find_list_range(list,-5,4);
+check(result.count==0 && log.join(",")=="count", "count evaluated before negative clipped size");
+check(table_find_list_range(list,-5,5)[0]===rows[0], "negative start clips to zero width");
+log=[];table_find_list_range(list,10,0);
+check(log.join(",")=="count,i2,p2,s2,i1,p1,s1,i2,p2", "discarding result retains list callbacks");
+
+countValue=3;rows=[new Row(0,0,10),new Row(1,10,10),new Row(2,20,10)];mode=1;log=[];
+result=table_find_list_range(list,10,100);
+check(result.count==2 && result[0].tag==1 && result[1].tag==9 && rows.count==4, "captures count but reads changed later element");
+check(log.join(",")=="count,i1,p1,s1,i2,p9", "captured count read only once");
+mode=2;countValue=3;rows=[new Row(0,0,10),new Row(1,10,10),new Row(2,20,10)];log=[];
+var caught=false;try {table_find_list_range(list,10,100);}catch(e){caught=true;}
+check(caught && log.join(",")=="count,i1,p1,s1,i2", "shrunk list yields void item and object conversion failure");
+mode=0;indexMissing=true;rows=[new Row(0,0,10),new Row(1,10,10),new Row(2,20,10)];log=[];
+caught=false;try {table_find_list_range(list,10,100);}catch(e){caught=true;}
+check(caught && log.join(",")=="count,i1,p1,s1,i2", "missing index starts fresh void temporary");
+indexMissing=false;
+
+var item=%[size:10];
+check(table_find_list_range([item],5,0)[0]===item, "missing pos is zero, not eight");
+item=%[pos:void,size:10];check(table_find_list_range([item],5,0)[0]===item, "explicit void pos converts to zero");
+check(table_find_list_range([%[pos:0]],0,10).count==0, "missing size is zero");
+check(table_find_list_range([%[pos:0,size:void]],0,10).count==0, "void size is zero");
+class MissingRow {
+    function missing(set,name,value) {
+        global.log.push(name);
+        if (name=="size") { *value=10; return true; }
+        return false;
+    }
+}
+item=new MissingRow();armMissing(item);log=[];
+check(table_find_list_range([item],5,0)[0]===item && log.join(",")=="pos,size", "missing handlers preserve ordinary read order");
+property indexedRow { getter { global.log.push("indexGetter"); return global.rows[0]; } }
+log=[];result=table_find_list_range(%[count:1,"0"=>&indexedRow],5,0);
+check(result[0]===rows[0] && log.join(",")=="indexGetter,p0,s0", "indexed access invokes getter");
+var decoy=%[count:0];log=[];
+result=table_find_list_range(list incontextof decoy,10,0);
+check(result[0]===rows[1] && log[0]=="count", "list accessor discards input bound this");
+class EmptyList {}
+check(table_find_list_range(new EmptyList(),0,0).count==0, "missing count defaults to zero");
+check(table_find_list_range(%[count:void],0,0).count==0, "void count");
+check(table_find_list_range(%[count:-1],0,0).count==0, "negative count");
+var dead=%[count:5];invalidate dead;
+check(table_find_list_range(dead,0,0).count==0, "invalid count dispatch yields void");
+class HugeList {
+    property count {getter {return 300000;}}
+    function missing(set,name,value) {*value=%[pos:0,size:0];return true;}
+}
+var huge=new HugeList();armMissing(huge);
+check(table_find_list_range(huge,0,10).count==0, "source count is not an output allocation limit");
+item=%[pos:4294967296,size:4294967306];
+check(table_find_list_range(%[count:4294967297,"0"=>item],4294967301,4294967296,99)[0]===item, "i32 narrowing of count positions sizes and extra args");
+check(table_find_list_range([%[pos:0,size:1]],void,void).count==1, "present void numeric parameters are accepted");
+log=[];caught=false;try {table_find_list_range(list,0);}catch(e){caught=true;}
+check(caught && log.count==0, "list arity checked before count getter");
+caught=false;try {table_find_list_range(list,%[],0);}catch(e){caught=true;}
+check(caught && log.count==0, "list numeric conversion precedes count getter");
+caught=false;try {table_find_list_range(null,0,0);}catch(e){caught=true;}
+check(caught,"null helper dereference is safely rejected");
+class ThrowCount { property count {getter {throw "count failure";}} }
+caught=false;try {table_find_list_range(new ThrowCount(),0,-1);}catch(e){caught=e=="count failure";}
+check(caught,"count exception propagates even with negative size");
+property throwPos {getter {global.log.push("pos");throw "position failure";}}
+property throwSize {getter {global.log.push("size");throw "size failure";}}
+log=[];caught=false;try {table_find_list_range([%[pos:&throwPos,size:&throwSize]],0,0);}catch(e){caught=e=="position failure";}
+check(caught && log.join(",")=="pos","position exception stops before size read");
+log=[];caught=false;try {table_find_list_range([%[pos:99,size:&throwSize]],0,0);}catch(e){caught=e=="size failure";}
+check(caught && log.join(",")=="size","binary size is read even if position already rejects item");
+log=[];caught=false;try {table_find_list_range([%[pos:%[],size:&throwSize]],0,0);}catch(e){caught=true;}
+check(caught && log.count==0,"position conversion failure precedes size getter");
+
+function units(s) {var a=[];for(var i=0;i<s.length;i++)a.add(#s[i]);return a.join("/");}
+var texts=[], getters=0, widths=void;
+class Font {
+    function measure(text) {
+        check(this===global.font,"measurement receiver");
+        global.texts.add(text);
+        if (global.widths!==void) return global.widths[global.texts.count-1];
+        return text.length*10;
+    }
+    property getTextWidth {getter {++global.getters;return measure;}}
+}
+var font=new Font();
+check(table_find_text_range(font,"abcdef",60,999)===void && texts.join(",")=="abcdef" && getters==1,"fitting full text returns void before omit subtraction");
+texts=[];getters=0;
+check(table_find_text_range(font,"abcdef",25,5)===2 && texts.join(",")=="abcdef,abc,bc,c" && getters==4,"incremental subtraction and original tail index");
+texts=[];getters=0;
+check(table_find_text_range(font incontextof decoy,"abcdefghij",75,0)===7 && texts.join(",")=="abcdefghij,abcde,fg,i" && getters==4,"incremental addition and font receiver normalization");
+texts=[];widths=[100,15,7,3,4];
+check(table_find_text_range(font,"abcdefghij",25,0)===8 && texts.join(",")=="abcdefghij,abcde,fg,i,j","preserves nonadditive measurement sequence");
+widths=void;texts=[];
+check(table_find_text_range(font,"abcd",-1,0)===0 && texts.join(",")=="abcd,ab,b,a,","negative width still measures final empty substring");
+texts=[];widths=[1,1];
+check(table_find_text_range(font,"",0,0)===0 && texts.count==2 && texts[0]=="" && texts[1]=="","empty overflowing text measured twice");
+widths=void;texts=[];
+check(table_find_text_range(font,void,void,void)===void && texts.count==1 && texts[0]=="","explicit void converts to empty text and zero widths");
+texts=[];check(table_find_text_range(font,123,30,0)===void && texts[0]=="123","native text conversion");
+texts=[];
+check(table_find_text_range(font,nulText,20,0)===4 && texts.count==4,"NUL text range");
+check(units(texts[0])+"|"+units(texts[1])+"|"+units(texts[2])+"|"+units(texts[3])=="65/0/66/67/68/69|65|68|69","full text keeps NUL; each pointer-length fragment truncates independently");
+texts=[];
+check(table_find_text_range(font,surrogateText,25,5)===2 && texts.count==3,"UTF16 range returns code-unit index");
+check(units(texts[0])+"|"+units(texts[1])+"|"+units(texts[2])=="65/55357/56832/55296/66|65/55357|55296","measurements preserve split surrogate pair and lone surrogate");
+texts=[];table_find_text_range(font,"abcdef",25,5);
+check(texts.join(",")=="abcdef,abc,bc,c","discarding range result retains all measurements");
+table_find_text_range(%[getTextWidth:measuredResult],"abcdef",25,5);
+texts=[];widths=[4294967297];
+check(table_find_text_range(font,"abcdef",4294967297,0,99)===void && texts.count==1,"measurement result and width narrow to i32");
+texts=[];widths=void;
+check(table_find_text_range(font,"abcdef",25,4294967301)===2,"omit width narrows to i32");
+texts=[];caught=false;try {table_find_text_range(font,"abcdef",25);}catch(e){caught=true;}
+check(caught && texts.count==0,"text arity checked before measurement");
+caught=false;try {table_find_text_range(font,"abcdef",%[],0);}catch(e){caught=true;}
+check(caught && texts.count==0,"text numeric conversion precedes measurement");
+check(table_find_text_range(%[],"abc",0,0)===void,"missing measurement member leaves void result");
+check(table_find_text_range(%[getTextWidth:7],"abc",0,0)===void,"nonobject measurement member is failed dispatch");
+check(table_find_text_range(%[getTextWidth:null],"abc",0,0)===void,"null measurement member is failed dispatch");
+check(table_find_text_range(%[getTextWidth:function(){return void;}],"abc",0,0)===void,"successful void measurement converts to zero");
+check(table_find_text_range(dead,"abc",-1,0)===0,"invalid font statuses are ignored for every measurement");
+class MissingFont {
+    function missing(set,name,value) {
+        global.log.add(name);
+        if (global.log.count==2) throw "measurement missing failure";
+        *value=global.measuredResult;return true;
+    }
+}
+var missingFont=new MissingFont();armMissing(missingFont);log=[];caught=false;
+try {table_find_text_range(missingFont,"abc",0,0);}catch(e){caught=e=="measurement missing failure";}
+check(caught && log.join(",")=="getTextWidth,getTextWidth","measurement member is resolved afresh and missing exception propagates");
+property throwMeasurement {getter {throw "measurement getter failure";}}
+caught=false;try {table_find_text_range(%[getTextWidth:&throwMeasurement],"abc",0,0);}catch(e){caught=e=="measurement getter failure";}
+check(caught,"measurement getter exception propagates");
+property numericMeasurement {getter {return 7;}}
+caught=false;try {table_find_text_range(%[getTextWidth:&numericMeasurement],"abc",0,0);}catch(e){caught=true;}
+check(caught,"property call requires object closure after getter, unlike direct numeric member");
+caught=false;try {table_find_text_range(%[getTextWidth:function(){throw "measurement failure";}],"abc",0,0);}catch(e){caught=e=="measurement failure";}
+check(caught,"measurement function exception propagates");
+caught=false;try {table_find_text_range(%[getTextWidth:function(){return %[];}],"abc",0,0);}catch(e){caught=true;}
+check(caught,"measurement result conversion failure propagates");
+"passed";

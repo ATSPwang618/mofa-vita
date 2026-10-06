@@ -1,0 +1,76 @@
+// Six self-generated lossless FFV1 frames with a PCM track; no game assets.
+System.exitOnWindowClose=false;
+function check(ok,message){if(!ok)throw message;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+function waitUntil(fn){var end=System.getTickCount()+6000;while(!fn()){if(System.getTickCount()>end)throw 'movie timeout';System.wait(5);}}
+Plugins.link('layerExMovie.dll');
+var path='crates/krkr-plugins/tests/fixtures/movie/effect.mkv';
+var packed='crates/krkr-plugins/tests/fixtures/movie/effect.xp3>effect.mkv';
+var w=new Window();w.caption='layerExMovie alignment';w.setInnerSize(640,240);
+var root=new Layer(w,null);root.setImageSize(640,240);root.setSize(640,240);root.face=dfAlpha;
+root.fillRect(0,0,640,240,0xff203040);root.font.height=18;
+root.drawText(16,12,'RGB SAMPLE + RIGHT-HALF BLUE MASK',0xffffff);
+root.drawText(16,120,'ALPHA EFFECT FRAMES',0xffffff);
+class Effect extends Layer {
+    function Effect(win,parent){super.Layer(win,parent);}
+    var starts=0,stops=0,frames=0,mode=0;
+    function onStartMovie(){check(isPlayingMovie(),'start state');starts++;}
+    function onStopMovie(){check(!isPlayingMovie(),'stop state');stops++;}
+    function onUpdateMovie(){
+        frames++;
+        if(mode==1){
+            var n=(frames-1)%6;
+            check(getMainPixel(32,0)==((52+n*20)<<16|80<<8|160),'lossless RGB samples');
+            check(getMaskPixel(0,0)==0 && getMaskPixel(16,0)==64 && getMaskPixel(32,0)==128 && getMaskPixel(48,0)==255,'right half BLUE channel alpha');
+            check(getProvincePixel(0,0)==9,'province survived movie write');
+            if(frames<=6)global.root.piledCopy(16+n*100,160,this,0,0,64,48);
+        }
+        if(mode==2 && frames==8)stopMovie();
+        // The plugin itself must not call the Layer.update property it cached.
+    }
+}
+var a=new Effect(w,root), saved=new Layer(w,root);
+check(!a.isPlayingMovie(),'initial state');a.startMovie(false);check(a.starts==0,'start without open');a.stopMovie();check(a.stops==0,'stop idle');
+check(fails(function(){a.openMovie(path);}) && fails(function(){a.startMovie();}),'required arguments');
+check(a.openMovie(packed,true)===void,'open return');
+check(a.imageWidth==64 && a.imageHeight==48 && a.type==ltAlpha && !a.isPlayingMovie(),'alpha dimensions and type');
+a.setSize(64,48);a.face=dfProvince;a.fillRect(0,0,64,48,9);a.setClip(0,0,0,0);a.holdAlpha=true;
+saved.assignImages(a);var savedPixel=saved.getMainPixel(32,0);
+a.onUpdateMovie=function(){throw 'callback should have been cached at first use';};
+a.update=function(){throw 'no implicit update';};
+a.mode=1;a.startMovie(false);a.startMovie(false);check(a.starts==2,'repeated start callback: '+a.starts+', playing='+a.isPlayingMovie());
+check(!Plugins.unlink('layerExMovie.dll'),'active movie retains plugin');
+w.visible=true;waitUntil(function(){return a.stops==1;});
+check(a.frames==6 && !a.isPlayingMovie(),'every frame and natural completion');
+check(saved.getMainPixel(32,0)==savedPixel,'shared image COW');
+a.startMovie(false);check(a.starts==2,'stop closes stream, start needs reopen');
+
+// Opaque mode uses full width, ignores clip/face, and leaves post-open size alone.
+var b=new Effect(w,root);b.openMovie(path,false);
+check(b.imageWidth==128 && b.imageHeight==48 && b.type==ltOpaque,'opaque dimensions');
+b.setImageSize(40,20);b.setClip(0,0,0,0);b.face=dfProvince;b.startMovie(false);
+waitUntil(function(){return b.stops==1;});
+check(b.imageWidth==40 && b.imageHeight==20 && b.frames==6,'resized destination not forced back');
+check(b.getMainPixel(32,0)==(152<<16|80<<8|160),'last RGB frame');
+b.openMovie(path,false);b.setSize(128,48);b.startMovie(false);waitUntil(function(){return b.stops==2;});
+root.piledCopy(16,48,b,0,0,128,48);
+
+// Looping rewinds without an extra start/stop; stop may run inside the frame callback.
+var c=new Effect(w,root);c.mode=2;c.openMovie(path,true);c.startMovie(true);
+waitUntil(function(){return c.stops==1;});
+check(c.frames==8 && c.starts==1 && !c.isPlayingMovie(),'loop and reentrant stop');
+c.openMovie(path,false);c.startMovie(false);c.stopMovie();c.stopMovie();check(c.stops==2,'manual stop exactly once');
+var invalidatedStops=0;
+var d=new Layer(w,root);d.onStopMovie=function(){global.invalidatedStops++;};d.openMovie(path,false);d.startMovie(false);invalidate d;
+check(invalidatedStops==1,'intrinsic invalidation stops and notifies');
+check(fails(function(){c.openMovie('missing-movie-file.mkv',false);}) && !c.isPlayingMovie(),'open failure clears state');
+var old=c.openMovie;
+check(Plugins.unlink('layerExMovie.dll') && typeof Layer.openMovie=='undefined','unload exports');
+old(path,true);c.stopMovie();Plugins.link('layerExMovie.tpm');
+check(typeof Layer.openMovie=='Object','reload alias');
+c.openMovie(path,true);check(!Plugins.unlink('layerExMovie.tpm'),'reloaded methods retain old Layer movie');c.stopMovie();
+root.saveLayerImage('target/layer-ex-movie-output.png','png');
+invalidate a;invalidate b;invalidate c;invalidate saved;
+check(Plugins.unlink('layerExMovie.tpm'),'final unload');invalidate root;invalidate w;
+Debug.message('LAYER_EX_MOVIE_OK frames, blue alpha, XP3, callbacks, looping, sizing, COW, invalidation and reload');
+'passed';

@@ -1,0 +1,56 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var base=KAGParser;
+Plugins.link('KAGParserEx.dll');var ex=KAGParser,exInstance=new KAGParser();
+Plugins.link('ExtKAGParser.dll');check(KAGParser!==ex,'separate dialect class');
+class Scenario extends KAGParser {
+    function Scenario(source){super.KAGParser();this.source=source;debugLevel=0;ignoreCR=true;}
+    function onScenarioLoad(name){return typeof source=='String'?source:source[name];}
+}
+function parser(source){var p=new Scenario(source);p.loadScenario('main.ks');return p;}
+function next(p){var tag;while((tag=p.getNextTag())!==void){if(tag.tagname=='eval'){Scripts.eval(tag.exp,'fixture',0,p);continue;}return tag;}return void;}
+var p=parser('[localvar a=1][pushlocalvar copyvar=1 b=2][out a=$a b=$b][poplocalvar][after a=$a b="$b|none"]');
+var tag=next(p);check(tag.a==='1' && tag.b==='2' && p.lf.b=='2' && p.prelf.a=='1' && p.localVariablesDepth==2,'copy local scope');
+tag=next(p);check(tag.b=='none' && p.localVariablesDepth==1 && p.currentLocalVariables===p.lf,'pop local scope');
+check(fails(function(){return p.mp;}) && fails(function(){return p.prelf;}),'out of scope getters');
+p=parser('[pmacro name=style x=1 y="`&6*7"][show style][show style=explicit]');
+tag=next(p);check(tag.x=='1' && tag.y=='42' && tag.taglist===void,'dictionary parameter macro');
+tag=next(p);check(tag.style=='explicit' && tag.x===void && p.pmacros.style.x=='1','parameter macros only without equals');
+p=parser('[macro name=m default=hello][out d=%default first=%1 second=%2 value=&"mp[mp[1]]"][endmacro][m b=2 a=1]');
+p.numericMacroArgumentsEnabled=true;tag=next(p);
+check(tag.d=='hello' && tag.first=='b' && tag.second=='a' && tag.value=='2','macro defaults and numeric argument names');
+p=parser('[show a=1 \\ ignore this\n b=2]X');p.multiLineTagEnabled=true;tag=next(p);
+check(tag.a=='1' && tag.b=='2' && p.curLine==1 && next(p).text=='X','Ext multiline retains following text');
+p=parser('[&"\'A[B]\'"]😀');var text='';while((tag=next(p))!==void)text+=tag.text;
+check(text=='A[B]😀','embedded shorthand and unicode');
+p=parser('[while init="this.i=0" exp="i<4" each="i++"][continue cond="i==1"][out n=&i][break cond="i==2"][endwhile][done]');
+var nums=[];while((tag=next(p)).tagname!='done')nums.add(tag.n);
+check(nums.join(',')=='0,2' && p.ifLevel==0 && p.whileStackDepth==0,'loop continue and break');
+p=parser('[while exp=0][while exp=1][out][endwhile][endwhile][done]');check(next(p).tagname=='done','excluded nested loops');
+p=parser('[localvar root=keep]\n[while init="this.i=0" exp="i<2" each="i++"][call target=*sub copyvar=1 n=&i][endwhile][done]\n*sub\n[out n=$n root=$root][localvar root=changed][return]');
+var after=0;p.onAfterReturn=function(){after++;};
+tag=next(p);check(tag.n=='0' && tag.root=='keep' && p.callStackDepth==1 && p.localVariablesDepth==2 && p.whileStackDepth==2,'loop call scopes');
+var saved=p.store();
+check(saved.callStack[0].WhileStackDepth==2 && saved.callStack[0].LocalVariablesCount==2 && saved.callStack[0].ExcludeLevelStack=='' && saved.whileStack.count==2,'reference loop call save format');
+var q=parser('x');q.source=p.source;q.i=p.i;q.assign(p);check(next(q).n=='1','assign continues loop return');
+tag=next(p);check(tag.n=='1','return continues loop');tag=next(p);check(tag.tagname=='done' && p.lf.root=='keep' && after==2 && p.whileStackDepth==0,'return restores parent scope');
+q.restore(saved);tag=next(q);check(tag.n=='0' && q.lf.root=='keep','restore saved label and local scope');
+q.lf.root='mutated';check(saved.LocalVariables[1].root=='keep','restore containers isolated from saved state');
+p=parser('A\n\nB');p.ignoreCR=false;p.enableNP=true;
+check(next(p).text=='A' && next(p).tagname=='np' && next(p).text=='B','blank line np');
+var flags=p.store();p.enableNP=false;p.ignoreCR=true;p.fuzzyReturn=true;p.returnErrorStorage='error.ks';p.restore(flags);
+check(p.enableNP && !p.ignoreCR && p.fuzzyReturn && p.returnErrorStorage=='error.ks','saved flags and live return policy');
+check(fails(function(){next(parser('[else]'));}) && fails(function(){next(parser('[break]'));}), 'unbalanced control errors');
+p.clearCallStack();check(p.callStackDepth==0 && p.whileStackDepth==0 && p.localVariablesDepth==1,'clear scopes');
+var sources=%['main.ks'=>'[call storage=sub.ks][resumed]','sub.ks'=>'[inside][return]','error.ks'=>'[recover]'];
+p=parser(sources);p.fuzzyReturn=true;check(next(p).tagname=='inside','cross storage call');
+sources['main.ks']='inserted\n[call storage=sub.ks][resumed]';
+check(next(p).tagname=='resumed' && p.curLine==1 && p.callStackDepth==0,'fuzzy return locates moved caller');
+sources['main.ks']='[call storage=sub.ks][resumed]';p=parser(sources);p.returnErrorStorage='error.ks';next(p);sources['main.ks']='replaced';
+check(next(p).tagname=='recover' && p.callStackDepth==1,'lost return transfers to error storage');
+p=parser('*start\n[macro name=loop][while init="this.i=0" exp="i<2" each="i++"][out x=%x][endwhile][endmacro][loop x=kept]');
+check(next(p).x=='kept' && next(p).x=='kept' && next(p)===void,'loop rewinds retain macro arguments');
+check(Plugins.unlink('ExtKAGParser.dll') && KAGParser===ex && exInstance.paramMacros!==void,'restore first parser class');
+check(Plugins.unlink('KAGParserEx.dll') && KAGParser===base,'restore engine class');
+Debug.message('EXT_KAG_OK: dialect, scopes, loops, call/return, defaults, saved state and lifecycle');
+'passed';

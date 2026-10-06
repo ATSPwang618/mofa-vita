@@ -1,0 +1,52 @@
+// Combined real-host scenario; all images are generated, no game assets.
+System.exitOnWindowClose=false;
+Plugins.link('layerExRaster.dll');Plugins.link('layerExAreaAverage.dll');
+function check(ok,why){if(!ok)throw why;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var w=new Window(),root=new Layer(w,null);
+root.setImageSize(16,16);
+var a=new Layer(w,root),b=new Layer(w,root),shared=new Layer(w,root);
+a.setImageSize(8,4);b.setImageSize(8,4);a.face=dfAlpha;b.face=dfAlpha;
+for(var y=0;y<4;y++)for(var x=0;x<8;x++)b.fillRect(x,y,1,1,0x7f000000 | (x+1));
+a.fillRect(0,0,8,4,0xffabcdef);shared.assignImages(a);
+a.face=dfProvince;a.fillRect(0,0,8,4,9);a.holdAlpha=true;a.setClip(0,0,0,0);
+var updates=0;
+a.update=function(l,t,w,h){global.updates++;};
+a.copyRaster(b,2,4,1000,0);
+check(a.getMainPixel(0,1)==0xabcdef && a.getMainPixel(2,1)==1 && a.getMaskPixel(2,1)==127,'raster positive displacement and RGBA');
+check(a.getMainPixel(0,3)==3 && a.getMainPixel(7,3)==0xabcdef,'raster negative displacement and untouched edge');
+check(a.getProvincePixel(2,1)==9 && shared.getMainPixel(2,1)==0xabcdef && updates==0,'raster ignores clip/face/holdAlpha, preserves province/COW, no update');
+b.copyRaster(b,2,4,1000,0);
+check(b.getMainPixel(2,1)==1 && b.getMainPixel(4,1)==1 && b.getMainPixel(0,3)==3,'raster forward overlapping self-copy');
+b.setImageSize(2,2);a.copyRaster(b,2,4,1000,0);
+check(a.getMainPixel(2,1)==1,'different raster dimensions no-op');
+check(fails(function(){a.copyRaster(b,1,0,1,0);}) && fails(function(){a.copyRaster();}),'raster invalid and missing arguments');
+
+a.setClip(0,0,8,4);a.face=dfAlpha;a.holdAlpha=false;a.fillRect(0,0,8,4,0xffabcdef);
+b.setImageSize(4,4);b.fillRect(0,0,4,4,0xffff0000);
+b.fillRect(0,0,1,1,0x000000ff); // one transparent pixel in the first 2x2 area
+b.fillRect(3,0,1,4,0xff00ff00);b.fillRect(0,3,4,1,0xff00ff00);
+a.setClip(0,0,0,0);a.holdAlpha=true;a.face=dfProvince;
+var updateRect;
+a.update=function(l,t,w,h){global.updates++;global.updateRect=[l,t,w,h];};
+a.stretchCopyAA(1,1,2,2,b,0,0,4,4);
+check(a.getMainPixel(1,1)==0xff0000 && a.getMaskPixel(1,1)==191,'alpha-weighted RGB and averaged alpha');
+check(a.getMainPixel(2,2)==0xff0000 && a.getMaskPixel(2,2)==255,'reference exclusive last row and column');
+check(a.getMainPixel(0,0)==0xabcdef && a.getProvincePixel(1,1)==9,'area preserves outside and province');
+check(updates==1 && updateRect[0]==1 && updateRect[1]==1 && updateRect[2]==2 && updateRect[3]==2,'dynamic update rectangle');
+b.fillRect(0,0,4,4,0x00112233);a.stretchCopyAA(0,0,2,2,b,0,0,4,4);
+check(a.getMainPixel(0,0)==0x112233 && a.getMaskPixel(0,0)==0,'transparent RGB fallback');
+a.stretchCopyAA(7,0,2,2,b,0,0,4,4);
+check(updateRect[2]==1 && updateRect[3]==2,'right-edge proportional clipping');
+b.setImageSize(1,1);b.fillRect(0,0,1,1,0xffffffff);
+a.stretchCopyAA(0,0,1,1,b,0,0,1,1);
+check(a.getMainPixel(0,0)==0x112233,'one-pixel empty integration leaves destination');
+check(fails(function(){a.stretchCopyAA(0,0,2,2,b,0,0,1,1);}) &&
+      fails(function(){a.stretchCopyAA(-1,0,1,1,b,0,0,1,1);}) &&
+      fails(function(){a.stretchCopyAA();}),'area rejects enlargement, unsafe ranges and missing arguments');
+check(Plugins.unlink('layerExRaster.dll') && Plugins.unlink('layerExAreaAverage.dll'),'unload batch');
+Plugins.link('layerExRaster.tpm');Plugins.link('layerExAreaAverage.tpm');
+a.copyRaster(a,0,1,1,0);a.stretchCopyAA(0,0,1,1,b,0,0,1,1);
+invalidate w;
+Debug.message('RASTER_AVERAGE_OK: both plugins, RGBA, overlap, clipping, alpha, province, COW, callbacks and reload');
+'passed';

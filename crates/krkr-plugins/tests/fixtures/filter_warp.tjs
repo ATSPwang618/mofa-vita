@@ -1,0 +1,36 @@
+// Original constant-color fixtures for the packed filter.dll warp kernels.
+function check(v,s) {if(!v) throw s;}
+function fails(fn) {try {fn();} catch(e) {return true;} return false;}
+System.exitOnWindowClose=false;
+Plugins.link('filter.dll');
+var w=new Window();w.setInnerSize(12,10);
+var root=new Layer(w,null);root.setSize(12,10);
+var src=new Layer(w,root),dst=new Layer(w,root),saved=new Layer(w,root);
+src.setImageSize(12,10);dst.setImageSize(12,10);
+src.face=dfAlpha;src.fillRect(0,0,12,10,0xc87b9fdb);
+dst.face=dfProvince;dst.fillRect(0,0,12,10,31);
+dst.face=dfAlpha;dst.fillRect(0,0,12,10,0x40506070);
+saved.assignImages(dst);
+InitLens();dst.holdAlpha=true;
+Lens(%[src:src,dest:dst]);
+check(dst.getMainPixel(6,5)==0x7b9fdb && dst.getMaskPixel(6,5)==200,'lens center copies source');
+check(dst.getMainPixel(0,0)==0 && dst.getMaskPixel(0,0)==255,'lens exterior is opaque black');
+check(dst.getProvincePixel(6,5)==31 && saved.getMaskPixel(6,5)==64,'province and snapshot preserved');
+Lens(%[src:dst,dest:dst,power:2147483647]);
+check(dst.getMainPixel(6,5)==0x7b9fdb,'large-power self sampling');
+ReleaseLens();
+check(fails(function(){Lens(%[src:src,dest:dst]);}),'released lens must be initialized again');
+dst.holdAlpha=false;dst.fillRect(0,0,12,10,0x40506070);dst.holdAlpha=true;
+Vortex(%[src:src,dest:dst,rad:0]);
+check(dst.getMainPixel(6,5)==0x7a9eda && dst.getMaskPixel(6,5)==199,'zero-angle integer vortex');
+check(dst.getMainPixel(11,5)==0x506070 && dst.getMaskPixel(11,5)==64,'vortex preserves final source column');
+dst.holdAlpha=false;dst.fillRect(0,0,12,10,0x40506070);dst.holdAlpha=true;
+Stretch(%[src:src,swidth:6,sheight:5,dest:dst,dleft:2,dtop:1,dwidth:6,dheight:5,opa:128]);
+check(dst.getMainPixel(2,1)==0x647ea4 && dst.getMaskPixel(2,1)==130,'stretch combines destination before integer shift');
+check(dst.getMainPixel(0,0)==0x506070 && dst.getProvincePixel(2,1)==31,'stretch writes only its main-plane rectangle');
+InitLens();Lens(%[src:src,dest:dst,zoom:0]);ReleaseLens();
+check(dst.getMainPixel(6,5)==0 && dst.getMaskPixel(6,5)==255,'zero lens radius');
+check(Plugins.unlink('filter.dll'),'filter unload');
+check(fails(function(){Lens(%[src:src,dest:dst]);}) && fails(function(){Vortex(%[src:src,dest:dst]);}),'filter exports removed');
+invalidate saved;invalidate dst;invalidate src;invalidate root;invalidate w;
+"passed";

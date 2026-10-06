@@ -1,0 +1,15 @@
+Kirikiri2 plugin adaptations in this batch (altered portable Rust implementations):
+expat: Go Watanabe; qrcode and registory: Kiyobee; win32ole: Go Watanabe.
+Reference revision: 9b54995e19a8c8d6c17ef82a59b8174da995cbd6.
+The plugin readmes apply the Kirikiri2 engine license, reproduced in
+extrans/kirikiri2-license.txt. The reference sources are under
+kirikiri2/src/plugins/win32/{expat,qrcode,registory,win32ole,fftgraph}.
+
+fftgraph/Main.cpp's band/peak and drawing behavior is adapted to Rust.
+The reference uses Ooura's ddst; this implementation computes the documented
+DST through RustFFT, without copying or linking fftsg.c.
+Reference fftsg attribution: Copyright Takuya OOURA, 1996-2001.
+
+The original expat library and Psytec QR_Encode implementation are not bundled
+or linked. This project uses quick-xml (MIT), qrcodegen (MIT), and RustFFT
+(MIT OR Apache-2.0), with their own distribution notices and licenses.

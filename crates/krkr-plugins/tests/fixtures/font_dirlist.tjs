@@ -1,0 +1,39 @@
+// Prepare assets with font_dirlist.py, then run with --host desktop.
+System.exitOnWindowClose=false;
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+function contains(a,v){for(var i=0;i<a.count;i++)if(a[i]===v)return true;return false;}
+var previous=function(){return 'previous';};global.getDirList=previous;
+Plugins.link('dirlist.dll');Plugins.link('addFont.dll');
+var listing=getDirList('target/font-dirlist/');
+check(contains(listing,'mixed') && contains(listing,'upper.txt') &&
+      !contains(listing,'MiXeD') && !contains(listing,'mixed/') &&
+      !contains(listing,'.') && !contains(listing,'..'),'SDL directory names');
+check(getDirList('target/font-dirlist/not-present/').count==0,'missing directory empty');
+check(fails(function(){getDirList('target/font-dirlist');}) && fails(function(){getDirList();}),'directory slash and arity');
+getDirList('target/font-dirlist/font.xp3>/'); // ignored result skips local conversion
+check(fails(function(){var x=getDirList('target/font-dirlist/font.xp3>/');}),'archive is not local directory');
+var w=new Window(),layer=new Layer(w,null);layer.setImageSize(240,80);layer.face=dfAlpha;
+var font=layer.font;font.height=24;font.face='KrkrX';
+var fallback=font.getTextWidth('iiiiWWWW'); // populate a cached fallback before registration
+check(System.addFont('target/font-dirlist/missing.ttf')===void &&
+      System.addFont('target/font-dirlist/UPPER.txt')===0,'missing and malformed fonts');
+check(System.addFont('target/font-dirlist/font.xp3>font.ttf',%[])===1,'archive font registration ignores extract');
+check(contains(font.getList(0), 'KrkrX'),'registered family enumeration');
+var registeredWidth=font.getTextWidth('iiiiWWWW');
+font.faceIsFileName=true;font.face='target/font-dirlist/single.ttf';
+check(registeredWidth==font.getTextWidth('iiiiWWWW'),'registered family uses real font metrics');
+font.faceIsFileName=false;font.face='KrkrX';
+layer.drawText(0,0,'iiiiWWWW',0xffffff);
+check(System.addFont('target/font-dirlist/collection.ttc')===2,'all collection faces counted');
+check(contains(font.getList(0),'KrkrY') && contains(font.getList(0),'KrkrZ'),'both collection families selectable');
+System.addFont('target/font-dirlist/single.ttf'); // still registers when result discarded
+check(fails(function(){System.addFont();}),'font missing parameter');
+check(Plugins.unlink('dirlist.dll') && getDirList()==='previous','restore previous global');
+check(Plugins.unlink('addFont.dll'),'font plugin unload');
+check(contains(font.getList(0),'KrkrX') && font.getTextWidth('iiiiWWWW')==registeredWidth,'private fonts survive plugin unload');
+Plugins.link('addFont.tpm');Plugins.link('dirlist.tpm');
+check(System.addFont('target/font-dirlist/single.ttf')===1 && getDirList('target/font-dirlist/').count>0,'batch reload');
+invalidate w;
+Debug.message('FONT_DIRLIST_OK: directory rules, VFS font, TTC faces, metrics, drawing, persistence and reload');
+'passed';

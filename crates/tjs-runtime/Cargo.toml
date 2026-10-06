@@ -1,0 +1,16 @@
+[package]
+name = "tjs-runtime"
+version.workspace = true
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+slotmap.workspace = true
+tjs-core = { path = "../tjs-core" }
+tjs-front = { path = "../tjs-front" }
+tjs-bind = { path = "../tjs-bind" }
+
+[lints]
+workspace = true

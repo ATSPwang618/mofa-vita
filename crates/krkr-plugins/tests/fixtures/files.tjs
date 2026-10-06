@@ -1,0 +1,233 @@
+// Expected values follow official fstat Main.cpp, commit
+// 49c4d53506edecb824cd7b2cff8d32959b1f1b70. currentPath is per-engine VFS;
+// createDirectoryNoNormalize follows the later Next recursive extension.
+function check(value, message) { if (!value) throw message; }
+Plugins.link("fstat.dll");
+var root = Storages.currentPath;
+check(root == Storages.getFullPath("./"), "current storage directory");
+check(Storages.isExistentStorage("legacy.bmp"), "resource link exists under its logical name");
+check(Storages.fstat("legacy.bmp").size == 12, "resource link stat uses target bytes");
+check(Storages.getTime("legacy.bmp").mtime instanceof "Date", "resource link timestamps");
+var linkedNames = Storages.dirlist("./");
+check(linkedNames.find("legacy.bmp") >= 0 && linkedNames.find("linked.png") < 0 && linkedNames.find("legacy.bmp.krkr-link") < 0, "directory lists logical resource names");
+Storages.addAutoPath("patch/");
+check(FILE_ATTRIBUTE_READONLY == 1 && FILE_ATTRIBUTE_HIDDEN == 2 && FILE_ATTRIBUTE_SYSTEM == 4 && FILE_ATTRIBUTE_DIRECTORY == 16 && FILE_ATTRIBUTE_ARCHIVE == 32 && FILE_ATTRIBUTE_NORMAL == 128 && FILE_ATTRIBUTE_TEMPORARY == 256, "complete original attribute constants");
+check(Storages.getFileAttributes("not-present") == 4294967295 && !Storages.setFileAttributes("not-present", 1), "attribute IO failure results");
+check(Storages.getFileAttributes("tree/") & FILE_ATTRIBUTE_DIRECTORY, "directory attribute");
+check(Storages.setFileAttributes("local.bin", FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_DIRECTORY), "read-only set masks directory bit");
+check(Storages.getFileAttributes("local.bin") & FILE_ATTRIBUTE_READONLY, "actual read-only permission");
+check(Storages.resetFileAttributes("local.bin", FILE_ATTRIBUTE_READONLY), "read-only reset");
+check(!(Storages.getFileAttributes("local.bin") & FILE_ATTRIBUTE_READONLY), "actual writable permission restored");
+check(!Storages.setFileAttributes("local.bin", FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN), "unsupported changed attributes fail before partial write");
+check(!(Storages.getFileAttributes("local.bin") & FILE_ATTRIBUTE_READONLY), "failed mixed request preserves permissions");
+check(Storages.resetFileAttributes("local.bin", FILE_ATTRIBUTE_HIDDEN) && Storages.setFileAttributes("local.bin", 0x80000010), "already satisfied and masked-out flags succeed");
+Storages.exportFile("data.xp3>dir/abc.bin", "exported.bin");
+check(Storages.getMD5HashString("exported.bin") == "900150983cd24fb0d6963f7d28e17f72", "streamed export from archive");
+// The chooser owner is temporary; closing it must not end the file scenario.
+System.exitOnWindowClose = false;
+var selectionOrder = "", selectedName = root + "tree/", selectionWindow = new Window;
+class DirectoryChoice {
+    property window { getter() { global.selectionOrder += "w"; return global.selectionWindow; } }
+    property title { getter() { global.selectionOrder += "t"; return "Choose a folder"; } }
+    property name {
+        getter() { global.selectionOrder += "n"; return global.root + "tree/"; }
+        setter(value) { global.selectionOrder += "s"; global.selectedName = value; }
+    }
+    property rootDir { getter() { global.selectionOrder += "r"; return global.root; } }
+}
+check(Storages.selectDirectory(new DirectoryChoice) == 1 && selectionOrder == "wtnrs" && selectedName == root + "tree/sub", "dialog options and selected setter follow the original VM");
+selectionOrder = "";
+check(Storages.selectDirectory(new DirectoryChoice) == 0 && selectionOrder == "wtnr" && selectedName == root + "tree/sub", "cancelled dialog leaves name untouched");
+selectionOrder = "";
+Storages.selectDirectory(new DirectoryChoice);
+check(selectionOrder == "wtnrs", "discarded result still selects and writes name");
+invalidate selectionWindow;
+// Remaining storage group: krkrz directory/hash/temporary-handle behavior,
+// with dirtree from the real Next extension and documented host fallbacks.
+check(Storages.getMD5HashString("payload.bin") == "321c3cf486ed509164edec1e1981fec8", "MD5 searches auto path");
+check(Storages.getMD5HashString("empty.bin") == "d41d8cd98f00b204e9800998ecf8427e", "empty MD5");
+check(Storages.getMD5HashString("million.bin") == "7707d6ae4e027c70eea2a935c2296f21", "streamed MD5 across budgets");
+check(Storages.getMD5HashString("data.xp3>dir/abc.bin") == "900150983cd24fb0d6963f7d28e17f72", "archive bytes MD5");
+check(Storages.isExistentStorageNoSearchNoNormalize(root + "local.bin"), "exact local existence");
+check(!Storages.isExistentStorageNoSearchNoNormalize(root + "payload.bin"), "exact existence skips auto path");
+check(!Storages.isExistentStorageNoSearchNoNormalize(root + "tree/"), "exact existence excludes directories");
+check(Storages.isExistentStorageNoSearchNoNormalize(root + "data.xp3>DIR\\\\ABC.BIN"), "archive exact query folds inner name");
+check(!Storages.isExistentStorageNoSearchNoNormalize(root + "data.xp3>dir/../dir/abc.bin"), "archive exact query does not compress dot components");
+check(Storages.searchPath("payload.bin", Storages.getLocalName("patch/")) == root + "patch/payload.bin", "explicit native search path");
+var nativeSearchSeparator = Storages.getLocalName(root).charAt(0) == "/" ? ":" : ";";
+check(Storages.searchPath("payload.bin", Storages.getLocalName("tree/") + nativeSearchSeparator + Storages.getLocalName("patch/")) == root + "patch/payload.bin", "cross-platform native search path list");
+check(Storages.searchPath("local.bin") == root + "local.bin", "default search includes VFS directory");
+check(Storages.searchPath("payload.bin", Storages.getLocalName("tree/")) === void, "search does not use auto path");
+check(Storages.getDisplayName("tree/sub/child.bin") == "child.bin", "portable filesystem display name");
+var tree = Storages.dirtree("tree");
+check(tree.count == 3 && tree.find("sub/") < tree.find("sub/child.bin") && tree.find("top.bin") >= 0, "Next relative depth first tree");
+check(Storages.dirtree("tree/", true).join(",") == "sub/", "Next directories only");
+check(Storages.dirtree("missing").count == 0, "Next absent tree is empty");
+var details = Storages.dirlistEx("tree/");
+var foundFile = false, foundFolder = false, foundDots = 0;
+for (var i = 0; i < details.count; ++i) {
+    var item = details[i];
+    if (item.name == "." || item.name == "..") ++foundDots;
+    if (item.name == "top.bin") foundFile = item.size == 3 && !(item.attrib & 16) && item.mtime instanceof "Date";
+    if (item.name == "sub") foundFolder = item.size == 0 && (item.attrib & 16) && item.atime instanceof "Date";
+}
+check(foundFile && foundFolder && foundDots == 2, "extended entries have raw names, size, flags and Dates");
+var temporaryName = Storages.getTemporaryName(), temporaryName2 = Storages.getTemporaryName();
+check(temporaryName != temporaryName2 && temporaryName.indexOf("file:") != 0, "temporary names are unique native paths");
+check(!Storages.isExistentStorage(temporaryName), "temporary name reserves no file");
+var temporary = new TemporaryFiles;
+check(!temporary.entry("absent-temporary.bin"), "register never creates a missing file");
+check(!temporary.entry("tree/"), "file registration does not accept directory");
+check(Storages.copyFile("local.bin", "temporary.bin", true) && temporary.entry("temporary.bin"), "register actual temporary file");
+check(Storages.createDirectory("temporary-folder/") && temporary.entryFolder("temporary-folder/"), "register empty temporary directory");
+var finalizedWhileAlive = false;
+temporary.finalize = function() { global.finalizedWhileAlive = Storages.isExistentStorage("temporary.bin"); };
+invalidate temporary;
+check(finalizedWhileAlive && !Storages.isExistentStorage("temporary.bin") && !Storages.isExistentDirectory("temporary-folder/"), "native cleanup follows script finalize");
+var keepTree = new TemporaryFiles;
+keepTree.entryFolder("tree/");
+invalidate keepTree;
+check(Storages.isExistentStorage("tree/sub/child.bin"), "directory cleanup never recursively deletes contents");
+var movedTemporary = new TemporaryFiles;
+check(Storages.copyFile("local.bin", "owned.bin", true) && movedTemporary.entry("owned.bin"), "register owned path");
+check(Storages.moveFile(root + "owned.bin", root + "renamed.bin"), "rename registered file");
+check(Storages.copyFile("local.bin", "owned.bin", true), "replace old path with another file");
+invalidate movedTemporary;
+check(Storages.isExistentStorage("owned.bin"), "cleanup preserves replacement path");
+check(Storages.copyFile("local.bin", "gc.bin", true), "create GC temporary");
+var collectedTemporary = new TemporaryFiles;
+check(collectedTemporary.entry("gc.bin"), "register GC temporary");
+collectedTemporary = void;
+check(Storages.copyFile("local.bin", "shutdown.bin", true), "create shutdown temporary");
+var shutdownTemporary = new TemporaryFiles;
+check(shutdownTemporary.entry("shutdown.bin"), "register shutdown temporary");
+check(Storages.copyFile("payload.bin", "crossplatform-copy.bin") && Storages.copyFile("local.bin", "crossplatform-copy.bin") && Storages.fstat("crossplatform-copy.bin").size == 5, "cross-platform two-argument copy creates and overwrites");
+check(Storages.copyFile("payload.bin", "copy.bin", true), "copy from auto path");
+check(!Storages.copyFile("payload.bin", "copy.bin", true), "copy refuses overwrite");
+check(Storages.copyFile("local.bin", "copy.bin", false), "copy overwrites");
+check(Storages.fstat("copy.bin").size == 5, "copied local size");
+check(!Storages.copyFile("copy.bin", "copy.bin", false), "self copy fails");
+check(Storages.fstat("copy.bin").size == 5, "self copy leaves bytes intact");
+check(!Storages.copyFile("local.bin", "alias.bin", false), "hard link self copy fails");
+check(Storages.fstat("local.bin").size == 5, "hard link self copy preserves source");
+check(Storages.copyFileNoNormalize("payload.bin", root + "MixedCase.BIN", true), "exact copy");
+check(Storages.getDisplayName("mixedcase.bin") == "MixedCase.BIN", "display preserves actual entry spelling");
+var caught = false;
+try { Storages.copyFileNoNormalize("payload.bin", "relative.bin", true); } catch (e) { caught = true; }
+check(caught, "exact copy requires full storage name");
+check(!Storages.copyFile("missing", "bad.bin", false), "missing source returns false");
+check(!Storages.copyFile("local.bin", "missing/bad.bin", false), "missing target parent returns false");
+check(!Storages.copyFile("local.bin", "local.bin/child", false), "target file component returns false");
+check(!Storages.copyFile("local.bin/child", "bad.bin", false), "source file component returns false");
+check(!Storages.copyFile("local.bin", "data.xp3>inside", false), "copy does not write archives");
+check(Storages.createDirectory("folder/"), "create directory");
+check(!Storages.createDirectory("folder/"), "existing directory returns false");
+check(!Storages.createDirectory("missing/nested/"), "create is one level");
+check(!Storages.createDirectory("local.bin/nested/"), "mkdir file component returns false");
+check(Storages.createDirectoryNoNormalize(root + "ExactCase/Nested/"), "exact recursive extension");
+check(!Storages.createDirectoryNoNormalize(root + "ExactCase/Nested/"), "exact existing false");
+check(Storages.isExistentDirectory("folder/") == 1, "directory exists");
+check(Storages.isExistentDirectory("missing/") == 0, "original active absence branch");
+check(Storages.isExistentDirectory("local.bin/") == 0, "file is not directory");
+caught = false;
+try { Storages.createDirectory("bad"); } catch(e) { caught = true; }
+check(caught, "directory delimiter required");
+caught = false;
+try { Storages.dirlist("folder"); } catch(e) { caught = true; }
+check(caught, "list delimiter required");
+var list = Storages.dirlist("folder/");
+check(list.find("./") >= 0 && list.find("../") >= 0, "directory dot entries");
+check(Storages.truncateFile("payload.bin", 3), "truncate from auto path");
+check(!Storages.truncateFile("payload.bin", -1), "negative truncate returns false");
+check(Storages.fstat("patch/payload.bin").size == 3, "truncated size");
+check(Storages.truncateFile("payload.bin", 4294967303), "truncate narrows tjs_int");
+check(Storages.fstat("patch/payload.bin").size == 7, "narrowed truncate size");
+caught = false;
+try { Storages.fstat("payload.bin"); } catch(e) { caught = true; }
+check(caught, "local fstat does not redirect to local auto path");
+check(!Storages.deleteFile("missing"), "missing delete false");
+check(Storages.deleteFile("payload.bin"), "delete from auto path");
+check(!Storages.isExistentStorage("payload.bin"), "delete clears storage lookup");
+check(Storages.moveFile(root + "copy.bin", root + "moved.bin"), "move full storage names");
+check(!Storages.moveFile(root + "moved.bin", root + "local.bin"), "move refuses overwrite");
+check(!Storages.moveFile(root + "moved.bin", root + "MixedCase.BIN"), "move preserves different destination data");
+check(Storages.fstat("moved.bin").size == 5 && Storages.fstat("MixedCase.BIN").size == 7, "failed move preserves source and destination");
+check(Storages.moveFile(root + "ExactCase", root + "RenamedDirectory"), "move accepts directories");
+check(!Storages.moveFile(root + "RenamedDirectory", root + "folder"), "directory move refuses existing destination");
+check(Storages.isExistentDirectory("RenamedDirectory/Nested/") && Storages.isExistentDirectory("folder/"), "failed directory move preserves both trees");
+check(Storages.moveFile(root + "RenamedDirectory", root + "ExactCase"), "restore moved directory");
+caught = false;
+try { Storages.moveFile("moved.bin", "another.bin"); } catch(e) { caught = true; }
+check(caught, "move requires full storage names");
+check(Storages.getLastModifiedFileTime("missing") == 0, "missing raw timestamp returns zero");
+check(Storages.getLastModifiedFileTime("local.bin/child") == 0, "raw timestamp file component returns zero");
+check(!Storages.setLastModifiedFileTime("missing", 132537600000000000), "missing raw set false");
+check(Storages.setLastModifiedFileTime("local.bin", 132537600001234567), "raw FILETIME set");
+check(Storages.getLastModifiedFileTime("local.bin") == 132537600001234567, "FILETIME 100ns precision");
+var dates = Storages.getTime("local.bin");
+check(typeof dates.size == "undefined", "getTime omits size");
+check(dates.mtime instanceof "Date" && dates.mtime.getTime() == 1609286400000, "Date epoch and second precision");
+check(typeof Storages.fstat("folder/").size == "undefined", "directory fstat omits size");
+var stamp = new Date;
+stamp.setTime(1700000000000);
+stamp.getTime = function() { throw "instance getTime override must not run"; };
+var sequence = "";
+class Times {
+    property ctime { getter() { global.sequence += "c"; return void; } }
+    property atime { getter() { global.sequence += "a"; return global.stamp; } }
+    property mtime { getter() { global.sequence += "m"; return global.stamp; } }
+}
+check(Storages.setTime("local.bin", new Times), "set timestamps from getters");
+check(sequence == "cam", "timestamp dictionary getter order");
+check(Storages.getLastModifiedFileTime("local.bin") == 133444736000000000, "set Date converts to FILETIME");
+dates = Storages.getTime("local.bin");
+check(dates.atime.getTime() == 1700000000000, "access timestamp set");
+check(Storages.setTime("local.bin", %[ctime:stamp]) == supportsCreationTime, "creation time host capability");
+if (supportsCreationTime) check(Storages.getTime("local.bin").ctime.getTime() == 1700000000000, "creation timestamp set");
+check(Storages.setTime("local.bin", %[mtime:23, ctime:null]), "non-Date values ignored");
+check(Storages.setTime("local.bin", %[mtime:%[]]), "native Date this status is ignored");
+check(Storages.setTime("local.bin", null), "null dictionary keeps times");
+check(!Storages.setTime("missing", %[mtime:stamp]), "setTime open failure false");
+check(Storages.setTime("folder/", %[mtime:stamp]), "directory timestamp set");
+check(Storages.getLastModifiedFileTime("folder/") == 133444736000000000, "directory raw timestamp");
+var oldSetter = Date.setTime;
+Date.setTime = function() { throw "class method replacement after link must not run"; };
+check(Storages.getTime("local.bin").mtime.getTime() == 1700000000000, "Date setTime captured at link");
+Date.setTime = oldSetter;
+class BadTimes { property ctime { getter() { throw "getter failure"; } } }
+caught = false;
+try { Storages.setTime("local.bin", new BadTimes); } catch(e) { caught = e === "getter failure"; }
+check(caught, "getter exception reaches script catch");
+caught = false;
+try { Storages.getTime("missing"); } catch(e) { caught = true; }
+check(caught, "missing getTime throws");
+caught = false;
+try { Storages.setTime("local.bin"); } catch(e) { caught = true; }
+check(caught, "setTime required dictionary");
+check(Storages.setLastModifiedFileTime("local.bin", 0), "zero FILETIME is no change");
+check(Storages.getLastModifiedFileTime("local.bin") == 133444736000000000, "zero preserves timestamp");
+check(Storages.changeDirectory("folder/"), "change current directory");
+check(Storages.currentPath == root + "folder/", "currentPath sees change");
+check(!Storages.changeDirectory("missing/"), "failed directory change false");
+caught = false;
+try { Storages.currentPath = "missing/"; } catch(e) { caught = true; }
+check(caught && Storages.currentPath == root + "folder/", "failed currentPath setter throws and preserves state");
+Storages.currentPath = root;
+check(Storages.currentPath == root, "currentPath setter changes VFS");
+check(Storages.removeDirectory("folder/"), "remove empty directory");
+check(!Storages.removeDirectory("ExactCase/"), "nonempty directory is preserved");
+check(Storages.clearStorageCaches() === void, "cache clear returns void");
+Storages.currentPath = root;
+check(Plugins.unlink("fstat.dll"), "unlink plugin");
+check(typeof Storages.currentPath == "undefined" && typeof Storages.getTime == "undefined", "unlink removes owned property and functions");
+var originalGetter = Date.getTime;
+Date.getTime = function() { if (this.fail) throw "date callback failure"; return this.ms; };
+Plugins.link("fstat.dll");
+check(Storages.setTime("local.bin", %[mtime:%[ms:1600000000000]]), "pre-link getTime replacement accepts arbitrary object");
+check(Storages.getLastModifiedFileTime("local.bin") == 132444736000000000, "replacement callback timestamp");
+caught = false;
+try { Storages.setTime("local.bin", %[mtime:%[fail:1]]); } catch(e) { caught = e === "date callback failure"; }
+check(caught, "captured script Date callback exception propagates");
+Date.getTime = originalGetter;
+check(Plugins.unlink("fstat.dll"), "unlink relinked plugin");
+"passed";

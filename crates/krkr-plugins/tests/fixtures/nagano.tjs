@@ -1,0 +1,52 @@
+// Actual host drawing, readback, callbacks, cancellation and provider lifetime.
+System.exitOnWindowClose=false;
+function check(ok,why) { if(!ok) throw why; }
+Plugins.link('plugin/extNagano.dll');
+var w=new Window();w.caption='Nagano transitions';w.setInnerSize(1280,576);
+var root=new Layer(w,null);root.setImageSize(1280,576);root.setSize(1280,576);
+root.face=dfAlpha;root.fillRect(0,0,1280,576,0xff18202b);root.visible=true;
+var oldPage=new Layer(w,root),newPage=new Layer(w,root),rule=new Layer(w,root);
+oldPage.setImageSize(96,64);newPage.setImageSize(96,64);rule.setImageSize(16,64);
+oldPage.face=dfAlpha;newPage.face=dfAlpha;rule.face=dfAlpha;
+oldPage.fillRect(0,0,96,64,0xff204080);newPage.fillRect(0,0,96,64,0xffc08020);
+rule.fillRect(0,0,16,64,0xffffffff);
+rule.saveLayerImage('target/nagano-rule.png','png');
+for(var y=0;y<64;y+=8) for(var x=0;x<96;x+=8) {
+    if(((x/8+y/8)%2)==0) oldPage.fillRect(x,y,8,8,0xff30d0e0);
+    if(x>=24 && x<72) newPage.fillRect(x,y,8,8,0xffffc040);
+}
+oldPage.fillRect(0,0,4,64,0xffff3050);newPage.fillRect(92,0,4,64,0xff50ff80);
+var a=new Layer(w,root),b=new Layer(w,root);
+a.setSize(96,64);b.setSize(96,64);a.type=ltOpaque;b.type=ltOpaque;
+var warpRule=new Layer(w,root);warpRule.setImageSize(96,64);warpRule.face=dfAlpha;warpRule.fillRect(0,0,96,64,0xff006040);
+var before=[0,0,96,0,48,32, 96,0,96,64,48,32, 96,64,0,64,48,32, 0,64,0,0,48,32];
+var after=[0,0,96,0,32,44, 96,0,96,64,32,44, 96,64,0,64,32,44, 0,64,0,0,32,44];
+var names=['zoomfade','scanline','rgbfade','book','spin','imagewipe','flutter','honeyturn','multiripple','3duniversal','morphing','blurfade'];
+var phase=0,observed=-1,completed=0;
+w.action=function(e) {if(e.type=='onTransitionCompleted') global.completed++;};
+w.visible=true;
+for(var row=0;row<names.count;row++) {
+    a.assignImages(oldPage);b.assignImages(newPage);a.visible=true;b.visible=false;
+    phase=0;observed=-1;
+    a.beginTransition(names[row],true,b,%[time:1000,selfupdate:true,
+        callback:function(){global.observed=global.phase;return global.phase;},
+        zoom1:130,zoom2:130,dir:0,delayR:40,delayB:90,rule:names[row]=='3duniversal'?warpRule:'target/nagano-rule.png',
+        before:before,after:after,blur1:10,blur2:10,size:12,order:2,twist:2,count:3,rwidth:12,maxdrift:5,speed1:1,speed2:-1]);
+    check(!Plugins.unlink('plugin/extNagano.dll'),'active provider lifetime');
+    for(var column=0;column<5;column++) {
+        phase=column*250;a.update();
+        while(observed!=phase) System.wait(1);
+        if(column==4) while(completed<row+1) System.wait(1);
+        root.piledCopy(120*column+32+int(row/6)*640,(row%6)*88+8,column==4?b:a,0,0,96,64);
+    }
+    check(completed==row+1,'completion count');
+    check(!a.visible && b.visible && b.getMainPixel(94,32)==0x50ff80,'final page exchange');
+}
+a.visible=false;b.visible=false;
+root.font.height=10;
+for(var i=0;i<names.count;i++) root.drawText(2+int(i/6)*640,(i%6)*88+74,names[i],0xffffff);
+root.saveLayerImage('target/nagano-output.png','png');
+System.wait(50);
+check(Plugins.unlink('plugin/extNagano.dll'),'provider cleanup');
+Debug.message('NAGANO_OK twelve effects, actual GPU, callbacks, snapshots and exchange');
+w.close();

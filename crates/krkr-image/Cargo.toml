@@ -1,0 +1,28 @@
+[package]
+name = "krkr-image"
+version.workspace = true
+edition = "2024"
+rust-version = "1.98.1"
+
+[dependencies]
+bc-crunch = "0.1.2"
+krkr-assets = { path = "../krkr-assets" }
+krkr-protocol = { path = "../krkr-protocol" }
+thiserror.workspace = true
+image = { version = "0.25.10", default-features = false, features = ["bmp", "ico", "png", "webp"] }
+zune-jpeg = "0.5.15"
+image-webp = "0.2.4"
+png = "0.18.1"
+libtlg-rs = "0.2.4"
+tlg-rs = { version = "=0.1.1", default-features = false }
+jpeg-encoder = "=0.7.1"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+encoding_rs = "0.8"
+
+[dev-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+tempfile = "3"
+libtlg-rs = { version = "0.2.4", features = ["encode"] }
+
+[lints]
+workspace = true

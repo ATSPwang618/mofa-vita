@@ -1,0 +1,19 @@
+[package]
+name = "krkr-render-wgpu"
+version.workspace = true
+edition = "2024"
+rust-version = "1.95"
+
+[dependencies]
+krkr-render = { path = "../krkr-render" }
+krkr-protocol = { path = "../krkr-protocol" }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "vulkan", "metal", "wgsl"] }
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+etagere = "0.3"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+slotmap.workspace = true

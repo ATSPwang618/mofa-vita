@@ -1,0 +1,17 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+var originalInform=System.inform,oldDialog=function(){},calls=[];global.WIN32Dialog=oldDialog;
+System.inform=function(message,caption,type){calls.add([message,caption,type]);return message=='yes'?1:0;};
+Plugins.link('win32dialog.dll');var d=new WIN32Dialog();
+check(d.messageBox('yes','caption',999)===0 && d.messageBox('no','caption',0)===1,'inform result mapping');
+check(calls.count==2 && calls[0][2]==2 && calls[1][2]==2,'reference fixed button count');
+Plugins.unlink('win32dialog.dll');check(WIN32Dialog===oldDialog && d.messageBox('no')===1,'retained dialog and restored export');
+System.inform=originalInform;
+Plugins.link('xp3filter.dll');
+check(Scripts.evalStorage('encrypted.xp3>stream.tjs')=='XP3_DECODED','streaming extraction');
+check(Scripts.evalStorage('encrypted.xp3>full.tjs')=='XP3_DECODED','compressed full data extraction');
+check(!('decoderPrivate' in global),'filter script globals stay isolated');
+Plugins.unlink('xp3filter.dll');check(fails(function(){Scripts.evalStorage('encrypted.xp3>stream.tjs');}),'unload removes filter');
+Plugins.link('xp3filter.tpm');check(Scripts.evalStorage('encrypted.xp3>stream.tjs')=='XP3_DECODED','filter reload');Plugins.unlink('xp3filter.tpm');
+Debug.message('XP3_FILTER_DIALOG_OK: managed extraction, content callbacks, compressed input, byte operations, dialog bridge and reload');
+'passed';

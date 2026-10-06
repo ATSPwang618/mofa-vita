@@ -1,0 +1,30 @@
+[package]
+name = "krkr-engine"
+version.workspace = true
+edition = "2024"
+rust-version = "1.95"
+
+[dependencies]
+krkr-video = { path = "../krkr-video" }
+krkr-audio = { path = "../krkr-audio" }
+krkr-render = { path = "../krkr-render" }
+krkr-image = { path = "../krkr-image" }
+slotmap.workspace = true
+lru = "0.16"
+smallvec = "1.15"
+tjs-core = { path = "../tjs-core" }
+tjs-front = { path = "../tjs-front" }
+tjs-bind = { path = "../tjs-bind" }
+tjs-runtime = { path = "../tjs-runtime" }
+krkr-assets = { path = "../krkr-assets" }
+krkr-kag = { path = "../krkr-kag" }
+krkr-protocol = { path = "../krkr-protocol" }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+encoding_rs = "0.8"
+tempfile = "3"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+
+[lints]
+workspace = true

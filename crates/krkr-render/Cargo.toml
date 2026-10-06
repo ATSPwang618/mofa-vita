@@ -1,0 +1,16 @@
+[package]
+name = "krkr-render"
+version.workspace = true
+edition = "2024"
+rust-version = "1.95"
+
+[dependencies]
+ab_glyph = "0.2.32"
+krkr-protocol = { path = "../krkr-protocol" }
+lru = "0.16"
+smallvec = "1.15"
+ttf-parser = "0.25"
+thiserror.workspace = true
+
+[lints]
+workspace = true

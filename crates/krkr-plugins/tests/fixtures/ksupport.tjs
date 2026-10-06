@@ -1,0 +1,168 @@
+// kwidgets e7bed32 utils.cpp / rect.cpp / ncbind.hpp, with core dispatch from
+// krkrz tjsDictionary.cpp and tjsObject.cpp. This fixture is source-derived;
+// it does not claim execution against an original DLL.
+function sortedJoin(a) {a.sort(); return a.join(",");}
+function check(v, name) { if (!v) throw name; }
+Plugins.link("ksupport.dll");
+check(equalStruct(1, 1) && !equalStruct(1, 1.0), "strict number kinds");
+check(equalStructNumericLoose(1, 1.0), "loose int-real");
+check(equalStructNumericLoose(1.0, 1.00000001), "loose float epsilon");
+check(!equalStructNumericLoose(1.0, 1.000001), "loose epsilon bound");
+check(!equalStructNumericLoose(realNan, realNan), "NaN unequal");
+check(!equalStructNumericLoose("1", 1), "strings remain strict");
+check(equalStruct([%[x:[1,"two",void]]], [%[x:[1,"two",void]]]), "nested values");
+check(!equalStruct(%[a:1], %[b:1]), "missing Dictionary key reads successful void");
+check(equalStruct(%[a:void], %[b:void]), "missing Dictionary void quirk");
+var derivedMissingCalls=0, derivedMissingMode=0;
+class DerivedDictionary extends Dictionary {
+    function DerivedDictionary() { super.Dictionary(); }
+    function missing(set,name,value) {
+        if (name=="leftOnly") {
+            ++global.derivedMissingCalls;
+            if (global.derivedMissingMode==1) { *value=void; return true; }
+            if (global.derivedMissingMode==2) throw "derived missing failure";
+        }
+        return false;
+    }
+}
+var derivedLeft=new DerivedDictionary(), derivedRight=new DerivedDictionary();
+derivedLeft.leftOnly=7;derivedRight.rightOnly=7;armMissing(derivedRight);
+check(equalStruct(derivedLeft,derivedRight) && equalStructNumericLoose(derivedLeft,derivedRight) && derivedMissingCalls==2, "derived Dictionary missing status is skipped after handler");
+derivedMissingMode=1;
+check(!equalStruct(derivedLeft,derivedRight), "derived missing successful void is compared");
+derivedMissingMode=2;
+var derivedThrown=false;
+try {equalStruct(derivedLeft,derivedRight);} catch(e) {derivedThrown=e=="derived missing failure";}
+check(derivedThrown, "derived missing exception is not a missing status");
+var getterCount=0;
+property varying { getter { ++getterCount; return getterCount; } }
+var left=%[x:1], right=%[x:&varying];
+check(!equalStruct([left,left], [right,right]) && getterCount==2, "repeat shared pair calls getter again");
+getterCount=0;
+check(!equalStruct(%[x:2], %[x:&varying]) && getterCount==1, "right accessor invoked once");
+getterCount=0;
+check(!equalStruct(%[x:&varying], %[x:1]) && getterCount==0, "left enumeration remains raw");
+var same=function() {};
+check(equalStruct(same incontextof %[], same incontextof %[]), "object identity ignores this");
+check(sortedJoin(dictionaryKeys(flagged))=="both,visible", "exact hidden flag comparison");
+check(sortedJoin(dictionaryValues(flagged))=="1,3", "raw values filter flags");
+check(!equalStruct(flagged,%[visible:1,both:3]), "GetCount includes hidden slots");
+var props=%[x:&varying];
+getterCount=0;
+var rawValues=dictionaryValues(props);
+check((&rawValues[0]) instanceof "Property", "dictionary values returns accessor body");
+check(getterCount==0, "enumeration does not call getter");
+check(dictionaryKeys(null).count==0, "null enum ignored failure");
+var dead=%[x:1]; invalidate dead;
+check(dictionaryValues(dead).count==0, "invalid enum ignored failure");
+check(equalStruct(dead,dead), "same invalid object identity");
+var caught=false; try { dictionaryKeys(1); } catch(e) {caught=true;}
+check(caught, "enum requires object variant");
+var joined=unionDictionary(%[a:1,same:2], %[b:3,same:4]);
+check(joined.a==1 && joined.b==3 && joined.same==4, "dictionary union overwrites");
+var stored=0;
+property writable { getter {return stored;} setter(v) {stored=v;} }
+joined=unionDictionary(%[x:&writable],%[x:9]);
+check(stored==9 && ((&joined.x) instanceof "Property"), "dictionary union invokes previous setter");
+check(unionSet([3,1,1],[2,1,1,1]).join(",")=="1,1,1,2,3", "multiset union maximum multiplicity");
+check(intersectionSet([3,1,1],[1,2]).join(",")=="1", "multiset intersection");
+check(differenceSet([3,1,1],[1,2]).join(",")=="1,3", "multiset difference");
+check(unionSet(["9","10"],["2"]).join(",")=="10,2,9", "string ordering");
+check(intersectionSet([1],[1.0])[0]===1, "equivalent set representatives from left");
+check(sliceArray([10,20,30],-2,4).join(",")=="20,30,10,20", "slice signed array indices cross zero");
+var tail=sliceArray([10,20],1,3);
+check(tail.count==3 && tail[0]==20 && tail[1]===void && tail[2]===void, "slice array out of range succeeds void");
+check(sliceArray([1],4294967296,1)[0]==1 && sliceArray([1],0,-1).count==0, "slice i32 narrowing and negative size");
+check(sliceArray(%[count:999999999,"0"=>7],0,1)[0]==7, "slice does not use source count as an allocation bound");
+var countCalls=0;
+class ArrayLike {
+    property count {getter {++global.countCalls; return 3;}}
+    function missing(set,name,value) {
+        if (name=="0") {*value=%[token:7]; return true;}
+        if (name=="1") return false;
+        *value=void; return true;
+    }
+}
+var source=new ArrayLike(); armMissing(source);
+var copied=sliceArray(source,0,3);
+check(countCalls==1 && copied[0]===copied[1] && copied[0].token==7 && copied[2]===void, "raw missing fallback is rooted and actual void retained");
+var arrayLike=%[count:3,"0"=>"a","1"=>"b","2"=>"a"];
+var hash=arrayHash(arrayLike);
+check(hash.a==1 && hash.b==1 && dictionaryKeys(hash).count==2, "arrayHash accepts count object");
+check(unionSet(%[count:2,"0"=>3,"1"=>1],[2]).join(",")=="1,2,3", "sets accept count object");
+class ThrowsCount {property count {getter {throw "count failure";}}}
+caught=false;try {sliceArray(new ThrowsCount(),0,0);}catch(e){caught=e=="count failure";}
+check(caught, "even empty slice evaluates count getter");
+var log=[], items=[1,2,3];
+eachArray(items,function(k,v,extra){log.push(k+":"+v+":"+extra);if(k==0){items[1]=8;items.push(4);}return false;},"X");
+check(log.join(",")=="0:1:X,1:8:X,2:3:X", "each captures count reads live values ignores false");
+log=[];items=[%[value:7],2,3];
+eachArray(items,function(k,v){log.push(v.value);if(k==0)invalidate items;});
+check(log.join(",")=="7,7,7", "invalidated each array retains last temporary");
+log=[];items=[1,2,3];
+eachArray(items,function(k,v){log.push(v);if(k==0)items.clear();});
+check(log.count==3 && log[0]==1 && log[1]===void, "shrunk live array returns void");
+var dictionary=%[a:1,b:1,c:1];log=[];
+eachDictionary(dictionary,function(k,v,extra){log.push(v+extra);dictionary.a=9;dictionary.b=9;dictionary.c=9;return false;},10);
+check(log[0]==11 && log[1]==19 && log[2]==19, "eachDictionary rereads changed values");
+caught=false;try {eachArray([1],function(){throw "callback failure";});}catch(e){caught=e=="callback failure";}
+check(caught, "callback exception preserved");
+eachArray([1,2],null); eachDictionary(%[x:1],null);
+getterCount=0;eachArray([1],&varying);check(getterCount==0,"property default FuncCall failure is ignored");
+eachArray([1],discarded);eachDictionary(%[x:1],discarded);
+caught=false;try {eachArray([],3);}catch(e){caught=true;}
+check(caught, "callback variant converted even if empty");
+
+var rect=new KRect(1,2,3,4,99);
+check(rect.left==1 && rect.top==2 && rect.right==4 && rect.bottom==6 && rect.width==3 && rect.height==4, "rectangle constructor and extra args");
+check(rect.isValid && rect.contains(1,6) && !rect.contains(4,3), "inclusive bottom exclusive right");
+rect.left=2;rect.top=3;rect.right=8;rect.bottom=9;rect.width=10;rect.height=20;
+check(rect.right==12 && rect.bottom==23, "all rectangle setters");
+var duplicate=rect.dup();duplicate.left=99;
+check(rect.left==2, "dup is independent");
+duplicate.assign(rect);check(duplicate.left==2 && duplicate.right==12, "assign copies coordinates");
+var other=new KRect(12,3,2,2);
+check(!rect.intersects(other), "edge touching is not overlap");
+duplicate.intersectWith(other);check(duplicate.isValid && duplicate.width==0, "zero width intersection valid");
+duplicate.assign(new KRect(0,0,1,1));duplicate.include(new KRect(2,3,4,5));
+check(duplicate.right==6 && duplicate.bottom==8, "include bounding box");
+duplicate.unionWith(new KRect(-2,-3,1,1));check(duplicate.left==-2 && duplicate.top==-3, "unionWith alias");
+duplicate.intersectWith(new KRect(99,99,1,1));check(!duplicate.isValid, "disjoint intersection remains reversed");
+var nanRect=new KRect(realNan,0,1,1), normal=new KRect(0,0,1,1);
+normal.include(nanRect);check(!normal.isValid, "right operand NaN wins ternary");
+nanRect.include(new KRect(0,0,1,1));check(nanRect.isValid, "left operand NaN replaced");
+var zeroRect=new KRect(0,0,1,1), negative=new KRect(0,0,1,1);negative.left=minusZero;
+zeroRect.include(negative);check((1.0/zeroRect.left)<0, "right operand negative zero retained");
+var region=new KRegion();check(region.empty && region.rectCount==0, "empty region constructor");
+region.assign(new KRect(0,0,10,10));region.exclude(new KRect(3,2,4,6));
+check(region.rectCount==4, "exclude partitions four rectangles");
+function coords(r){return [int r.left,int r.top,int r.right,int r.bottom].join(",");}
+check(coords(region.rectAt(0))=="0,0,10,2" && coords(region.rectAt(1))=="0,8,10,10" && coords(region.rectAt(2))=="0,2,3,8" && coords(region.rectAt(3))=="7,2,10,8", "partition top bottom left right order");
+check(coords(region.rectAt(4294967296))==coords(region.rectAt(0)), "rectAt uint narrowing");
+duplicate=region.rectAt(0);duplicate.left=99;check(region.rectAt(0).left==0, "rectAt duplicates");
+check(region.contains(0,2) && !region.contains(4,4) && region.intersects(new KRect(0,0,1,1)), "region predicates");
+var region2=new KRegion();region2.assign(region);region.clear();check(region.empty && region2.rectCount==4, "region assign copies and clear");
+region.assign(new KRect(0,0,2,2));region.include(new KRect(1,0,2,2));
+check(region.rectCount==2 && coords(region.rectAt(1))=="2,0,3,2", "include removes prior coverage and appends");
+region2.assign(new KRect(0,0,1,1));region2.include(new KRect(2,0,1,1));
+region.intersectWith(region2);check(region.rectCount==3, "region intersection retains touching zero width pieces");
+check(coords(region.rectAt(0))=="0,0,1,1" && coords(region.rectAt(1))=="2,0,2,1" && coords(region.rectAt(2))=="2,0,3,1", "region intersection input outer loop order");
+region.exclude(region2);check(region.rectCount==1 && region.rectAt(0).width==0, "exclude preserves nonintersecting zero area");
+region.assign(new KRect(2,3,-1,0));check(!region.empty && !region.rectAt(0).isValid, "assign retains invalid rect");
+region.assign(new KRegion());check(region.empty, "assign empty region");
+var shell=new KRect(void);caught=false;try {var unused=shell.left;}catch(e){caught=true;}check(caught,"single void KRect shell lacks native instance");
+shell.KRect(0,0,1,1);check(shell.isValid,"shell constructor may initialize later");
+var rshell=new KRegion(void);caught=false;try {rshell.clear();}catch(e){caught=true;}check(caught,"single void KRegion shell");
+caught=false;try {new KRect();}catch(e){caught=true;}check(caught,"KRect requires four arguments");
+caught=false;try {region.include(%[]);}catch(e){caught=true;}check(caught,"region input native type enforced");
+caught=false;try {region.rectAt(-1);}catch(e){caught=true;}check(caught,"unchecked source index safely rejected");
+var method=rect.dup;invalidate rect;caught=false;try {method();}catch(e){caught=true;}check(caught,"invalidated geometry rejects retained method");
+"passed";
+
+
+
+
+
+
+
+

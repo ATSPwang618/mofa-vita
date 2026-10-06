@@ -1,0 +1,11 @@
+[package]
+name = "krkr-kag"
+version.workspace = true
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

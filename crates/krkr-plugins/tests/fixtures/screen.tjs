@@ -1,0 +1,111 @@
+// One source-derived LayerExScreen group, kwidgets e7bed32 main.cpp and
+// krkrz tjsObject.cpp IsValid/PropGet. The Rust driver supplies a protocol host;
+// this does not claim original-DLL or operating-system execution.
+function check(v, name) { if (!v) throw name; }
+Plugins.link("LayerExScreen.dll");
+var w = new Window(), other = new Window();
+w.setZoom(3, 2); other.setZoom(7, 3);
+var primary = new Layer(w, null), child = new Layer(w, primary), leaf = new Layer(w, child);
+child.setPos(-5, -1); leaf.setPos(2, -4);
+check(leaf.getScreenLeft() == 109 && leaf.getScreenTop() == -270, "nested layers, signed truncation and client origin");
+check(primary.getScreenLeft() == 113 && primary.getScreenTop() == -263, "primary layer coordinates");
+check(leaf.getScreenLeft(2) == 112 && leaf.getScreenTop(-2) == -273, "integer offset before scaling");
+check(leaf.getScreenLeft("2") == 109 && leaf.getScreenLeft(2.0) == 109 && leaf.getScreenLeft(null) == 109 && leaf.getScreenLeft(void) == 109, "only Integer offset");
+check(leaf.getScreenLeft(0x100000002, 999) == 112, "offset narrows to signed 32-bit and ignores extra args");
+w.setLayerPos(80, 90);
+check(leaf.getScreenLeft() == 109 && leaf.getScreenTop() == -270, "reference ignores viewport translation");
+
+var log = [], throwOn = "", windowReads = 0, moving = false;
+function record(name) { log.add(name); if (throwOn == name) throw name; }
+property numerator { getter { record("numer"); if (moving) w.setPos(-500, -200); return "3"; } }
+property denominator { getter { record("denom"); return 2.9; } }
+var zoom = %[zoomNumer:&numerator, zoomDenom:&denominator];
+class Node {
+    var tag, nx, ny, up;
+    function Node(t, x, y, p) { tag=t; nx=x; ny=y; up=p; }
+    property left { getter { record(tag+".left"); return nx; } }
+    property top { getter { record(tag+".top"); return ny; } }
+    property parent { getter { record(tag+".parent"); return up; } }
+    property window { getter { record(tag+".window"); return ++global.windowReads == 1 ? w : zoom; } }
+}
+var r = new Node("r", "4", -3, null), p = new Node("p", -7.9, "2", r);
+function reset() { log.clear(); windowReads=0; }
+function leftOf(o, off) { return (Layer.getScreenLeft incontextof o)(off); }
+function topOf(o, off) { return (Layer.getScreenTop incontextof o)(off); }
+reset();
+check(leftOf(p, 2) == 112 && log.join(",") == "p.left,p.parent,r.left,r.parent,p.window,p.window,numer,denom", "full left getter order and a different zoom object");
+reset();
+check(topOf(p, -2) == -267 && log.join(",") == "p.top,p.parent,r.top,r.parent,p.window,p.window,numer,denom", "full top getter order and weak conversions");
+var stageNames=["p.left","p.parent","r.left","r.parent","p.window","numer","denom"];
+for (var i=0; i<stageNames.count; ++i) {
+    reset(); throwOn=stageNames[i]; var caught=false;
+    try { leftOf(p); } catch(e) { caught=e===throwOn; }
+    check(caught && log[log.count-1]===throwOn, "getter exception propagates without later reads");
+}
+throwOn="";
+reset(); moving=true;
+check(leftOf(p)==-491, "host origin queried after a zoom getter moves the first window");
+moving=false;
+var argumentCalls=0;
+function argument() { ++argumentCalls; return 5; }
+reset(); throwOn="p.left";
+(Layer.getScreenLeft incontextof p)(argument());
+(Layer.getScreenTop incontextof p)(argument());
+check(argumentCalls==2 && log.count==0, "discarded result still evaluates arguments but skips all plugin work");
+throwOn="";
+
+// The first window selects the host identity; the second independently
+// selects the zoom. Neither the second Window nor native layer state wins.
+var first=true;
+property alternating { getter { var result=first ? w : other; first=false; return result; } }
+var synthetic=%[left:3,top:-3,parent:null,window:&alternating];
+check(leftOf(synthetic)==-480, "first window identity with second window native zoom");
+first=true;
+check(topOf(synthetic)==-170, "independent top window selection");
+var missingLog=[], missingMode=0;
+class MissingNode {
+    var parent=null, window=w;
+    function missing(set, name, value) {
+        missingLog.add(name);
+        if (missingMode==1) throw "missing failed";
+        if (name=="left") { *value=5; return true; }
+        return false;
+    }
+}
+var m=new MissingNode(); armMissing(m);
+check(leftOf(m)==-480 && missingLog.join(",")=="left,left", "IsValid and PropGet each invoke missing");
+missingMode=1; var caught=false;
+try { leftOf(m); } catch(e) { caught=e==="missing failed"; }
+check(caught, "missing exception is executable, not a structural status");
+class Plain {}
+var sparse=new Plain(); sparse.parent=null; sparse.window=w;
+check(leftOf(sparse)==-487, "missing initial coordinate keeps the initial void");
+var bad=new Plain(); bad.left=3; bad.window=w;
+var caught=false; try { leftOf(bad); } catch(e) { caught=true; }
+check(caught, "missing parent retains previous integer and fails object conversion");
+var dead=%[]; invalidate dead;
+var invalidValue=%[left:dead,parent:null,window:w];
+check(leftOf(invalidValue)==-487, "invalid raw coordinate member skips PropGet and retains void");
+// Missing zoomDenom keeps zoomNumer (successful Dictionary void differs).
+var oddZoom=new Plain(); oddZoom.zoomNumer=5;
+first=true;
+property retainedZoom { getter { var result=first ? w : oddZoom; first=false; return result; } }
+var retained=%[left:3,parent:null,window:&retainedZoom];
+check(leftOf(retained)==-484, "failed zoomDenom read reuses numerator");
+first=true; oddZoom.zoomDenom=void; caught=false;
+try { leftOf(retained); } catch(e) { caught=true; }
+check(caught, "successful void denominator is not missing fallback");
+
+screenHostMode=1; caught=false;
+try { var unavailable=primary.getScreenLeft(); } catch(e) { caught=true; }
+check(caught, "unavailable global client coordinates report capability failure");
+screenHostMode=2; caught=false;
+try { var failed=primary.getScreenTop(); } catch(e) { caught=true; }
+check(caught, "host failure is not stale geometry success");
+screenHostMode=0;
+check(primary.getScreenLeft()==-487, "fresh query recovers after host failure");
+var saved=Layer.getScreenLeft;
+Plugins.unlink("LayerExScreen.dll");
+check(typeof Layer.getScreenLeft=="undefined" && typeof Layer.getScreenTop=="undefined", "unlink removes both class entries");
+check((saved incontextof primary)()==-487 && primary.getScreenTop()==-163, "existing closures and instances remain callable after unlink");
+"passed";

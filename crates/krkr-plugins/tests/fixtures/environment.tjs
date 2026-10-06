@@ -1,0 +1,62 @@
+// windowEx 88c9be22: only the dedicated child-process fixture environment.
+// Empty-value reads follow modern Windows capacity-query semantics, not XP.
+function check(ok, message) { if(!ok) throw message; }
+Plugins.link("windowEx.dll");
+check(System.readEnvValue("KRKR_WINDOWEX_ENV_BASE", "ignored") === "fixture", "read named variable");
+check(System.readEnvValue("KRKR_WINDOWEX_ENV_EMPTY") === "", "defined empty string differs from missing");
+check(System.readEnvValue("KRKR_WINDOWEX_ENV_MISSING") === void, "missing read returns void");
+check(System.readEnvValue(nulName) === "fixture", "read name stops at embedded NUL");
+check(System.readEnvValue(leadingNul) === void, "nonempty managed string with leading NUL reaches empty OS name");
+check(System.readEnvValue("KRKR_WINDOWEX_ENV_UNICODE") === "海🎨", "UTF16 environment value");
+check(System.readEnvValue("KRKR_WINDOWEX_ENV_Ü") === "unicode-name", "Unicode environment name");
+check(System.expandEnvString(void) === "" && System.expandEnvString("") === "", "void/empty expansion");
+check(System.expandEnvString("a%KRKR_WINDOWEX_ENV_BASE%b", 123) === "afixtureb", "percent expansion and extra arguments");
+check(System.expandEnvString("[%KRKR_WINDOWEX_ENV_EMPTY%]") === "[]", "empty replacement");
+check(System.expandEnvString("%KRKR_WINDOWEX_ENV_NESTED%/%KRKR_WINDOWEX_ENV_BASE%") === "%KRKR_WINDOWEX_ENV_BASE%/fixture", "replacement is not recursively expanded");
+check(System.expandEnvString("%KRKR_WINDOWEX_ENV_MISSING%") === "%KRKR_WINDOWEX_ENV_MISSING%", "unknown token preserved");
+check(System.expandEnvString("%%-tail%") === "%%-tail%", "empty token and unmatched percent preserved");
+check(System.expandEnvString("%KRKR_WINDOWEX_ENV_BASE%%KRKR_WINDOWEX_ENV_BASE%") === "fixturefixture", "adjacent tokens");
+check(System.expandEnvString("%KRKR_WINDOWEX_ENV_BASE:~0,2%") === "%KRKR_WINDOWEX_ENV_BASE:~0,2%", "no command-shell substring language");
+check(System.expandEnvString(nulSource) === "afixture", "expansion source stops at NUL");
+check(System.expandEnvString(leadingNul) === "", "leading NUL expansion is empty");
+check(System.expandEnvString(literalSurrogate) === literalSurrogate, "unpaired literal surrogate survives");
+var sliced = System.expandEnvString(slicedSource);
+check(sliced.length == 4103 && sliced.substr(4095, 7) === "fixture" && #sliced[4102] == 0xd800,
+      "percent token crossing native budget boundary survives GC");
+if(nativeWindows) {
+    check(System.readEnvValue("krkr_windowex_env_base") === "fixture", "Windows name matching ignores case");
+    check(System.expandEnvString("%krkr_windowex_env_ü%") === "unicode-name", "Windows Unicode name case");
+    check(System.readEnvValue(surrogateName) === surrogateValue, "Windows unpaired UTF16 name and value");
+    check(System.expandEnvString("%" + surrogateName + "%") === surrogateValue, "Windows unpaired token name");
+} else {
+    check(System.readEnvValue("krkr_windowex_env_base") === void, "POSIX environment names remain case-sensitive");
+    check(System.expandEnvString("%" + surrogateName + "%") === "%" + surrogateName + "%", "unrepresentable POSIX name remains unknown");
+}
+
+var errors = 0, invalidRead = [void, 1, 1.5, null, %[], <% ff %>, ""];
+for(var i=0; i<invalidRead.count; ++i) try { System.readEnvValue(invalidRead[i]); } catch(e) { ++errors; }
+try { System.readEnvValue(); } catch(e) { ++errors; }
+try { System.expandEnvString(); } catch(e) { ++errors; }
+var invalidExpand = [1, 1.5, null, %[], <% ff %>];
+for(var i=0; i<invalidExpand.count; ++i) {
+    System.expandEnvString(invalidExpand[i]); // No result: skip AsStringNoAddRef.
+    try { var invalid = System.expandEnvString(invalidExpand[i]); } catch(e) { ++errors; }
+}
+check(errors == 14, "type validation and discarded-result ordering");
+if(nativeUnix) {
+    System.readEnvValue("KRKR_WINDOWEX_ENV_INVALID_UTF8"); // No result skips lookup/decoding.
+    try { var invalid = System.readEnvValue("KRKR_WINDOWEX_ENV_INVALID_UTF8"); } catch(e) { ++errors; }
+    check(errors == 15, "non-UTF8 POSIX values fail without replacement characters");
+}
+var large = "";
+for(var i=0; i<520; ++i) large += "%KRKR_WINDOWEX_ENV_LARGE%";
+var bounded = false;
+try { var tooLarge = System.expandEnvString(large); } catch(e) { bounded = true; }
+check(bounded, "expansion output limit reports failure");
+var retained = System.expandEnvString;
+check(Plugins.unlink("windowEx.dll"), "unlink removes installed environment slots");
+check(typeof System.expandEnvString === "undefined" || typeof System.expandEnvString === "void", "environment export removed");
+check(retained("%KRKR_WINDOWEX_ENV_BASE%") === "fixture", "retained native function survives unlink");
+Plugins.link("windowEx.dll");
+check(System.readEnvValue("KRKR_WINDOWEX_ENV_BASE") === "fixture", "environment exports relink");
+"passed";

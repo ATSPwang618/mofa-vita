@@ -1,0 +1,122 @@
+// Complete ScriptsEx contract from krkr2@dca72645/scriptsEx.cpp.
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{var value=fn();}catch(e){return true;}return false;}
+check(!('getObjectKeys' in Scripts),'explicit installation');
+Plugins.link('ScriptsEx.dll');
+var S=Scripts;
+check(S.pfMemberEnsure==0x200 && S.pfMemberMustExist==0x400 && S.pfIgnoreProp==0x800 && S.pfHiddenMember==0x1000 && S.pfStaticMember==0x10000,'five original flags');
+var d=%[z:3,a:1];
+check(S.getObjectKeys(d).join(',')=='a,z' && S.getObjectCount(d)==2,'sorted keys and member count');
+S.propSet(d,'hidden',8,S.pfMemberEnsure|S.pfHiddenMember);
+check(S.getObjectKeys(d).join(',')=='a,z' && S.getObjectCount(d)==3,'hidden filtering differs from GetCount');
+check(S.getObjectKeys([1,2]).count==0 && S.getObjectKeys(null).count==0,'Array enum NOTIMPL and null status');
+S.getObjectKeys(17);S.getObjectCount(17);
+check(fails(function(){return S.getObjectKeys(17);}) && fails(function(){S.getObjectCount();}),'discard skips type check but requires argument');
+var f=function(){}, ctx=%[value:7], bound=f incontextof ctx, unbound=f incontextof null;
+check(S.getObjectContext(bound)===ctx && S.isNullContext(unbound) && S.getObjectContext(null)===null,'closure context identity');
+check(fails(function(){S.isNullContext(1);}) && fails(function(){S.getObjectContext(void);}), 'context type checks');
+check(S.getMD5HashString(<% %>)=='d41d8cd98f00b204e9800998ecf8427e' && S.getMD5HashString(<% 61 62 63 %>)=='900150983cd24fb0d6963f7d28e17f72','MD5 octet known vectors');
+check(fails(function(){S.getMD5HashString('abc');}), 'MD5 accepts Octet only');
+
+// Property flags travel together through getters, setters and missing hooks.
+var getterCalls=0, stored=4, token=%[message:'accessor failure'];
+property p {getter(){global.getterCalls++;return global.stored;} setter(v){global.stored=v;}}
+var props=%[p:&p, present:void];
+check(S.propGet(props,'p')==4 && getterCalls==1,'getter executes');
+check(S.propGet(props,'p',S.pfIgnoreProp|S.pfMemberMustExist) instanceof 'Property','raw required property');
+check(getterCalls==1 && S.propGet(props,'present')===void,'existing void is present');
+S.propSet(props,'p',9);check(stored==9,'setter executes');
+S.propSet(props,'p',10,S.pfIgnoreProp);check(props.p==10 && stored==9,'raw set bypasses setter');
+check(fails(function(){return S.propGet(props,'absent');}) && S.propGet(props,'absent',0)===void,'dictionary required flag');
+check(fails(function(){S.propSet(props,'absent',3,0);}) && !('absent' in props),'non-ensuring set');
+check(S.propGet(props,'created',S.pfMemberEnsure|S.pfMemberMustExist)===void && 'created' in props,'ensuring read creates member');
+class Plain {}
+var plain=new Plain;
+check(fails(function(){return S.propGet(plain,'none',0);}), 'plain missing read');
+S.propSet(plain,'new',1);check(S.propGet(plain,'new')==1,'ensuring plain set');
+var indexed=[];S.propSet(indexed,2,7,0);S.propSet(indexed,-1,8,0);
+check(indexed.count==3 && indexed[2]==8 && S.propGet(indexed,4294967298)==8,'numeric growth negative index i32');
+check(fails(function(){S.propSet(indexed,3,1,S.pfMemberMustExist|S.pfMemberEnsure);}), 'array required outranks ensure');
+check(S.propGet(indexed,7,S.pfMemberEnsure)===void && indexed.count==3,'array ensuring read does not grow');
+check(fails(function(){return S.propGet(indexed,7,S.pfIgnoreProp|S.pfMemberMustExist);}), 'array raw required bounds');
+check(fails(function(){return S.propGet(props,1.0);}) && fails(function(){S.propSet(props,void,1);}), 'strict key types');
+class Base {function Base(){} property inherited {getter(){return this.answer;} setter(v){this.answer=v;}}}
+class Child extends Base {function Child(){super.Base();this.answer=3;}}
+var child=new Child;
+check(S.propGet(child,'inherited')==3,'inherited getter');S.propSet(child,'inherited',5);check(child.answer==5,'inherited setter');
+var missingCalls=0;
+class Missing {
+    function missing(set,name,result){global.missingCalls++;if(name=='virtual'){if(!set)*result=42;return true;}return false;}
+}
+var missing=new Missing;S.setCallMissing(missing);
+check(S.propGet(missing,'virtual',S.pfMemberMustExist)==42,'required missing callback');
+S.propSet(missing,'virtual',5,0);S.propGet(missing,'new',S.pfMemberEnsure);
+check(missingCalls==3 && 'new' in missing,'missing decline resumes ensuring read once');
+property throwing {getter(){throw global.token;} setter(v){throw global.token;}}
+var throwingDict=%[p:&throwing],caught;
+try{S.propGet(throwingDict,'p');}catch(e){caught=e;}check(caught===token,'getter exception identity');
+try{S.propSet(throwingDict,'p',1,S.pfHiddenMember);}catch(e){caught=e;}
+check(caught===token && S.getObjectKeys(throwingDict).count==0,'flags committed before setter error');
+
+check(S.equalStruct([%[x:[1,'two',void]]],[%[x:[1,'two',void]]]),'deep equality');
+check(!S.equalStruct(%[a:void],%[b:void]) && S.equalStructNumericLoose(%[a:void],%[b:void]),'strict dictionary keys versus loose missing-void rule');
+check(!S.equalStruct(1,1.0) && S.equalStructNumericLoose(1,1.0),'numeric type modes');
+check(!S.equalStructNumericLoose(1.0,1.00000001) && !S.equalStructNumericLoose('1',1),'no kwidgets float epsilon or string coercion');
+check(S.equalStruct(bound,unbound),'object identity ignores this');
+var left=%[x:9],right=%[x:&p];getterCalls=0;
+check(S.equalStruct(left,right) && getterCalls==1,'right getter versus raw left value');
+getterCalls=0;check(!S.equalStruct(right,left) && getterCalls==0,'left getter stays raw');
+var hideA=%[x:1],hideB=%[x:1];S.propSet(hideA,'hidden',1,S.pfMemberEnsure|S.pfHiddenMember);
+check(S.equalStruct(hideA,hideB) && !S.equalStructNumericLoose(hideA,hideB),'strict visible keys versus loose all-member count');
+
+var visits=[],eachContext=%[tag:4];
+function eachProbe(k,v,extra){global.visits.push([k,v,extra,this.tag]);}
+var eachResult=S.foreach([1,2],eachProbe incontextof eachContext,'extra');
+check(eachResult===void && visits.count==2 && visits[1][0]==1 && visits[1][3]==4,'foreach index extras bound this: '+eachResult+' / '+visits.count+' / '+visits.join('|'));
+var stopCalls=0;
+check(S.foreach([1,2],function(k,v){global.stopCalls++;return false;})===false && stopCalls==1,'any nonvoid breaks including false');
+visits=[];(S.foreach incontextof eachContext)([3],eachProbe incontextof null,9);
+check(visits[0][3]==4,'unbound callback uses invocation this');
+var flagsDict=%[visible:1];S.propSet(flagsDict,'hidden',2,S.pfMemberEnsure|S.pfHiddenMember);S.propSet(flagsDict,'both',3,S.pfMemberEnsure|S.pfHiddenMember|S.pfStaticMember);
+visits=[];S.foreach(flagsDict,function(k,v){global.visits.push(k);});visits.sort();
+check(visits.join(',')=='both,visible' && S.getObjectKeys(flagsDict).join(',')=='visible','foreach exact hidden flag comparison');
+var mutable=[1,2,3],seen=[];
+S.foreach(mutable,function(k,v){global.seen.push(v);if(k==0){global.mutable[1]=9;global.mutable.push(4);}});
+check(seen.join(',')=='1,9,3','count captured once, later values current');
+class Derived extends Array {function Derived(){super.Array();} function missing(set,name,result){if(name=='1'){*result=9;return true;}return false;}}
+var derived=new Derived;derived.push(0,0,0);derived[0]=7;S.setCallMissing(derived);seen=[];
+S.foreach(derived,function(k,v){global.seen.push(v);});
+check(seen.join(',')=='7,9,9','failed numeric read reuses previous value');
+
+var source=[%[nested:[1,2]],null,<% ab cd %>],copy=S.clone(source);
+check(S.equalStruct(source,copy) && copy!==source && copy[0]!==source[0] && copy[0].nested!==source[0].nested,'deep clone containers');
+copy[0].nested[0]=8;check(source[0].nested[0]==1,'cloned data independent');
+var shared=[1],duplicated=S.clone([shared,shared]);check(duplicated[0]!==duplicated[1],'clone duplicates shared containers');
+var cloneFlags=S.clone(flagsDict);check(S.getObjectCount(cloneFlags)==3 && S.getObjectKeys(cloneFlags).join(',')=='visible','clone hidden/static flags');
+check(S.clone(derived).join(',')=='7,9,9','clone inherited numeric reads');
+var cloneCalls=0;
+class Custom {function clone(){global.cloneCalls++;return 99;}}
+var custom=new Custom;check(S.clone(custom)===custom && cloneCalls==1,'reference custom clone status-code rule');
+var cycle=[];cycle.push(cycle);check(fails(function(){S.clone(cycle);}), 'cyclic clone controlled failure');
+var cycleB=[];cycleB.push(cycleB);check(S.equalStruct(cycle,cycleB),'cycle comparison terminates');
+
+var files=['data.txt','wide.txt','cipher.txt','compressed.txt','data.xp3>data.txt'];
+for(var i=0;i<files.count;i++){
+    var data=S.safeEvalStorage(files[i]);check(data.name=='雪' && data.values[1]==2,'constant storage '+files[i]);
+}
+check(S.safeEvalStorage('offset.txt','o4').name=='雪','text stream offset');
+check(S.safeEvalStorage('empty.txt')===void && S.safeEvalStorage('multiple.txt')==1,'empty or first outer item');
+var encoding=Scripts.textEncoding;Scripts.textEncoding='shift_jis';
+check(S.safeEvalStorage('sjis.txt')=='あ','shared text encoding');Scripts.textEncoding=encoding;
+var dataA=S.safeEvalStorage('data.txt'),dataB=S.safeEvalStorage('data.txt');dataA.name='changed';check(dataB.name=='雪','fresh compiled constants per load');
+var executed=false;
+check(fails(function(){S.safeEvalStorage('code.txt');}) && !executed,'constant grammar rejects calls even when result discarded');
+check(S.safeEvalStorage('escape.txt')==1 && !executed,'expression-mode return does not execute trailing statements');
+check(fails(function(){S.safeEvalStorage('missing.txt');}) && fails(function(){S.safeEvalStorage('data.txt','',1);}), 'storage and context errors');
+check(S.rehash()===void && S.getObjectKeys(%[z:1,a:2]).join(',')=='a,z','rehash compatibility hint');
+var oldClone=S.clone;S.getObjectKeys=function(){return 'replacement';};
+check(Plugins.unlink('ScriptsEx.dll') && S.getObjectKeys()=='replacement' && !('clone' in S),'unload preserves replacement');
+check(oldClone([1,2]).join(',')=='1,2','retained function works after unload');
+delete S.getObjectKeys;Plugins.link('ScriptsEx.tpm');
+check(S.getObjectKeys(%[a:1]).join(',')=='a','reload complete plugin');
+'passed';

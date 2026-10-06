@@ -1,0 +1,28 @@
+function check(v,m){if(!v)throw m;}
+function fails(fn){try{fn();}catch(e){return true;}return false;}
+Plugins.link('psbfile.dll');Plugins.link('getabout.dll');
+Storages.addAutoPath('target/psb-about/');
+var p=new PSBFile('data.psb'),r=p.root;
+check(r.title=='参照PSB' && r.number==-2 && r.real==1.25,'PSB scalars');
+check(r.values.count==4 && r.values[0]==1 && r.values[1]===void && r.values[3]===void,'PSB lists and anonymous chunk behavior');
+check(typeof r.Payload=='Octet' && r.Payload[0]==103 && r.inner.data[0]==103,'PSB named resources');
+check(Storages.isExistentStorage('psb://data.psb/Payload') && !Storages.isExistentStorage('psb://data.psb/payload'),'case sensitive resource keys');
+Scripts.execStorage('psb://data.PSB/Payload');check(global.psbExecuted==73,'PSB script through shared VFS');
+check(Storages.isExistentStorage('psb://second.psb/Payload'),'automatic backing-file load');
+check(p.load('data.mdf') && p.root.title=='参照PSB','MDF decompression');
+var packed=new PSBFile('target/psb-about/data.xp3>packed.psb');check(packed.root.number==-2,'XP3 backing stream');
+var old=p.root;check(!p.load('bad.psb') && p.root===old,'failed load preserves root');
+check(p.load(<% 00 %>)===void && p.root===old,'reference octet load no-op');
+Scripts.execStorage('target/psb-about/octet.tjs');var binary=new PSBFile(global.psbOctet);check(binary.root==42,'octet constructor');
+var empty=new PSBFile();check(empty.root===void,'empty constructor');
+check(fails(function(){p.root=1;}) && fails(function(){p.load(12);}) && fails(function(){new PSBFile(1,2);}),'property and argument checks');
+var about=System.getAboutString();check(typeof about=='String' && about.indexOf('krkr-rs')>=0,'engine about text');
+Plugins.link('windowEx.dll');check(System.getAboutString()==about,'shared windowEx implementation');
+Plugins.unlink('getabout.dll');check(System.getAboutString()==about,'overlapping exports survive unlink');Plugins.unlink('windowEx.dll');
+invalidate p;invalidate packed;invalidate binary;invalidate empty;
+check(Plugins.unlink('psbfile.dll'),'unlink PSB');
+check(fails(function(){Storages.isExistentStorage('psb://data.psb/Payload');}),'unregistered medium');
+Plugins.link('psbfile.tpm');var again=new PSBFile('data.psb');check(again.root.title=='参照PSB','reload class and medium');invalidate again;Plugins.unlink('psbfile.tpm');
+Plugins.link('getabout.tpm');check(System.getAboutString()==about,'about alias');Plugins.unlink('getabout.tpm');
+Debug.message('PSB_ABOUT_OK: objects, MDF, XP3, case-sensitive media, lifecycle and shared about export');
+'passed';

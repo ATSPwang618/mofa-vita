@@ -1,0 +1,88 @@
+// Whole saveStruct plugin contract; host checks exact UTF-16LE bytes and cancellation.
+function check(value, message) { if (!value) throw message; }
+function fails(fn) { try { var value=fn(); } catch(e) { return true; } return false; }
+check(!('toStructString' in Array), 'explicit installation');
+Plugins.link('saveStruct.dll');
+function dict(value, newline=0) { return (Dictionary.toStructString incontextof value)(newline); }
+check([].toStructString()=='[]' && dict(%[])=='%[]', 'empty roots');
+check([void,null,1,1.5,<% 00 0f ff %>,<% %>].toStructString()=='[void,null,int 1,real 1.5,<% 00 0f ff %>,<% %>]', 'typed scalars and octets');
+check([9223372036854775807,-9223372036854775807].toStructString()=='[int 9223372036854775807,int -9223372036854775807]', 'full i64 decimal');
+check(['a"b\\c\n\t',nulString].toStructString()=='["a\\"b\\\\c\n\t","a"]', 'raw controls, quote escapes and C string prefix');
+check([surrogate].toStructString()=='["'+surrogate+'"]', 'UTF16 code units preserved');
+var d=%[a:1,b:[2]], crlf=dict(d), lf=dict(d,2);
+check(crlf.indexOf(',\r\n')>=0 && lf.indexOf(',\n')>=0 && dict(d,-1)==lf && dict(d,4294967296)==crlf, 'dictionary newline any nonzero i32');
+check(dict(flagged)=='%["visible"=>int 7]', 'hidden members omitted');
+var getterCalls=0;
+class WithProperty { property p { getter(){global.getterCalls++;throw 'raw getter ran';} } }
+var p=new WithProperty;
+check(dict(p).indexOf('"p"=>%[')>=0 && [&p.p].toStructString()=='[%[]]' && getterCalls==0, 'raw properties on both containers');
+var invalid=%[]; invalidate invalid;
+check([invalid].toStructString()=='[%[]]', 'invalid nested object status ignored');
+var cyclic=[]; cyclic.push(cyclic);
+cyclic.toStructString(%[]);
+check(fails(function(){return cyclic.toStructString();}), 'cycle is bounded, discarded string skips traversal and conversion');
+check(fails(function(){[].save2();}) && fails(function(){[].saveStruct2();}), 'required filename');
+['雪',nulString,''].save2('lines.txt',%[],2);
+check(['雪',null].saveStruct2('array.tjs',%[])===void, 'ignored utf argument and void result');
+(Dictionary.saveStruct2 incontextof %[a:1])('dictionary.tjs',1,1);
+[surrogate].saveStruct2('surrogate.tjs',true);
+check(fails(function(){['first',3,'later'].save2('partial.txt');}), 'save2 uses strict strings');
+check(fails(function(){[void].save2('void.txt');}), 'void is not a string');
+check(fails(function(){[].saveStruct2('truncate.txt',false,%[]);}), 'newline conversion fails after truncation');
+[].saveStruct2(123);
+check(fails(function(){[].saveStruct2('missing/out');}), 'open failure');
+check(Plugins.unlink('saveStruct.dll'), 'unlink');
+var originalCount=&Array.count, countCalls=0, mode='normal', token=%[message:'count error'], mutationTarget;
+class CountProbe {
+    property count { getter() {
+        global.countCalls++;
+        if(global.mode=='throw') throw global.token;
+        if(global.mode=='cwd') global.Storages.currentPath='moved/';
+        if(global.mode=='mutate') {
+            global.mutationTarget.a=99; global.mutationTarget.b=99; global.mutationTarget.c=99;
+        }
+        if(global.mode=='observe' && global.countCalls==2)
+            global.check(global.Storages.fstat('flushed.tjs').size>10000,'prefix visible before callback');
+        if(global.mode=='wait') { global.entered=true; global.System.wait(60000); global.resumed=true; }
+        if(global.mode=='tooMany') return 262145;
+        if(global.mode=='negative') return -1;
+        return this.length;
+    } }
+}
+&Array.count=&CountProbe.count;
+Plugins.link('saveStruct.tpm');
+&Array.count=&originalCount;
+check([4].toStructString()=='[int 4]' && countCalls==1, 'captured count survives replacement');
+countCalls=0; [1].toStructString(%[]); check(countCalls==0,'discarded string does not call getter');
+mutationTarget=%[a:[],b:[],c:[]]; mode='mutate';
+var mutated=dict(mutationTarget);
+check(countCalls==1 && mutated.indexOf('=>int 99')>=0,'raw later values observe callback mutations');
+mode='throw'; var caught=void;
+try { [1].saveStruct2('prefix.tjs'); } catch(e) { caught=e; }
+check(caught===token,'getter exception identity');
+Plugins.link('fstat.dll');
+mode='cwd'; var oldPath=Storages.currentPath;
+[3].saveStruct2('fixed.tjs'); Storages.currentPath=oldPath;
+mode='observe';countCalls=0;
+[longText,[]].saveStruct2('flushed.tjs');
+mode='normal';
+class Derived extends Array {
+    function Derived(){super.Array();}
+    function missing(set,name,result){if(name=='1'){*result=9;return true;}return false;}
+}
+var derived=new Derived; derived.push(0,0,0); derived[0]=7; enableMissing(derived);
+check(derived.toStructString()=='[int 7,int 9,]','inherited numeric raw dispatch and failed status slot');
+mode='tooMany';check(fails(function(){return [].toStructString();}),'count bounded');
+mode='negative';check([1].toStructString()=='[]','negative count is empty');
+mode='normal';
+var saved=[5].toStructString;
+check(Plugins.unlink('saveStruct.tpm') && !('toStructString' in Array),'release exports');
+Plugins.link('saveStruct.dll');
+countCalls=0; check(saved()=='[int 5]' && countCalls==1,'retained method owns previous load capture after reload');
+check([5].toStructString()=='[int 5]' && countCalls==1,'new method has new capture');
+var replacement=function(){return 'replacement';}; Array.toStructString=replacement;
+check(Plugins.unlink('saveStruct.dll') && Array.toStructString===replacement,'unlink preserves script replacement');
+delete Array.toStructString;
+// Reload the probe generation for host cancellation and resource-bound checks.
+&Array.count=&CountProbe.count; Plugins.link('saveStruct.dll'); &Array.count=&originalCount;
+'passed';

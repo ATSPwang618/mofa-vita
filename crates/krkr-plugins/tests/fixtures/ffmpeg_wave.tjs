@@ -1,0 +1,24 @@
+function check(v,m){if(!v)throw m;}
+var sound=new WaveSoundBuffer(global);sound.volume=0;
+Plugins.link('plugin/kropus.dll');Plugins.link('wuopus.tpm');
+check(Plugins.unlink('wuopus.tpm'),'Opus aliases share the provider while kropus stays linked');
+sound.open('target/ffmpeg-wave/source.opus');
+check(sound.frequency==48000 && sound.channels==1 && sound.bits==16,'opus 48k PCM16');
+check(sound.totalTime==1000,'Opus total excludes pre-skip');
+sound.play();System.wait(30);sound.paused=true;sound.samplePos=17000;
+check(sound.samplePos==17000,'opus exact sample seek');
+check(Plugins.unlink('plugin/kropus.dll'),'opus unlink while open');
+sound.paused=false;System.wait(20);sound.stop();
+Plugins.link('wuffmpeg.dll');
+sound.open('target/ffmpeg-wave/source.m4a');
+check(sound.frequency==48000 && sound.channels==1 && sound.bits==32,'AAC float decoder format');
+sound.play();System.wait(20);sound.paused=true;sound.samplePos=21000;
+check(sound.samplePos==21000,'AAC sample seek');
+check(Plugins.unlink('wuffmpeg.dll'),'FFmpeg unlink while open');
+sound.paused=false;System.wait(20);sound.stop();
+Plugins.link('kropus.tpm');Plugins.link('wuffmpeg.tpm');
+sound.open('target/ffmpeg-wave/source.wav');sound.play();System.wait(20);sound.stop();
+invalidate sound;
+check(Plugins.unlink('kropus.tpm') && Plugins.unlink('wuffmpeg.tpm'),'decoder release and reload');
+Debug.message('FFMPEG_WAVE_OK: Opus, AAC, PCM, formats, pre-skip, playback, exact seeks and reload');
+'passed';

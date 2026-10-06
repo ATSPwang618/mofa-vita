@@ -1,0 +1,34 @@
+// Original fixtures exercise engine adjustments and ksupport through one host.
+function check(v,s) {if(!v) throw s;}
+System.exitOnWindowClose=false;
+Plugins.link('ksupport.dll');
+var w=new Window();w.setInnerSize(13,9);
+var root=new Layer(w,null);root.setSize(13,9);
+var l=new Layer(w,root),saved=new Layer(w,root);
+l.setImageSize(13,9);l.face=dfProvince;l.fillRect(0,0,13,9,31);
+l.face=dfAlpha;l.fillRect(0,0,13,9,0x80402010);
+l.setClip(2,1,9,7);l.holdAlpha=true;l.doGrayScale();
+check(l.getMainPixel(6,4)==0x252525 && l.getMaskPixel(6,4)==128,'gray and alpha');
+check(l.getMainPixel(0,0)==0x402010 && l.getProvincePixel(6,4)==31,'gray clip and province');
+l.resetClip();l.holdAlpha=false;l.fillRect(0,0,13,9,0x80402010);
+l.adjustGamma(1,255,0,1,255,0,1,255,0);
+check(l.getMainPixel(6,4)==0xbfdfef && l.getMaskPixel(6,4)==128,'straight gamma');
+l.fillRect(0,0,13,9,0x80402010);l.face=dfAddAlpha;
+l.adjustGamma(1,255,0,1,255,0,1,255,0);
+check(l.getMainPixel(6,4)==0x3f6070 && l.getMaskPixel(6,4)==128,'additive gamma');
+l.face=dfAlpha;l.setClip(2,1,9,7);
+l.fillGradientRectLR(0,0,13,9,0x10203040,0xf0a0b0c0);
+check(l.getMainPixel(6,4)==0x607080 && l.getMaskPixel(6,4)==128,'replacement gradient');
+check(l.getMainPixel(0,0)==0x3f6070,'gradient clipping');
+l.colorGradientRectUD(0,0,13,9,0xff204060,0xff406080);
+check(l.getMainPixel(6,4)==0x2f4f6f && l.getMaskPixel(6,4)==128,'vertical gradient blending');
+l.resetClip();l.fillRGB('x','y','67');
+check(l.getMainPixel(0,0)==0x00ff43 && l.getMainPixel(12,8)==0xff0043,'RGB axes');
+check(l.getMaskPixel(6,4)==255 && l.getProvincePixel(6,4)==31,'field alpha and province');
+l.fillHSV('x','100','100');
+check(l.getMainPixel(0,0)==0xff0000 && l.getMainPixel(4,0)==0x00ff00 && l.getMainPixel(8,0)==0x0000ff && l.getMainPixel(12,0)==0xff0000,'HSV hue sectors');
+l.face=dfProvince;l.fillRect(3,2,1,1,77);
+l.face=dfAlpha;l.fillRect(3,2,1,1,0x904488cc);saved.assignImages(l);
+l.flipLR();l.flipUD();
+check(l.getMainPixel(9,6)==0x4488cc && l.getMaskPixel(9,6)==144 && l.getProvincePixel(9,6)==77,'both planes flip');
+check(saved.getMainPixel(3,2)==0x4488cc && saved.getProvincePixel(3,2)==77,'snapshot survives flip');

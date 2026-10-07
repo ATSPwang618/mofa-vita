@@ -1,4 +1,4 @@
-# krkr-rs
+# mofa-krkr-rs
 
 用 Rust 重新实现的 Kirikiri / TJS2 引擎：语言前端与虚拟机、KAG 解析器、引擎脚本类、静态插件兼容层、桌面宿主、PS Vita 宿主，以及配套的离线资源转换与分析工具。
 

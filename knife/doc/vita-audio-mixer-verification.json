@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-27",
+  "scope": "knife-audio Vita mixer and native streaming attachment",
+  "implementation": {
+    "desktop": "Kira/CPAL dependency and renderer remain under cfg(not(target_os = \"vita\")); public game Audio/Voice/Curve API unchanged",
+    "vita": "Audio::new/try_new owns an independent mixer thread; platform AudioOutput owns its native AudioOut worker; PCM mix shares interpolation, gain, pan, ramp, loop, prefix/swap, pause, stop, finished DSP with desktop",
+    "stream": "Audio::queue_stream(PathBuf, volume, fade_in, looping, start_frame, loop_range, Curve) queues Ogg Opus file; AudioStream opens, reads and seeks only on mixer thread; 960 stereo f32 frame decode cache; no whole-track PCM allocation",
+    "bounds": {
+      "active_voices": 64,
+      "pending_voices": 64,
+      "command_batches": 8,
+      "staged_control_changes": 1024,
+      "decode_cache_frames": 960,
+      "output_frames_per_block": 960,
+      "platform_output_queue_blocks": 3
+    },
+    "failure": "new gracefully disables audio on startup failure; try_new returns error; last_error reports asynchronous decoder/output failures; rejected voices and stopped/retired voices set finished; EOF closes stream; Drop sends shutdown, joins mixer then stops output"
+  },
+  "verification": {
+    "host_command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=/tmp/knife-audio-mixer-target cargo test --offline --locked -p knife-audio --lib -- --test-threads=1",
+    "host_result": "10 passed, 0 failed: decoder, BFSAR, curves, resampling, PCM stereo loop/gain, prefix swap/stop, pause/resume, pending bound/drop; no native Vita runtime exercised",
+    "arm_check_command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=/tmp/knife-audio-mixer-target cargo +nightly-2026-05-28 check --offline --locked -Z build-std=std,panic_abort -p knife-audio --target armv7-sony-vita-newlibeabihf",
+    "arm_check_result": "passed; target tree has knife-platform-vita and excludes kira",
+    "arm_link": "Separate /tmp/knife-audio-link-check Cargo binary using knife-audio path dependency and calling Audio::new/flush, arm-vita-eabi-gcc linker, nightly build-std=std,panic_abort --target armv7-sony-vita-newlibeabihf --offline: cargo build passed; temporary /tmp output cleared across WSL calls"
+  },
+  "limits": [
+    "Game call sites still use codec::decode_stream / decode_stream_part into complete Pcm; they must opt in to queue_stream for bounded BGM or voice playback and supply a Vita file path.",
+    "No device or Vita3K playback audition was performed; output submission/AudioOut results cannot prove audible sound.",
+    "Host simulated output does not inject native AudioOut queue failures; native output queue and shutdown behavior require serialized device runtime validation.",
+    "A decoded PCM asset supplied through existing play methods retains its already-decoded backing Arc<Pcm>; only queue_stream avoids whole-track PCM allocation."
+  ]
+}

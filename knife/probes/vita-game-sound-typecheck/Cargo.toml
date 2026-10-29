@@ -1,0 +1,13 @@
+[package]
+name = "knife-vita-game-sound-typecheck"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+knife-audio = { path = "../../knife-audio" }
+anyhow = "1.0.104"
+tracing = "0.1.44"

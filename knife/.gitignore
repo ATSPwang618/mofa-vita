@@ -1,0 +1,13 @@
+/target
+/re
+/switch_exefs
+/switch_romfs
+/build
+.DS_Store
+__pycache__/
+/AGENTS.md
+/switch_romfs_en
+/switch_exefs_eng
+/tools/envydis
+/switch_exefs_woh
+/switch_romfs_woh

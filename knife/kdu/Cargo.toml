@@ -1,0 +1,20 @@
+[package]
+name = "kdu"
+version = "0.9.4"
+edition = "2024"
+license = "MPL-2.0"
+
+[dependencies]
+knife-core = { path = "../knife-core" }
+knife-audio = { path = "../knife-audio" }
+anyhow = { workspace = true }
+clap = { workspace = true }
+image = { workspace = true }
+flate2 = { workspace = true }
+
+[build-dependencies]
+cc = "1.8.0"
+
+# a research tool, not part of the releases
+[package.metadata.dist]
+dist = false

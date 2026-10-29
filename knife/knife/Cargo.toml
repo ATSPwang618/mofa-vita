@@ -1,0 +1,69 @@
+[package]
+name = "knife"
+version = "0.9.4"
+edition = "2024"
+license = "MPL-2.0"
+description = "A reimplementation of the Tsukihime -A piece of blue glass moon- Switch engine"
+repository = "https://github.com/AuroraWright/knife"
+
+[dependencies]
+knife-core = { path = "../knife-core" }
+knife-render = { path = "../knife-render" }
+knife-audio = { path = "../knife-audio" }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+image = { workspace = true }
+glam = { workspace = true }
+ab_glyph = "0.2.32"
+ttf-parser = "0.25.1"
+serde = { version = "1.0.229", features = ["derive"] }
+parking_lot = "0.12.5"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+mp4 = "0.14.0"
+symphonia = { version = "0.6.1", features = ["aac"], default-features = false }
+sys-locale = "0.3.2"
+
+# Movies are decoded by the platform: VideoToolbox on macOS, Media Foundation on Windows and GStreamer
+# elsewhere. An ffmpeg executable is the fallback.
+[target.'cfg(not(target_os = "vita"))'.dependencies]
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+clap = { workspace = true }
+winit = { workspace = true }
+dirs = "7.0.0"
+tungstenite = "0.30"
+
+[target.'cfg(target_os = "vita")'.dependencies]
+knife-platform-vita = { path = "../knife-platform-vita" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = "0.3.2"
+objc2-core-media = "0.3.2"
+objc2-core-video = "0.3.2"
+objc2-video-toolbox = "0.3.2"
+# controllers: the GameController framework (gilrs's raw HID access loses a pad once another app uses it there)
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSString"] }
+objc2-game-controller = { version = "0.3.2", default-features = false, features = ["std", "GCController", "GCDevice", "GCExtendedGamepad", "GCPhysicalInputProfile", "GCControllerButtonInput", "GCControllerDirectionPad", "GCControllerAxisInput", "GCControllerElement"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Media_MediaFoundation", "Win32_System_Com"] }
+# the version winit uses, so its HMONITOR matches
+windows-sys = { version = "0.52.0", features = ["Win32_Foundation", "Win32_Graphics_Gdi"] }
+
+[target.'cfg(not(any(target_os = "macos", target_os = "vita", windows)))'.dependencies]
+gst = { package = "gstreamer", version = "0.25.4" }
+gst-app = { package = "gstreamer-app", version = "0.25.2" }
+gst-video = { package = "gstreamer-video", version = "0.25.4" }
+
+[target.'cfg(not(any(target_os = "macos", target_os = "vita")))'.dependencies]
+# controllers (macOS uses the GameController framework instead)
+gilrs = "0.11.2"
+
+[features]
+# Debug command-line options (screenshots, scripted input, scene / slot / screen at startup); not
+# part of the normal build.
+debug = []
+# Final direct-GXM Vita game; selected explicitly by the packaging script.
+vita-gxm = []
+# Native 960x540 asset tier (KNIF00540). Selected together with vita-gxm by
+# tools/build-vita.sh when KNIFE_VITA_VARIANT=native540.
+assets-540p = ["knife-platform-vita/assets-540p", "knife-render/assets-540p"]

@@ -1,0 +1,17 @@
+// Basic GXM probe only. Game masks, blur and other effects are not covered yet.
+// aPosition is already in clip space; canvas and viewport conversion is on CPU.
+struct QuadVaryings {
+    float4 position : POSITION;
+    float2 texcoord : TEXCOORD0;
+    float4 color : COLOR0;
+};
+
+QuadVaryings main(float2 aPosition : POSITION,
+                  float2 aTexcoord : TEXCOORD0,
+                  float4 aColor : COLOR0) {
+    QuadVaryings result;
+    result.position = float4(aPosition, 0.0, 1.0);
+    result.texcoord = aTexcoord;
+    result.color = aColor;
+    return result;
+}

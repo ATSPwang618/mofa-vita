@@ -1,0 +1,9 @@
+[package]
+name = "knife-render-api"
+version = "0.9.4"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[dependencies]
+bytemuck = { workspace = true }

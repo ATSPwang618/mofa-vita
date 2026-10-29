@@ -1,0 +1,25 @@
+[package]
+name = "knife-vita-audio-mixer-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+knife-audio = { path = "../../knife-audio" }
+
+[[bin]]
+name = "vita-audio-mixer-probe"
+path = "src/bin/vita-audio-mixer-probe.rs"
+
+[package.metadata.vita]
+title_id = "KNIF00009"
+
+[profile.vita]
+inherits = "release"
+opt-level = "s"
+panic = "abort"
+lto = "thin"
+codegen-units = 1

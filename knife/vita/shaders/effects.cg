@@ -1,0 +1,445 @@
+// Native GXM translation of knife-render/src/shader.wgsl, all 16 entries.
+// All arithmetic and varyings are declared float (32 bit); fragment results retain
+// the WGSL premultiplied-alpha and gamma-space conventions without extra clamps.
+//
+// CPU vertex ABI: pos@0 float2, uv@8 float2, color@16 float4,
+// hx@32 float4, hy@48 float4, s0@64 float4, s1@80 float4, s2@96 float4;
+// stride 112 bytes. Positions are already in clip space, with w = 1.
+// tex0 / tex1 / tex2 / soft_lut bind to units 0 / 1 / 2 / 3 respectively.
+// uTex0Size, uTex1Size, uSoftLutSize are the corresponding mip-0 dimensions;
+// the host must update them on every size change. Integer textureLoad is
+// implemented by a level-0 lookup at the exact texel centre, with zero outside
+// the image. Ordinary sampling uses the same filtering/addressing as WGSL.
+// These are complete translations, but offline compilation is not a rendering
+// equivalence claim; program checking, linking and effect fixtures run separately.
+// The Cg profiles reject both flat and nointerpolation qualifiers. uQuadHx /
+// uQuadHy therefore carry exactly the hx / hy values of the current quad.
+// They MUST be set per quad; batching unequal values into one draw is invalid.
+// The 112-byte vertex ABI still includes both attributes. The fragment inputs
+// do not interpolate them, so the packed rim colour is never rounded by raster
+// interpolation. All float-to-int conversions below explicitly truncate, as
+// WGSL i32 does; packed colour/flags are nonnegative values from the host.
+// The compiler's COLOR result ABI is F16x4 even with float4/bestprecision;
+// patcher/target precision and pixel error require separate runtime checks.
+//
+// Per-quad uniform contract (all components must be finite):
+// Sprite/Fill/Mono/Nega/NoAlpha/ForceAlpha/Rule/Ps:
+//   Hx = (horizontal UV amplitude, waves per uv.y, phase cycles, premultiply flag)
+//   Hy = (vertical UV amplitude, waves per uv.y, phase cycles, unused)
+//   Negative amplitude/waves/phase are valid; flags are 0 or 1, tested > 0.5.
+// Text: Hx unused; Hy = (unused, unused, bordered 0/1, box-filter 0/1).
+// RimText: Hx = (u_min, v_min, u_max, v_max), inclusive coverage rectangle;
+//   Hy = (du per canvas pixel, dv per canvas pixel, rim alpha 0..1, RGB24).
+//   RGB24 must be an integer in 0..16777215 (0xRRGGBB), never a wider uint.
+// tu.params.y / params2.y rule flags must be integers 8..2047: bits 0/1
+//   mirror X/Y, bit 2 invert, bits 3..10 edge width 1..255. PsOp is 1..24.
+// Reject invalid packed inputs on the CPU before float conversion; no half
+// uniform uploads or interpolation may round away packed bits. See build receipt.
+
+#ifdef KNIFE_VERTEX_SHADER
+struct VertexInput {
+    float2 pos : POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : COLOR0;
+    float4 hx : TEXCOORD1;
+    float4 hy : TEXCOORD2;
+    float4 s0 : TEXCOORD3;
+    float4 s1 : TEXCOORD4;
+    float4 s2 : TEXCOORD5;
+};
+
+struct VertexOutput {
+    float4 pos : POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : TEXCOORD1;
+    float4 hx : TEXCOORD2;
+    float4 hy : TEXCOORD3;
+    float4 s0 : TEXCOORD4;
+    float4 s1 : TEXCOORD5;
+    float4 s2 : TEXCOORD6;
+};
+
+VertexOutput vs_main(VertexInput v) {
+    VertexOutput o;
+    o.pos = float4(v.pos, 0.0, 1.0);
+    o.uv = v.uv;
+    o.color = v.color;
+    o.hx = v.hx;
+    o.hy = v.hy;
+    o.s0 = v.s0;
+    o.s1 = v.s1;
+    o.s2 = v.s2;
+    return o;
+}
+#else
+struct FragmentInput {
+    float4 pos : WPOS;
+    float2 uv : TEXCOORD0;
+    float4 color : TEXCOORD1;
+    // Interpolated per-quad constants. Every vertex of a quad carries the same value, so
+    // these replace the uQuadHx/uQuadHy uniforms on every path that only tests flags or
+    // scales by a float. RimText keeps the uniforms: its packed RGB24 must stay exact.
+    float4 hx : TEXCOORD2;
+    float4 hy : TEXCOORD3;
+    float4 s0 : TEXCOORD4;
+    float4 s1 : TEXCOORD5;
+    float4 s2 : TEXCOORD6;
+};
+
+struct TransUniform {
+    float4 params;
+    float4 params2;
+};
+
+uniform sampler2D tex0 : TEXUNIT0;
+uniform sampler2D tex1 : TEXUNIT1;
+uniform sampler2D tex2 : TEXUNIT2;
+uniform sampler2D soft_lut : TEXUNIT3;
+uniform TransUniform tu;
+uniform float2 uTex0Size;
+uniform float2 uTex1Size;
+uniform float2 uSoftLutSize;
+uniform float4 uQuadHx;
+uniform float4 uQuadHy;
+
+float4 load_texel(sampler2D imageSampler, int2 pixel, float2 dims) {
+    if (any(pixel < int2(0, 0)) || any(float2(pixel) >= dims)) {
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
+    return tex2Dlod(imageSampler, float4((float2(pixel) + 0.5) / dims, 0.0, 0.0));
+}
+
+float2 haze_uv(FragmentInput i) {
+    const float tau = 6.2831853;
+    float dx = sin(tau * (frac(i.uv.y * i.hx.y) + frac(i.hx.z))) * i.hx.x;
+    float dy = cos(tau * (frac(i.uv.y * i.hy.y) + frac(i.hy.z))) * i.hy.x;
+    return i.uv + float2(dx, dy);
+}
+
+float soft_mask(FragmentInput i) {
+    if (i.s2.x <= 0.0) {
+        return 1.0;
+    }
+    float2 p = i.pos.xy - i.s1.xy;
+    float2 q = float2(p.x * i.s1.w + p.y * i.s1.z,
+                      p.y * i.s1.w - p.x * i.s1.z);
+    float2 d = max(max(i.s0.xy - q, q - i.s0.zw), float2(0.0, 0.0));
+    if (d.x <= 0.0 && d.y <= 0.0) {
+        return 1.0 - i.s2.w;
+    }
+    float n = i.s2.z;
+    float t = clamp((1.0 - length(d) / i.s2.x) * n - 0.5, 0.0, n);
+    int lutRow = int(i.s2.y);
+    int k = int(floor(t));
+    // The soft-clip LUT is a fixed 257x18 single-channel texture created by the renderer.
+    const float2 soft_size = float2(257.0, 18.0);
+    float a = load_texel(soft_lut, int2(k, lutRow), soft_size).r;
+    int nextK = k + 1 < int(n) ? k + 1 : int(n);
+    float b = load_texel(soft_lut, int2(nextK, lutRow), soft_size).r;
+    return lerp(a, b, t - float(k));
+}
+
+float4 sample_img(FragmentInput i) {
+    float4 t = tex2D(tex0, haze_uv(i));
+    float a = t.a * soft_mask(i);
+    if (i.hx.w > 0.5) {
+        return float4(t.rgb * a, a);
+    }
+    return float4(t.rgb, a);
+}
+
+float4 fs_sprite(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    float a = t.a * i.color.a;
+    return float4(t.rgb * i.color.rgb * a, a);
+}
+
+// Sprite drawn inside a layer group: the group's mask surface arrives as tex2 and is
+// sampled in canvas space, which replaces the mask-surface composite pass entirely.
+float4 fs_sprite_mask(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    float mask = tex2D(tex2, i.pos.xy / tu.params.zw).a;
+    float a = t.a * i.color.a * mask;
+    return float4(t.rgb * a, a);
+}
+
+float4 fs_noalpha(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    return float4(t.rgb * i.color.rgb, 1.0);
+}
+
+float4 fs_forcealpha(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    return float4(t.rgb * i.color.rgb * i.color.a, i.color.a);
+}
+
+float4 fs_fill(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    float a = t.a * i.color.a;
+    float k = i.hx.w > 0.5 ? t.a : 1.0;
+    return float4(i.color.rgb * k * a, a);
+}
+
+float4 fs_text(FragmentInput i) : COLOR {
+    float c = tex2D(tex0, i.uv).r;
+    float2 dx = ddx(i.uv);
+    float2 dy = ddy(i.uv);
+    if (i.hy.w > 0.5) {
+        float sum = 0.0;
+        for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 4; x++) {
+                float2 o = (float2(float(x), float(y)) + 0.5) / 4.0 - 0.5;
+                sum += tex2Dlod(tex0, float4(i.uv + dx * o.x + dy * o.y, 0.0, 0.0)).r;
+            }
+        }
+        c = sum / 16.0;
+    }
+    if (i.hy.z > 0.5) {
+        float a = clamp(2.0 * c, 0.0, 1.0);
+        float f = clamp(2.0 * c - 1.0, 0.0, 1.0);
+        return float4(i.color.rgb * f * i.color.a, a * i.color.a);
+    }
+    return float4(i.color.rgb * c * i.color.a, c * (2.0 - c) * i.color.a);
+}
+
+float rim_cov(FragmentInput i, float2 uv) {
+    if (any(uv < uQuadHx.xy) || any(uv > uQuadHx.zw)) {
+        return 0.0;
+    }
+    return tex2Dlod(tex0, float4(uv, 0.0, 0.0)).r;
+}
+
+float4 fs_rim_text(FragmentInput i) : COLOR {
+    float c = rim_cov(i, i.uv);
+    float keep = 1.0;
+    const float2 taps[8] = {
+        float2(-2.0, 0.0), float2(2.0, 0.0), float2(0.0, -2.0), float2(0.0, 2.0),
+        float2(-1.5, -1.5), float2(1.5, -1.5), float2(-1.5, 1.5), float2(1.5, 1.5)
+    };
+    for (int k = 0; k < 8; k++) {
+        keep *= 1.0 - uQuadHy.z * rim_cov(i, i.uv - taps[k] * uQuadHy.xy);
+    }
+    float a = c + (1.0 - keep) * (1.0 - c);
+    // All integers 0..0xFFFFFF are exactly representable by a float32.
+    // Powers-of-two quotients/remainders exactly reproduce the three byte masks.
+    float e = floor(uQuadHy.w);
+    float3 edge = float3(floor(e / 65536.0) - 256.0 * floor(e / 16777216.0),
+                         floor(e / 256.0) - 256.0 * floor(e / 65536.0),
+                         e - 256.0 * floor(e / 256.0)) / 255.0;
+    return float4((i.color.rgb * c + edge * (1.0 - keep) * (1.0 - c)) * i.color.a,
+                  a * i.color.a);
+}
+
+float4 fs_mono(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    float l = dot(t.rgb, float3(0.299, 0.587, 0.114));
+    float a = t.a * i.color.a;
+    return float4(float3(l, l, l) * i.color.rgb * a, a);
+}
+
+float4 fs_nega(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    float a = t.a * i.color.a;
+    return float4((float3(1.0, 1.0, 1.0) - t.rgb) * i.color.rgb * a, a);
+}
+
+float rule_at(float2 uv, float flags) {
+    float f = floor(flags + 0.5);
+    float2 q = uv;
+    if (f - 2.0 * floor(f / 2.0) != 0.0) { q.x = 1.0 - q.x; }
+    if (floor(f / 2.0) - 2.0 * floor(f / 4.0) != 0.0) { q.y = 1.0 - q.y; }
+    float r = tex2D(tex2, q).r;
+    return floor(f / 4.0) - 2.0 * floor(f / 8.0) != 0.0 ? 1.0 - r : r;
+}
+
+float rule_mask(float r, float p, float flags) {
+    float v = floor(floor(flags + 0.5) / 8.0) / 255.0;
+    // v == 0 retains the original expression, including its division boundary.
+    float t = clamp((r - ((1.0 + 2.0 * v) * p - v) + 0.5 * v) / v, 0.0, 1.0);
+    return 1.0 - t * t * (3.0 - 2.0 * t);
+}
+
+float4 fs_transition(FragmentInput i) : COLOR {
+    float4 a = tex2D(tex0, i.uv);
+    float4 b = tex2D(tex1, i.uv);
+    float t = tu.params.x;
+    if (tu.params.z > 0.5) {
+        t = rule_mask(rule_at(i.uv, tu.params.y), tu.params.x, tu.params.y);
+    }
+    return float4(lerp(a.rgb, b.rgb, t), 1.0);
+}
+
+float4 fs_rule(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    float m = rule_mask(rule_at(i.pos.xy / tu.params.zw, tu.params.y), tu.params.x, tu.params.y);
+    float a = t.a * i.color.a * m;
+    return float4(t.rgb * i.color.rgb * a, a);
+}
+
+float4 fs_blur(FragmentInput i) : COLOR {
+    float2 dims = uTex0Size;
+    float sigma = max(tu.params.z, 0.01);
+    int n = int(tu.params.w);
+    int mode = int(tu.params2.x + 0.5);
+    float norm = sqrt(2.0 * sigma * sigma * 3.1416);
+    float4 acc = float4(0.0, 0.0, 0.0, 0.0);
+    // The uniform tap count is not capped, replaced by a fixed kernel, or
+    // renormalised. This preserves all three WGSL edge/alpha modes.
+    for (int k = -n; k <= n; k++) {
+        float x = float(k);
+        float w = exp(-x * x / (2.0 * sigma * sigma)) / norm;
+        if (mode == 0) {
+            acc += float4(tex2Dlod(tex0, float4(i.uv + tu.params.xy / dims * x, 0.0, 0.0)).rgb * w, 0.0);
+            continue;
+        }
+        float2 p = i.pos.xy - tu.params.xy * x;
+        if (any(p < float2(0.0, 0.0)) || any(p > dims)) {
+            continue;
+        }
+        float4 t = tex2Dlod(tex0, float4(p / dims, 0.0, 0.0));
+        if (mode == 1) {
+            acc += float4(t.rgb * t.a, t.a) * w;
+        } else {
+            acc += float4(t.r * w, t.r * w, t.r * w, t.r * w);
+        }
+    }
+    if (mode == 0) { return float4(acc.rgb, 1.0); }
+    return clamp(acc, float4(0.0, 0.0, 0.0, 0.0), float4(1.0, 1.0, 1.0, 1.0));
+}
+
+float4 fs_alter(FragmentInput i) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    return float4(pow(t.rgb, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2)), t.a);
+}
+
+float3 srgb_encode(float3 l) {
+    float3 high = 1.055 * pow(l, float3(1.0 / 2.4, 1.0 / 2.4, 1.0 / 2.4)) - 0.055;
+    float3 low = l * 12.92;
+    // step(edge, x) is one for x >= edge, including the low-branch boundary.
+    // Keep the WGSL piecewise transfer exactly, using one vector expression.
+    return lerp(high, low, step(l, float3(0.0031308, 0.0031308, 0.0031308)));
+}
+
+float4 fs_present(FragmentInput i) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    return float4(srgb_encode(pow(t.rgb, float3(2.2, 2.2, 2.2))), 1.0);
+}
+
+float4 fs_present_srgb(FragmentInput i) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    return float4(pow(t.rgb, float3(2.2, 2.2, 2.2)), 1.0);
+}
+
+float3 ps_mix(float3 d, float3 r, float a) {
+    return d + a * (r - d);
+}
+
+// The removed RGBA8 scratch pass used destination alpha * mask alpha and
+// stored it as UNORM8 before the final draw. Preserve that intermediate
+// quantization, including its all-zero/all-one boundaries.
+float group_alpha(float pixel, float mask) {
+    return floor(clamp(pixel * mask, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+}
+
+// Vita-only entry: source/mask use identical full-canvas UVs, no haze/soft clip.
+float4 fs_group_composite(FragmentInput i) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    float a = group_alpha(t.a, tex2D(tex1, i.uv).a) * i.color.a;
+    return float4(t.rgb * i.color.rgb * a, a);
+}
+
+float4 fs_ps(FragmentInput i) : COLOR {
+    float4 t = sample_img(i);
+    if (tu.params2.z > 0.5) { t.a = 1.0; }
+    if (tu.params2.w > 0.5) { t.a = group_alpha(t.a, tex2D(tex2, i.uv).a); }
+    float4 d4 = load_texel(tex1, int2(i.pos.xy), uTex1Size);
+    float3 d = d4.rgb;
+    float3 s = t.rgb * i.color.rgb;
+    // Broadcast fill before comparing: width/height share this uniform vector.
+    // 1-step(fill, 0.5) keeps the original strict > boundary for all three lanes.
+    s = lerp(s, i.color.rgb, 1.0 - step(float3(tu.params.y, tu.params.y, tu.params.y),
+                                      float3(0.5, 0.5, 0.5)));
+    float ca = i.color.a;
+    if (tu.params2.x >= 0.0) {
+        ca *= rule_mask(rule_at(i.pos.xy / tu.params.zw, tu.params2.y), tu.params2.x, tu.params2.y);
+    }
+    float a = t.a * ca;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    float op = floor(tu.params.x + 0.5);
+    // Materialize a before testing it. The ordered comparison has the same
+    // boundary as a <= 0, without a fused VTST multiply/writeback instruction.
+    if ((min(a, 0.0) == a) && (op <= 15 || op == 19 || op == 20 || op == 23 || op == 24)) {
+        return d4;
+    }
+    // Return each operation directly so later predicates cannot overwrite
+    // RGB values still needed by an earlier operation.
+    if (op == 1.0) { return float4(ps_mix(d, min(d + s, one), a), 1.0); }
+    else if (op == 2.0) { return float4(ps_mix(d, min(d, s), a), 1.0); }
+    else if (op == 3.0) { return float4(ps_mix(d, max(d, s), a), 1.0); }
+    else if (op == 4.0) { return float4(ps_mix(d, max(d + s - one, zero), a), 1.0); }
+    else if (op == 5.0) {
+        float3 raw = max(one - (one - d) / s, zero);
+        float3 r = float3(s.r > 0.0 ? raw.r : 0.0,
+                          s.g > 0.0 ? raw.g : 0.0,
+                          s.b > 0.0 ? raw.b : 0.0);
+        return float4(ps_mix(d, r, a), 1.0);
+    }
+    else if (op == 6.0) {
+        float3 k = max(one - s, zero);
+        float3 raw = min(d / k, one);
+        float3 r = float3(k.r > 0.0 ? raw.r : 1.0,
+                          k.g > 0.0 ? raw.g : 1.0,
+                          k.b > 0.0 ? raw.b : 1.0);
+        return float4(ps_mix(d, r, a), 1.0);
+    }
+    else if (op == 7.0) {
+        float3 k = max(one - a * s, zero);
+        float3 raw = min(d / k, one);
+        return float4(float3(d.r > 0.0 ? raw.r : 0.0,
+                   d.g > 0.0 ? raw.g : 0.0,
+                   d.b > 0.0 ? raw.b : 0.0), 1.0);
+    }
+    else if (op == 8.0) { return float4(ps_mix(d, abs(d - s), a), 1.0); }
+    else if (op == 9.0) { return float4(abs(d - a * s), 1.0); }
+    else if (op == 10.0) { return float4(ps_mix(d, d + s - 2.0 * d * s, a), 1.0); }
+    else if (op == 11.0 || op == 12.0) {
+        float3 h = s;
+        if (op == 12) { h = min(s / t.a, one); }
+        float3 high = one - 2.0 * (one - h) * (one - d);
+        float3 low = 2.0 * d * h;
+        float3 r = float3(h.r < 0.5 ? low.r : high.r,
+                          h.g < 0.5 ? low.g : high.g,
+                          h.b < 0.5 ? low.b : high.b);
+        return float4(ps_mix(d, r, a), 1.0);
+    }
+    else if (op == 13.0) {
+        float3 high = one - 2.0 * (one - s) * (one - d);
+        float3 low = 2.0 * d * s;
+        float3 r = float3(d.r < 0.5 ? low.r : high.r,
+                          d.g < 0.5 ? low.g : high.g,
+                          d.b < 0.5 ? low.b : high.b);
+        return float4(ps_mix(d, r, a), 1.0);
+    }
+    else if (op == 14.0) {
+        float3 high = pow(d, one / (2.0 * s));
+        float3 low = pow(d, 2.0 - 2.0 * s);
+        float3 r = (s < float3(0.5, 0.5, 0.5)) ? low : high;
+        return float4(ps_mix(d, r, a), 1.0);
+    }
+    else if (op == 15.0) { return float4(max(d - a * (one - s), zero), 1.0); }
+    else if (op == 16.0) { return float4(min(d + s * ca, one), 1.0); }
+    else if (op == 17.0) { return float4(max(d - ca * (one - s), zero), 1.0); }
+    else if (op == 18.0) { return float4(s, 1.0); }
+    else if (op == 19.0) { return float4(ps_mix(d * d4.a, s, a), 1.0); }
+    else if (op == 20.0) { return float4(ps_mix(d, min(d, s), ca), 1.0); }
+    else if (op == 21.0) {
+        if (ca <= 0.0) { return d4; }
+        return float4(ps_mix(d, max(d, s), ca), 1.0);
+    }
+    else if (op == 22.0) { return float4(ps_mix(d, one - (one - d) * (one - s * ca), ca), 1.0); }
+    else if (op == 23.0) { return float4(min(d * s + (1.0 - a) * d, one), 1.0); }
+    else if (op == 24.0) { return float4(s, 1.0); }
+    return float4(d, 1.0);
+}
+#endif

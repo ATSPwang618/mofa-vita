@@ -1,0 +1,15 @@
+{
+  "revision": "b9438627eef73a1157e84201b6fa6eb2ffd6d9f0",
+  "files": [
+    {
+      "file": "bc7enc.h",
+      "url": "https://raw.githubusercontent.com/richgel999/bc7enc_rdo/b9438627eef73a1157e84201b6fa6eb2ffd6d9f0/bc7enc.h",
+      "sha256": "f40f4a956ed6a8845b7909e83831de09512424408b32ca29551bf49aee2fecf6"
+    },
+    {
+      "file": "bc7enc.cpp",
+      "url": "https://raw.githubusercontent.com/richgel999/bc7enc_rdo/b9438627eef73a1157e84201b6fa6eb2ffd6d9f0/bc7enc.cpp",
+      "sha256": "b90444a091530a13c61fa6375583fcc9bc9ca47e474fd71f818876de68c1b581"
+    }
+  ]
+}

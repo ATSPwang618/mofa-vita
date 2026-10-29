@@ -1,0 +1,42 @@
+{
+  "task": "Vita bounded BFSAR loading",
+  "date": "2026-10-27",
+  "asset": {
+    "path": "D:/AI-CODEX/SWITCH-魔法使之夜/dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/assets/witch.bfsar",
+    "bytes": 219087752,
+    "sha256": "3416c56c8b694a632b9da63cd9069dcab2a2294ff8170d201566bfdf8bf933b3",
+    "metadata_prefix_bytes": 3163944
+  },
+  "implementation": {
+    "files": [
+      "knife-audio/src/bfsar.rs",
+      "knife/src/assets.rs"
+    ],
+    "vita": "open_file reads STRG/INFO + FILE header; seeks and reads bounded FWSD and selected FWAV on demand",
+    "desktop": "existing full-buffer parse unchanged",
+    "limits": {
+      "metadata_bytes": 16777216,
+      "fwsd_bytes": 1048576,
+      "fwav_encoded_bytes": 8388608,
+      "fwav_decoded_frames": 2000000
+    },
+    "error_behavior": "Malformed offsets/counts and over-budget wave reject with error; no success placeholder"
+  },
+  "verification": {
+    "host": {
+      "command": "KNIFE_WITCH_BFSAR=/mnt/d/AI-CODEX/SWITCH-魔法使之夜/dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/assets/witch.bfsar CARGO_TARGET_DIR=.work/vita-bfsar-host-target cargo +nightly-2026-05-28 test --offline --locked -p knife-audio --lib -q",
+      "result": "16 passed; real archive compares three wave PCM, loops and channels plus three stream entries against full desktop parse; corrupt internal file bounds and STRG count rejected; long wave rejected"
+    },
+    "arm": {
+      "command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=.work/vita-bfsar-arm-target cargo +nightly-2026-05-28 build --offline --locked -Z build-std=std,panic_abort -p knife --bin knife --target armv7-sony-vita-newlibeabihf --release --features vita-gxm -q",
+      "result": "full game linked",
+      "elf": "knife/.work/vita-bfsar-arm-target/armv7-sony-vita-newlibeabihf/release/knife.elf",
+      "sha256": "cdc223d195d127b972a9781a8d02c11f1f5dc3be71a5b681d6613de3fd32ac23"
+    }
+  },
+  "limits": [
+    "Large FWAV over 2,000,000 decoded frames returns an explicit error pending a streaming FWAV decoder.",
+    "Decoding a permitted FWAV still materializes bounded PCM for existing game sound API.",
+    "Vita3K runtime verification delegated to root; this receipt only covers host differential and ARM link."
+  ]
+}

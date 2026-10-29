@@ -1,0 +1,7 @@
+// Basic GXM probe only. Multiplication preserves the sampled alpha channel.
+// Blending is configured by the caller; this does not implement game effects.
+float4 main(float2 texcoord : TEXCOORD0,
+            float4 color : COLOR0,
+            uniform sampler2D uTexture : TEXUNIT0) : COLOR {
+    return tex2D(uTexture, texcoord) * color;
+}

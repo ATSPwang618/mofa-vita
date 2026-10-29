@@ -1,0 +1,23 @@
+[package]
+name = "knife-render"
+version = "0.9.4"
+edition = "2024"
+license = "MPL-2.0"
+
+[dependencies]
+knife-render-api = { path = "../knife-render-api" }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(not(target_os = "vita"))'.dependencies]
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+glam = { workspace = true }
+pollster = "0.4"
+
+[target.'cfg(target_os = "vita")'.dependencies]
+knife-platform-vita = { path = "../knife-platform-vita" }
+
+[features]
+# Native 960x540 scene chain; without it the Vita backend keeps the 480x270 chain.
+assets-540p = []

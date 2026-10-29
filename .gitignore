@@ -1,0 +1,29 @@
+# build outputs
+target/
+.work/
+/release/
+# locally built game assets (converted from your own game data, never committed)
+dist/
+# Local device utilities, runtime binaries, saves and crash dumps
+/实机开发测试工具/
+__pycache__/
+*.py[cod]
+*.exe
+*.dll
+*.so
+*.suprx
+*.skprx
+*.elf
+*.map
+*.psp2dmp
+/saves/
+/savedata/
+.env
+.env.*
+!.env.example
+*.vpk
+*.self
+*.velf
+eboot.bin
+# generated shader/probe logs
+doc/*.log

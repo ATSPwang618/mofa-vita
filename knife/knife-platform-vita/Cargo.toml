@@ -1,0 +1,46 @@
+[package]
+name = "knife-platform-vita"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# Embed asset_profile_540p.rs instead of asset_profile_270p.rs and place saves
+# under the 540p data root.
+assets-540p = []
+
+[dependencies]
+knife-render-api = { path = "../knife-render-api" }
+crc32fast = "1.5.2"
+
+[[bin]]
+name = "knife-vita-platform-probe"
+path = "src/bin/platform_probe.rs"
+
+[[bin]]
+name = "knife-vita-gxm-probe"
+path = "src/bin/gxm_probe.rs"
+
+[[bin]]
+name = "knife-vita-image-probe"
+path = "src/bin/image_probe.rs"
+
+[[bin]]
+name = "knife-vita-effects-probe"
+path = "src/bin/effects_probe.rs"
+
+[[bin]]
+name = "knife-vita-compressed-probe"
+path = "src/bin/compressed_probe.rs"
+
+[[bin]]
+name = "knife-vita-ui-color-probe"
+path = "src/bin/ui_color_probe.rs"
+
+[[bin]]
+name = "knife-vita-pipeline-probe"
+path = "src/bin/pipeline_probe.rs"
+
+[[bin]]
+name = "knife-vita-audio-probe"
+path = "src/bin/vita-audio-probe.rs"

@@ -114,7 +114,7 @@ receipt = {"built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                "features": re.findall(r'\("([a-z0-9-]+)",\s*[A-Z0-9_]+\)', (root / "knife/knife-perf/src/optimizations.rs").read_text()),
                "batch_dependencies": ["async-submit", "compact-stream"],
                "graph_and_rename_dependencies": ["batch-arena", "async-submit"]},
-           "runtime_shader_cache": {"root": "ux0:/data/knife-vita/shader-cache", "abi": cache_abi, "entry_abi": 2,
+           "runtime_shader_cache": {"root": "ux0:data/WitchontheHolyNight/shader-cache", "abi": cache_abi, "entry_abi": 2,
                "color_contract": "encoded-unorm8-uchar4", "asset_gxt_codec": 9,
                "compiler_policy": compiler_policy, "extensions_archive_sha256": sha256(root / "knife/vita/vendor/shacccg-ext/libSceShaccCgExt.a"),
                "source_sha256": re.search(r'SOURCE_SHA256 "([a-f0-9]{64})"',
@@ -136,7 +136,7 @@ receipt = {"built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                      if release else "DEV actual Game/Ui native entry with a finite frame limit; not a final release"
                      if mode == "game" else f"DEV {mode} probe; runtime checks require actual Vita execution"),
            **({"feature": "vita-gxm", "frame_limit": os.environ.get("KNIFE_VITA_DEV_MAX_FRAMES"),
-               "assets": ("external ux0:data/knife-woh-540p/assets; no game assets in VPK"
+               "assets": ("external ux0:data/WitchontheHolyNight/assets; no game assets in VPK"
                           if os.environ.get("KNIFE_VITA_TITLE_ID") == "KNIF00540"
                           else "external ux0:data/knife-woh/assets; no game assets in VPK"),
                "save_namespace": os.environ.get("KNIFE_VITA_SAVE_NAMESPACE", "development")}
@@ -150,10 +150,10 @@ receipt = {"built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                "runtime_timeout_seconds": 60,
                "runtime_requirements": "strict single RESULT PASS, actual three active-stage captures, native teardown and requested renderer identity"}
               if mode == "movie" else {}),
-           **({"title_id": os.environ.get("KNIFE_VITA_TITLE_ID", "KNIF00270"),
+           **({"title_id": os.environ.get("KNIFE_VITA_TITLE_ID", "KNIF00540"),
                "physical_canvas": [960, 540],
                "fixed_render_resolution": {"source": "code", "configuration_read": False,
-                                           "scene": [960, 540] if os.environ.get("KNIFE_VITA_TITLE_ID") == "KNIF00540" else [480, 270],
+                                           "scene": [960, 540],
                                            "composite": [960, 540]},
                "scene_pixels": [int(v) for v in os.environ.get("KNIFE_VITA_SCENE_PIXELS", "960,540").split(",")],
                "composite_pixels": [960, 540], "display": [960, 540],

@@ -4,10 +4,7 @@
 use std::{cell::RefCell, collections::HashMap, path::{Path, PathBuf}};
 use knife_perf::{Metric, Scope};
 const MEMO_LIMIT: usize = 1024;
-#[cfg(feature = "assets-540p")]
 pub const EMBEDDED: Option<&str> = Some(include_str!("../data/vita_stream_index_540p.txt"));
-#[cfg(not(feature = "assets-540p"))]
-pub const EMBEDDED: Option<&str> = None;
 struct Index { names: Vec<&'static str> }
 impl Index {
     fn parse(text: &'static str, expected: &str) -> Option<Self> {

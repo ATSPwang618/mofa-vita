@@ -39,7 +39,8 @@ typedef struct {
 } CacheHeader;
 _Static_assert(sizeof(CacheHeader) == 168, "shader cache header ABI");
 #ifndef KV_SHADER_CACHE_ROOT
-#define KV_SHADER_CACHE_ROOT "ux0:/data/knife-vita/shader-cache"
+/* The runtime shader cache lives in the game's own data root, beside assets/ and saves/. */
+#define KV_SHADER_CACHE_ROOT "ux0:data/WitchontheHolyNight/shader-cache"
 #endif
 static const char *const cache_root = KV_SHADER_CACHE_ROOT;
 static const char *validation_reason;
@@ -181,7 +182,7 @@ static SceGxmProgram *read_cache(uint32_t shader) {
     return program;
 }
 static void write_cache(uint32_t shader, const void *program, uint32_t bytes) {
-    sceIoMkdir("ux0:/data/knife-vita", 0777);
+    sceIoMkdir("ux0:data/WitchontheHolyNight", 0777);
     sceIoMkdir(cache_root, 0777);
     char path[320], temporary[328]; path_for(path, sizeof(path), shader);
     snprintf(temporary, sizeof(temporary), "%s.tmp", path);

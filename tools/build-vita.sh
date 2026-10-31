@@ -11,13 +11,7 @@ TARGET=armv7-sony-vita-newlibeabihf
 TOOLCHAIN=nightly-2026-05-28
 MODE="${1:-platform}"
 BUILD_KIND="${2:-dev}"
-# Release variant: native540 by default; 270p remains a legacy build profile
-# (960x540 assets, KNIF00540, separate data root and save namespace).
-VARIANT="${KNIFE_VITA_VARIANT:-native540}"
-if [[ "$VARIANT" != 270p && "$VARIANT" != native540 ]]; then
-    echo "Unknown KNIFE_VITA_VARIANT: $VARIANT (expected 270p or native540)" >&2
-    exit 2
-fi
+# The native 960x540 package (KNIF00540) is the only supported release build.
 if [[ "$BUILD_KIND" != dev && "$BUILD_KIND" != release ]] || [[ "$BUILD_KIND" = release && "$MODE" != game ]]; then
     echo 'Usage: build-vita.sh [probe-mode] [dev] | build-vita.sh game release' >&2
     exit 2
@@ -86,35 +80,21 @@ LOG="$ROOT/.work/logs/vita/$MODE-build.log"
 VPK="knife-vita-$MODE-dev.vpk"
 CHECK_ARGS=()
 if [[ "$BUILD_KIND" = release ]]; then
-    if [[ "$VARIANT" = native540 ]]; then
-        OUTPUT="$ROOT/.work/vita/$MODE-release-540p"
-        LOG="$ROOT/.work/logs/vita/$MODE-release-540p-build.log"
-        TITLE='Witch on the Holy Night 540p'
-        TITLE_ID=KNIF00540
-        VPK=knife-vita-game-540p.vpk
-        export KNIFE_VITA_SCENE_PIXELS=960,540
-        export KNIFE_VITA_TITLE_ID=KNIF00540
-    else
-        OUTPUT="$ROOT/.work/vita/$MODE-release"
-        LOG="$ROOT/.work/logs/vita/$MODE-release-build.log"
-        TITLE='Witch on the Holy Night 270p'
-        TITLE_ID=KNIF00270
-        VPK=knife-vita-game-270p.vpk
-    fi
+    OUTPUT="$ROOT/.work/vita/$MODE-release-540p"
+    LOG="$ROOT/.work/logs/vita/$MODE-release-540p-build.log"
+    TITLE='Witch on the Holy Night 540p'
+    TITLE_ID=KNIF00540
+    VPK=knife-vita-game-540p.vpk
+    export KNIFE_VITA_SCENE_PIXELS=960,540
+    export KNIFE_VITA_TITLE_ID=KNIF00540
     CHECK_ARGS=(--release)
 fi
-if [[ "$BUILD_KIND" = release && "$MODE" = game && "$VARIANT" = native540 ]]; then
-    FEATURE_ARGS=(--features vita-gxm,assets-540p)
-fi
-# The native 540p variant always requests the enlarged MAIN budget (0x0C,
-# +109 MiB). Override only for a deliberate A/B: KNIFE_VITA_ATTRIBUTE2=0|4|12.
-if [[ -z "${KNIFE_VITA_ATTRIBUTE2:-}" ]]; then
-    if [[ "$VARIANT" = native540 ]]; then export KNIFE_VITA_ATTRIBUTE2=12
-    else export KNIFE_VITA_ATTRIBUTE2=0; fi
-fi
+# The 540p package always requests the enlarged MAIN budget (0x0C, +109 MiB).
+# Override only for a deliberate A/B: KNIFE_VITA_ATTRIBUTE2=0|4|12.
+export KNIFE_VITA_ATTRIBUTE2="${KNIFE_VITA_ATTRIBUTE2:-12}"
 export KNIFE_VITA_TITLE_ID="${KNIFE_VITA_TITLE_ID:-$TITLE_ID}"
 # Baked into the perf log header so a hardware log always names its package.
-export KNIFE_BUILD_TAG="${KNIFE_BUILD_TAG:-$VARIANT}"
+export KNIFE_BUILD_TAG="${KNIFE_BUILD_TAG:-native540}"
 # Validate the checked-in packaging input before compiling anything.
 if [[ "$MODE" = game ]]; then
     export KNIFE_VITA_SHADER_COMPILER="$ROOT/knife/vita/vendor/shacccg/libshacccg.suprx"

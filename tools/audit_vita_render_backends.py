@@ -62,9 +62,7 @@ def main():
     same = {key: len({row['inputs'][key]['sha256'] for row in runs}) == 1
             for key in ('vpk', 'emulator', 'debugger', 'asset_manifest')}
     maps = []
-    for relative in ('.work/vita/game-release/knife.map',
-                     '.work/vita/game-investigation/270p-release-before-asset-guard/'
-                     '.work_vita_game-release/knife.map'):
+    for relative in ('.work/vita/game-release-540p/knife.map',):
         path = ROOT / relative
         text = path.read_text(encoding='utf-8')
         required = ('sceGxmInitialize', 'sceGxmBeginScene', 'sceGxmDraw', 'sceDisplaySetFrameBuf')
@@ -77,7 +75,7 @@ def main():
                   tool=identity(Path(__file__)), image_check_tool=identity(ROOT / 'tools/vita_capture_check.py'),
                   guest_renderer='direct GXM', all_selected_runs_same_inputs=same,
                   runs=runs, link_maps=maps,
-                  dist_vpk=identity(ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-270p-Vita/knife-vita-270p.vpk'),
+                  dist_vpk=identity(ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-game-540p.vpk'),
                   root_cause_established=False, hardware_verified=False,
                   limitations=[
                       'Controlled observations apply to the recorded fork, GPU/driver and inputs only.',

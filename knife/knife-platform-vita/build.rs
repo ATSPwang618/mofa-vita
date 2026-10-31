@@ -12,9 +12,7 @@ fn main() {
     let definitions = std::fs::read_to_string("../vita/perf_counters.def").expect("performance metric definitions");
     let names = definitions.lines().filter(|l| l.starts_with("KV_PERF("))
         .map(|l| l.split('"').nth(1).expect("metric label")).collect::<Vec<_>>();
-    let profile_path = if env::var_os("CARGO_FEATURE_ASSETS_540P").is_some() {
-        "src/asset_profile_540p.rs"
-    } else { "src/asset_profile_270p.rs" };
+    let profile_path = "src/asset_profile_540p.rs";
     println!("cargo:rerun-if-changed={profile_path}");
     let profile = std::fs::read_to_string(profile_path).expect("asset profile");
     let manifest = profile.lines().find_map(|line| line.strip_prefix("// External manifest SHA-256: ")).unwrap_or("unknown");

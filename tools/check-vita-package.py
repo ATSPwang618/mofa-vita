@@ -63,7 +63,7 @@ def check(path, title_id="KNIF00002", release=False):
                            "ATTRIBUTE2": expected_attribute2}.items():
             if sfo.get(key) != value:
                 raise ValueError(f"incorrect {key}: {sfo.get(key)!r}")
-        profile = "540p" if title_id == "KNIF00540" else "270p"
+        profile = "540p"
         if release and (profile not in sfo.get("TITLE", "") or "DEV" in sfo["TITLE"]):
             raise ValueError(f"release package must identify the {profile} profile")
         if not release and "DEV" not in sfo.get("TITLE", ""):

@@ -56,7 +56,7 @@ def main():
     result = subprocess.run(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     log = run / "output.log"
     log.write_bytes(result.stdout)
-    public_log = ROOT / "doc/logs/vita/270p-render-host.log"
+    public_log = ROOT / "doc/logs/vita/540p-render-host.log"
     public_log.parent.mkdir(parents=True, exist_ok=True)
     public_log.write_bytes(result.stdout)
     output = result.stdout.decode("utf-8", errors="replace")

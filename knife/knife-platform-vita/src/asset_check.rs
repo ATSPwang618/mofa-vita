@@ -58,14 +58,11 @@ pub struct CheckReport {
     pub read_bytes: u64,
 }
 
-#[cfg(not(feature = "assets-540p"))]
-include!("asset_profile_270p.rs");
-#[cfg(feature = "assets-540p")]
 include!("asset_profile_540p.rs");
 
 /// This identifies the compatible pack and catches incomplete/mixed key files.
 /// Large payloads use size + first/last 4 KiB, NOT a whole-file integrity claim.
-/// tools/vita-270p-assets.mjs performs the full offline SHA-256 inventory check.
+/// tools/generate_vita_asset_profile_540.py performs the full offline SHA-256 inventory check.
 pub fn check_assets(root: &Path) -> Result<CheckReport, AssetError> {
     check_files(root, PROFILE)
 }

@@ -11,5 +11,5 @@ for row in d['files']:
  names.append(name)
 if len(names)!=len(set(names)):raise ValueError('duplicate stream name')
 text='# knife-stream-index-v1 '+hashlib.sha256(data).hexdigest()+'\n'+'\n'.join(sorted(names))+'\n'
-a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(text)
+a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(text,encoding='utf-8',newline='\n')
 print(f'{len(names)} filename entries; {len(text.encode())} bytes; manifest {hashlib.sha256(data).hexdigest()}')

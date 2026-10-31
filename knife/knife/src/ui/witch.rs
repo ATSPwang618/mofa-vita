@@ -29,9 +29,16 @@ pub use modepnl::{HELP as PANEL_HELP, WBtn, WSpin};
 pub use objs::{Pen, WObjs};
 pub use title::WitchTitle;
 
-/// jp_8D1C0: the ending was reached (the title's BGM 42, else 65).
+/// jp_8D1C0: the ending was reached (the title's BGM 42, else 2).
 pub fn title_complete(game: &Game) -> bool {
     title::complete(game)
+}
+
+/// jp_8E1C0 / jp_9C470: the title's BGM. BGM 2 is the music gallery's first track,
+/// "Mahoutsukai no Yoru - Shuchoumelody" (`stream/M01s.opus`, loop 0..9,407,488 samples);
+/// the second title (ending reached) plays BGM 42 (`stream/M42.opus`).
+pub fn title_bgm(complete: bool) -> i32 {
+    if complete { 42 } else { 2 }
 }
 
 /// Game button bits (sub_F3EC4): see `pad.rs`.

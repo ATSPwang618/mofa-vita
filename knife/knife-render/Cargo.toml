@@ -19,6 +19,3 @@ pollster = "0.4"
 [target.'cfg(target_os = "vita")'.dependencies]
 knife-platform-vita = { path = "../knife-platform-vita" }
 
-[features]
-# Native 960x540 scene chain; without it the Vita backend keeps the 480x270 chain.
-assets-540p = []

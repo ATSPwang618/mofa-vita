@@ -626,7 +626,7 @@ impl Assets {
     pub fn resolve_language(&self, word: i16) -> usize {
         // This Vita distribution fixes the original Chinese ID (2); compact
         // profile mapping still selects physical language slot1, never ID1.
-        if cfg!(all(target_os = "vita", feature = "assets-540p")) { return 2; }
+        if cfg!(target_os = "vita") { return 2; }
         if let Some(profile) = &self.language_profile {
             return profile.resolve(word, system_language(self.build));
         }
@@ -647,7 +647,7 @@ impl Assets {
     }
 
     pub fn next_language(&self, word: i16, forward: bool) -> i16 {
-        if cfg!(all(target_os = "vita", feature = "assets-540p")) { return 2; }
+        if cfg!(target_os = "vita") { return 2; }
         if let Some(profile) = &self.language_profile {
             return profile.cycle(self.resolve_language(word), forward);
         }

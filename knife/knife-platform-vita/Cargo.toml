@@ -4,11 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-[features]
-# Embed asset_profile_540p.rs instead of asset_profile_270p.rs and place saves
-# under the 540p data root.
-assets-540p = []
-
 [dependencies]
 knife-perf = { path = "../knife-perf" }
 knife-render-api = { path = "../knife-render-api" }

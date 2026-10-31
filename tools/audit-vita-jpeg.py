@@ -83,7 +83,7 @@ def main():
     report = {"schema": "knife-vita-jpeg-admission-audit-v1", "assets": str(a.assets),
         "native_admission_library_sha256": digest(a.profile_library),
         "native_source_sha256": digest(Path(__file__).resolve().parents[1] / "knife/vita/jpeg_hw.c"),
-        "asset_manifest_sha256": digest(a.assets / "vita-270p-assets.json"),
+        "asset_manifest_sha256": digest(a.assets / "vita-540p-assets.json"),
         "scope": "Complete archive image inventory and exact native header admission only; no actual hardware decode or performance claim",
         "archives": [], "textures": 0, "jpeg_candidates": 0, "jpeg_fallback": 0,
         "sampling": {}, "formats": {}}

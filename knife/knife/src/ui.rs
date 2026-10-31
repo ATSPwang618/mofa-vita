@@ -20,6 +20,12 @@ mod witch;
 pub use pad::Pad;
 pub use witch::last_atlas_error;
 
+/// The BGM of a Witch on the Holy Night title (`witch::title_bgm`): `Game::play_title_bgm` must
+/// not use the generic engine's title-stage table there (BGM 72 is a voice stream in that game).
+pub fn witch_title_bgm(game: &crate::game::Game) -> i32 {
+    witch::title_bgm(witch::title_complete(game))
+}
+
 const W: f32 = CANVAS_W as f32;
 const H: f32 = CANVAS_H as f32;
 const SLOTS_PER_PAGE: usize = 4;
@@ -2362,7 +2368,8 @@ impl Ui {
         self.title_entries().iter().position(|e| e.0 == act)
     }
 
-    /// Debug: the title in PRESS ANY BUTTON mode, or a caution screen.
+    /// Debug: the title in PRESS ANY BUTTON mode, a caution screen, or one of the launch's supporter-credit
+    /// pages (states 69..=72 of the Witch on the Holy Night title).
     pub fn debug_intro(&mut self, game: &mut Game, r: &Renderer, name: &str) -> bool {
         match name {
             "press" => {
@@ -2379,6 +2386,8 @@ impl Ui {
                 self.intro = Some(Intro::Caution { idx: usize::from(name == "caution1"), a: 1.0, t: 0.0, out: false, white: 0.0 });
                 self.screen = Screen::Intro;
             }
+            // "credit1" / "credit2": parts.mrg #2 / #3 of the launch's supporter-credit pages
+            "credit1" | "credit2" => self.wt_credit_debug(game, r, usize::from(name == "credit2")),
             _ => return false,
         }
         true
@@ -4868,7 +4877,7 @@ impl Ui {
                 self.black_speed = 0.0;
                 self.store_global(game);
                 game.reset();
-                game.play_bgm(if crate::ui::witch::title_complete(game) { 42 } else { 65 }, 1.0, 0.0);
+                game.play_bgm(crate::ui::witch::title_bgm(crate::ui::witch::title_complete(game)), 1.0, 0.0);
                 self.title_movie = false;
                 self.black = 0.0;
                 self.warc_init(game, false);
@@ -5330,7 +5339,7 @@ impl Ui {
             // jp_48AC0 mode 2 state 3, jp_47A90: the title's BGM at once, the Archive with its panel up
             self.store_global(game);
             game.reset();
-            game.play_bgm(if crate::ui::witch::title_complete(game) { 42 } else { 65 }, 1.0, 0.0);
+            game.play_bgm(crate::ui::witch::title_bgm(crate::ui::witch::title_complete(game)), 1.0, 0.0);
             self.title_movie = false;
             self.black = 0.0;
             self.black_speed = 0.0;

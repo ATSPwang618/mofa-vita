@@ -1348,12 +1348,8 @@ fn scene_upscale_then_native_ui_keeps_capture_size_and_rejects_aliases() {
 fn vita_fullscreen_is_native_540p_with_original_script_coordinates() {
     let (mut r, control) = setup();
     let target = r.create_scene_target(CANVAS_W, CANVAS_H, "native scene");
-    #[cfg(feature = "assets-540p")]
     assert_eq!([RENDER_W, RENDER_H], [960, 540]);
-    #[cfg(feature = "assets-540p")]
     assert_eq!(performance_dimensions(), ([960, 540], [960, 540]));
-    #[cfg(not(feature = "assets-540p"))]
-    assert_eq!([RENDER_W, RENDER_H], [480, 270]);
     assert_eq!(target.tex.uv_extent(), [1920.0, 1080.0]);
     assert_eq!(target.tex.physical_size(), [RENDER_W, RENDER_H]);
     assert_eq!(target.tex.uv_max(), [1.0, 1.0]);

@@ -318,7 +318,7 @@ impl Ui {
                 if s.fade <= 0.0 {
                     s.fade = 0.0;
                     // jp_9C470 / jp_9C6D0(jp_8E1C0()): the title's BGM, crossfading in over a track still playing
-                    let title = if super::title::complete(game) { 42 } else { 65 };
+                    let title = super::title_bgm(super::title::complete(game));
                     if s.playing {
                         if s.bgm != title {
                             game.sound.stop_bgm_rate(0.83333);

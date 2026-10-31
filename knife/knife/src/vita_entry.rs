@@ -8,17 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(not(feature = "assets-540p"))]
-const ASSETS: &str = "ux0:data/knife-woh/assets";
-#[cfg(feature = "assets-540p")]
-const ASSETS: &str = "ux0:data/knife-woh-540p/assets";
+const ASSETS: &str = "ux0:data/WitchontheHolyNight/assets";
 
-// Performance switch and log live beside the variant's own data root so the 270p
-// and 540p packages can coexist without overwriting each other's log.
-#[cfg(not(feature = "assets-540p"))]
-const PERF_ROOT: &str = "ux0:data/knife-woh";
-#[cfg(feature = "assets-540p")]
-const PERF_ROOT: &str = "ux0:data/knife-woh-540p";
+// Performance switch and log live beside the game's own data root, next to
+// assets/, saves/ and the runtime shader cache.
+const PERF_ROOT: &str = "ux0:data/WitchontheHolyNight";
 
 /// Build identity recorded in the log header, so two logs can never be confused.
 unsafe extern "C" {
@@ -46,7 +40,7 @@ fn build_identity() -> String {
 
 const TITLE_ID: &str = match option_env!("KNIFE_VITA_TITLE_ID") {
     Some(id) => id,
-    None => "KNIF00270",
+    None => "KNIF00540",
 };
 
 // Console-only measurement, fixed histogram and bounded detail every five seconds.
@@ -70,7 +64,7 @@ impl PerfLog {
             option_env!("KNIFE_PERF_CONSOLE") == Some("1"))? { return Ok(None); }
         knife_platform_vita::audit::console(&build_identity())?;
         let (scene, canvas) = knife_render::performance_dimensions();
-        let profile = if cfg!(feature = "assets-540p") { "540p-native-unorm-v2" } else { "270p-v1" };
+        let profile = "540p-native-unorm-v2";
         let quoted = |value: &str| { let mut out = String::new(); knife_perf::json_string(&mut out, value); out };
         // Read the loader-visible heap/stack sizes: a zero here proves a constant
         // was dropped by --gc-sections, which no build receipt can catch.
@@ -106,7 +100,7 @@ impl PerfLog {
             + &format!(concat!(",\"logger_transport\":\"bounded-worker-v1\",\"audit_bank_policy\":\"changed-cumulative-v1\",",
                 "\"previous_console_scope\":\"main collect/enqueue; printf is console_worker_last_us\",",
                 "\"language_fixed\":{},\"cache_budgets\":{{\"cpu_source\":{},\"cpu_graded\":{},\"gpu_resource\":{},\"gpu_text\":{},\"gpu_group\":{},\"gpu_total_with_jpeg\":109051904}}}}\n"),
-                if cfg!(feature = "assets-540p") { 2 } else { -1 },
+                2,
                 knife_perf::memory_budget::CPU_SOURCE_BYTES, knife_perf::memory_budget::CPU_GRADED_BYTES,
                 knife_perf::memory_budget::GPU_RESOURCE_BYTES, knife_perf::memory_budget::GPU_TEXT_BYTES,
                 knife_perf::memory_budget::GPU_GROUP_BYTES);
@@ -328,7 +322,6 @@ pub fn run() -> Result<()> {
 
 fn run_game(log: &mut DevLog) -> Result<()> {
     install_panic_hook();
-    #[cfg(feature = "assets-540p")]
     savedata::set_language_override(2);
     let limit = if option_env!("KNIFE_VITA_DEV_DIAGNOSTICS") == Some("1") {
         option_env!("KNIFE_VITA_DEV_MAX_FRAMES").and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
@@ -374,7 +367,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     match asset_check::check_assets(&assets_dir) {
         Ok(report) => {
             log.event(&format!("ASSETS profile={} key-files={} read-bytes={} check-ms={:.3}",
-                if cfg!(feature = "assets-540p") { "540p" } else { "270p" }, report.files, report.read_bytes, check_started.elapsed().as_secs_f64() * 1000.));
+                "540p", report.files, report.read_bytes, check_started.elapsed().as_secs_f64() * 1000.));
             log.event("ASSETS verified Witch/EN+Chengkong");
         },
         Err(error) => {

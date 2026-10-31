@@ -10,7 +10,7 @@ typedef struct KvJpegHwProfile {
     uint32_t width, height, sampling;
 } KvJpegHwProfile;
 
-/* Allocation-free, conservative admission for this port's 270p JPEGs.
+/* Allocation-free, conservative admission for this port's 540p JPEGs.
  * This is a profile check, not a complete entropy-stream validator. */
 int kv_jpeg_hw_profile(const uint8_t *jpeg, uint32_t bytes, KvJpegHwProfile *out);
 /* Returns 1 only for an owned complete RGBA output, otherwise 0 for software

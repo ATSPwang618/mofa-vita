@@ -4,14 +4,8 @@ use crate::asset_check::AssetError;
 pub const WIDTH: usize = 480;
 pub const HEIGHT: usize = 270;
 
-#[cfg(not(feature = "assets-540p"))]
-const PACK_DESCRIPTION: &str = "THIS ENGINE USES THE 480 X 270 ASSET PACK.";
-#[cfg(feature = "assets-540p")]
 const PACK_DESCRIPTION: &str = "THIS ENGINE USES THE 960 X 540 ASSET PACK.";
-#[cfg(not(feature = "assets-540p"))]
-const ASSETS_ROOT: &str = "ux0:data/knife-woh/assets";
-#[cfg(feature = "assets-540p")]
-const ASSETS_ROOT: &str = "ux0:data/knife-woh-540p/assets";
+const ASSETS_ROOT: &str = "ux0:data/WitchontheHolyNight/assets";
 
 pub fn raster(error: &AssetError) -> Vec<u8> {
     let mut pixels = [14, 18, 25, 255].repeat(WIDTH * HEIGHT);

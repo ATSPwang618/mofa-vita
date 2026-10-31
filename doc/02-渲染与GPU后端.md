@@ -147,7 +147,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 启动期（`runtime_shaders.c:331-418`）：
 
-1. 先查 `ux0:/data/knife-vita/shader-cache/`；10 个条目全部命中则不加载编译器（`:337-343`）；
+1. 先查数据根下的 `ux0:data/WitchontheHolyNight/shader-cache/`；10 个条目全部命中则不加载编译器（`:337-343`）；
 2. 否则依次检查 4 个候选路径（`app0:/sce_module/libshacccg.suprx` 等），核对 1,776,523 B 大小与完整 SHA-256（`:344-362`、`:309-330`）、模块名与 7 个导出的归属（`:202-253`、`shader_module_exports.h:23-58`）；
 3. 用 `sceShaccCgExtEnableExtensions()` 启用 `__nativecolor`/`__regformat` 等 Cg 扩展（`shader_extensions.c:25-54`）；失败则跳过 native 声明编译（`runtime_shaders.c:390-412`）；
 4. 编译 O3、禁用 fastmath/fastprecision/fastint；产物先过完整校验：GXP 魔数、大小、stage/native-color 标志、输出寄存器格式（fetch 要求 UCHAR4）、参数/采样器/边界、`sceGxmProgramCheck`（`:93-150`）；
@@ -174,7 +174,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 当前只保留 **encoded UNORM8 + UCHAR4** 一条契约：没有 sRGB/HALF4 双输出模式（`gxm_backend.c:42,241-255`），fragment program 只 patch `SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4`（`effects_backend.inc:192-220`），cache 校验要求输出 varyings 为 UCHAR4（`runtime_shaders.c:119-120`）；Alter/present 直接过采样、`output_level`/`target_level` 恒等（`knife-render/src/vita.rs:295-298`），perf header 记录 `color_contract=encoded-unorm8-uchar4`（`vita_entry.rs:77`）。HALF4/sRGB 与 gamma 设置只存在于历史版本，已从当前代码移除；历史原文见 git 提交 `a670193` 的 `doc/archive/`。
 
-尺寸固定：正式 540p 构建 `RENDER_W/H = 960×540`（`vita.rs:36-43`）；`scene_size()`/`composite_physical()` 由 1920×1080 画布折半（`:3324-3334`）；扫描输出 `WIDTH=960, HEIGHT=544, CONTENT_H=540, CONTENT_Y=2`（`gxm_backend.c:32-36`），present 只画内容区，形成上下各 2 px letterbox（`effects_backend.inc:795-812`、`README.md:38`）。270p 变体由 `assets-540p` feature 切换，仍保留但不属正式素材链。
+尺寸固定：正式 540p 构建 `RENDER_W/H = 960×540`（`vita.rs:31-35`）；`scene_size()`/`composite_physical()` 由 1920×1080 画布折半（`:3318-3326`）；扫描输出 `WIDTH=960, HEIGHT=544, CONTENT_H=540, CONTENT_Y=2`（`gxm_backend.c:32-36`），present 只画内容区，形成上下各 2 px letterbox（`effects_backend.inc:795-812`、`README.md`）。540p 是唯一构建档位；原 270p 变体（`assets-540p` feature 关闭分支）已在本次移除。
 
 ## 11. 失败回退矩阵
 
@@ -205,7 +205,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 **设备验证（opt-in，默认静音）**
 
-- 开关：`perf-enable.txt`（`knife-platform-vita/src/perf_switch.rs:10-22`）；优化 profile 文件启动读取一次（`vita_entry.rs:342-349`）；正式包默认 `KNIFE_VITA_QUIET=1`（`tools/build-vita.sh:30`），测量需 `KNIFE_VITA_QUIET=0` 重建。
+- 开关：`perf-enable.txt`（`knife-platform-vita/src/perf_switch.rs:10-22`）；优化 profile 文件启动读取一次（`vita_entry.rs:345-350`）；正式包默认 `KNIFE_VITA_QUIET=1`（`tools/build-vita.sh:24`），测量需 `KNIFE_VITA_QUIET=0` 重建。
 - 日志：控制台 JSON 每 5 s 一个 window/audit，header 记录 build tag、时钟、scene/composite 尺寸、素材清单 SHA、优化 mask、颜色契约、缓存预算（`vita_entry.rs:45-111,467-481`）；native 侧 108 个累计计数器（`perf_audit.c:39-78`、`perf_counters.def`）覆盖上传/清零/copy/Finish/EndScene/display/批次等待/池/rename/PS 路径等；watchdog 每 500 ms 输出 `runtime_state` JSON（`vita_watchdog.rs:131-186`）。
 - 离线分析：`tools/read-vita-performance.py` 把日志转为 JSON 报告（`:1-40`），`tools/test-vita-performance.py` 做解析回归；构建收据/包检查见 `tools/vita-build-receipt.py`、`tools/check-vita-package.py`。注意离线分析器依赖未入库的 `tools/vita_audit_log.py`（见 [07](07-已知限制与未验证项.md)）。
 - [历史实测] r2/r3/r4 的 480×270/720×404 捕获只用于验证结构（如 group 融合后 scratch 3→0、compact 覆盖与字节减少、PS fetch 未成立）；**终版 960×540 的 FPS/帧时间、PS fetch 是否成立、各缓存命中收益、像素等价性均 [未验证]**，详见 [05](05-优化记录与实测数据.md)、[07](07-已知限制与未验证项.md)。

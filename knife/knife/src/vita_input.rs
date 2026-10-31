@@ -5,13 +5,16 @@ use crate::{
 };
 use knife_render::{CANVAS_H, CANVAS_W, Renderer};
 
+// Buttons follow the Japanese (Asian) PlayStation layout: Circle confirms and advances, Cross
+// cancels and goes back (the reverse of the Western convention). The game itself is Switch code
+// whose A is "confirm" and B is "cancel", so Pad::A gets SCE_CTRL_CIRCLE and Pad::B SCE_CTRL_CROSS.
 const BUTTONS: &[(u32, Pad)] = &[
     (0x10, Pad::Up),
     (0x40, Pad::Down),
     (0x80, Pad::Left),
     (0x20, Pad::Right),
-    (0x4000, Pad::A),
-    (0x2000, Pad::B),
+    (0x2000, Pad::A),
+    (0x4000, Pad::B),
     (0x8000, Pad::X),
     (0x1000, Pad::Y),
     (0x100, Pad::L),

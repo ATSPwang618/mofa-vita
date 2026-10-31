@@ -63,6 +63,6 @@ if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('assets',type=Path);parser.add_argument('output',type=Path);parser.add_argument('--check',action='store_true');parser.add_argument('--base-assets',type=Path);args=parser.parse_args()
  text,summary=generate(args.assets,args.base_assets)
  if args.check:
-  if args.output.read_text()!=text:raise ValueError('generated atlas index is stale')
- else:args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(text)
+  if args.output.read_text(encoding='utf-8')!=text:raise ValueError('generated atlas index is stale')
+ else:args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(text,encoding='utf-8',newline='\n')
  print(json.dumps(summary,sort_keys=True))

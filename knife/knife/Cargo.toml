@@ -65,6 +65,3 @@ gilrs = "0.11.2"
 debug = []
 # Final direct-GXM Vita game; selected explicitly by the packaging script.
 vita-gxm = []
-# Native 960x540 asset tier (KNIF00540). Selected together with vita-gxm by
-# tools/build-vita.sh when KNIFE_VITA_VARIANT=native540.
-assets-540p = ["knife-platform-vita/assets-540p", "knife-render/assets-540p"]

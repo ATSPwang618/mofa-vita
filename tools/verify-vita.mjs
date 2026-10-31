@@ -10,7 +10,6 @@ import { GameInputScenario, parseGameLog, gameInteractionEvidence,
 import { COMPRESSED_INPUTS, activeCompressedStage, compressedResultEvidence } from './vita-compressed-evidence.mjs';
 import { UI_COLOR_STAGES, UI_COLOR_INPUTS, activeUiColorStage, uiColorResultEvidence } from './vita-ui-color-evidence.mjs';
 import { validateGameAssetStage } from './vita-game-stage.mjs';
-import { validate270pAssets } from './vita-270p-assets.mjs';
 import { GameSaveScenario, gameSaveEvidence } from './vita-save-evidence.mjs';
 import { GameBacklogScenario, gameBacklogEvidence } from './vita-backlog-evidence.mjs';
 import { activeGroupPage, groupResultEvidence } from './vita-group-evidence.mjs';
@@ -152,11 +151,8 @@ async function stageCanonicalGameAssets(root, pref, overrideSource) {
   const canonicalSource = await fs.realpath(source);
   let stageManifest;
   if (overrideSource) {
-    const profile270 = path.join(root, 'dist/Witch-on-the-Holy-Night-Chengkong-270p-Vita/assets');
-    stageManifest = canonicalSource.toLowerCase() === path.resolve(profile270).toLowerCase()
-      ? await validate270pAssets({ source: canonicalSource, canonical, expectedRoot: profile270 })
-      : await validateGameAssetStage({ source: canonicalSource,
-        stagedBase: path.join(root, '.work/vita/game-gxt-stage'), canonical });
+    stageManifest = await validateGameAssetStage({ source: canonicalSource,
+      stagedBase: path.join(root, '.work/vita/game-gxt-stage'), canonical });
   }
   const profile = await fs.readFile(path.join(canonicalSource, 'language-profile.txt'), 'utf8');
   if (profile.replaceAll('\r\n', '\n').trim() !== 'knife-languages-v1\n1\ten\tEnglish\n2\tzc\t中文（澄空）') {

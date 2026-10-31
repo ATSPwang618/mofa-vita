@@ -218,7 +218,7 @@ impl Ui {
                     c.tex = [None, None];
                     c.old = None;
                     // jp_9C960(1); jp_9C470(jp_8E1C0(), 255, 0): the title's BGM
-                    let bgm = if super::title::complete(game) { 42 } else { 65 };
+                    let bgm = super::title_bgm(super::title::complete(game));
                     if game.sound.bgm_state().is_none_or(|(id, _)| id != bgm) {
                         game.play_bgm(bgm, 1.0, 0.0);
                     }

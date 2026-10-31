@@ -14,10 +14,7 @@ use std::sync::Mutex;
 
 pub const MAX_SAVE_BYTES: usize = 8 * 1024 * 1024;
 pub const DEV_SAVE_ROOT: &str = "ux0:data/knife-woh-dev/saves";
-#[cfg(not(feature = "assets-540p"))]
-pub const PRODUCTION_SAVE_ROOT: &str = "ux0:data/knife-woh/saves";
-#[cfg(feature = "assets-540p")]
-pub const PRODUCTION_SAVE_ROOT: &str = "ux0:data/knife-woh-540p/saves";
+pub const PRODUCTION_SAVE_ROOT: &str = "ux0:data/WitchontheHolyNight/saves";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Namespace {
@@ -965,7 +962,7 @@ mod path_tests {
                 .is_ok()
         );
         for input in [
-            "ux0:data/knife-woh/saves/witch/savedata000",
+            "ux0:data/WitchontheHolyNight/saves/witch/savedata000",
             "ux0:data/knife-woh-dev/saves2/save",
             "ux0:data/knife-woh-dev/saves/../other",
             "ux0:data/knife-woh-dev/saves/a//save",

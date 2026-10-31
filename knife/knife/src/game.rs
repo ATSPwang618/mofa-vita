@@ -4079,9 +4079,15 @@ impl Game {
         self.set_var("G002", stage);
     }
 
-    /// Title BGM (sub_8E200 state 0, sub_9C470: full volume at once): 72 at title stage 5, else 2.
+    /// Title BGM (sub_8E200 state 0, sub_9C470: full volume at once). The generic engine takes
+    /// it from the title stage (72 at stage 5, else 2); Witch on the Holy Night's title uses its
+    /// own pair (42 after the ending, else 2 - see `ui::witch::title_bgm`), because BGM 72 is a
+    /// voice stream there.
     pub fn play_title_bgm(&mut self) {
-        self.play_bgm(if self.var("G002") == 5 { 72 } else { 2 }, 1.0, 0.0);
+        let bgm = if crate::assets::witch() {
+            crate::ui::witch_title_bgm(self)
+        } else if self.var("G002") == 5 { 72 } else { 2 };
+        self.play_bgm(bgm, 1.0, 0.0);
     }
 
     /// The title background number for the stage: 4 at stage 5, else dword_3529E4[stage].

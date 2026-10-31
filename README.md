@@ -1,51 +1,89 @@
 # mofa-vita
 
-《魔法使之夜》（Witch on the Holy Night）Switch 版引擎的 PS Vita 移植，基于 [AuroraWright/knife](https://github.com/AuroraWright/knife) 0.9.4。Vita 使用原生 GXM；桌面后端使用 WGPU。
+《魔法使之夜》（Witch on the Holy Night，Switch 版）的 **PS Vita 移植**。
 
-本仓库提供引擎源码、构建工具、生成元数据、运行时编译器及所需原生依赖。游戏本体、字体、音视频和汉化数据由使用者自行准备，不入库。**编译 VPK 不需要游戏素材。**
+用 Rust 引擎 [`knife`](knife/) 驱动全部游戏逻辑，图形走 Vita 原生 **GXM** C 后端（桌面调试为 WGPU）。项目基于 [AuroraWright/knife](https://github.com/AuroraWright/knife) 0.9.4，并在上游基础上加入 KIMG/KATL 纹理、Ogg Opus、960×540 画布、native 540p MP4、Windows/WSL 构建与质检等本移植特有的支持。
 
-## 构建和安装
+本仓库只包含**引擎源码、构建工具与生成元数据**。游戏本体、字体、音视频和汉化数据由使用者自备，不入库；**编译 VPK 不需要游戏素材**。
 
-安装 Python **3.9 或更新版本**后，在项目根目录执行：
+## 截图
+
+以下均为实机截图（960×544 直出；左上角是调试用性能 HUD，正式版默认不打印日志）：
+
+| | |
+|---|---|
+| ![标题画面](doc/screenshots/01-title.jpg) | ![环境设置·语音](doc/screenshots/02-voices.jpg) |
+| 标题画面（中文 ID2） | 环境设置：语音音量与试听 |
+| ![书库](doc/screenshots/03-archive.jpg) | ![剧情演出](doc/screenshots/04-story.jpg) |
+| 书库 / Archive | 剧情演出（960×540 + 上下各 2 px letterbox） |
+
+## 功能
+
+- **原生 960×540 渲染**：`scene`/`composite` 固定 960×540，最终居中输出到 960×544，上下各留 2 px；脚本坐标仍按 1920×1080 的布局单位换算。
+- **完整剧情引擎**：演出指令、motion/effects、group pixel-mask 合成、电影播放（MP4）、BGM/语音/SE（Opus）、存档/读档（带缩略图）、回想、自动与快进、文本窗口控制。
+- **全部菜单**：标题、环境设置（含逐角色语音音量）、书库 Archive、CG 鉴赏、乐曲鉴赏、系统菜单；固定中文 ID2。
+- **开机感谢页**：TYPE-MOON 影像与原版注意画面之间播放两页感谢图（每页约 5 秒，任意键跳过），向参与和支持本项目的朋友致谢；源图与打包脚本见 [tools/credit-intro](tools/credit-intro/README.md)。
+- **运行时 shader 编译与缓存**：首次启动编译 10 个专用 Cg 程序并写入数据根下的 `shader-cache/`，之后全部命中就不再加载编译器；缓存键包含源码 SHA、编译器 SHA、编译策略、缓存 ABI 与 shader id。
+- **跨平台构建**：Windows（自动调用 WSL）/ Linux 上用 `tools/build-vita.py` 一条命令出 VPK；同一套引擎另有桌面 WGPU 后端用于调试。
+- **单一 540p 构建档**：`TITLE_ID = KNIF00540`（SFO `ATTRIBUTE2=12`，扩大主内存）。旧的 270p 变体与相关死代码已彻底移除。
+
+## 构建
+
+安装 Python **3.9+**，在项目根目录执行：
 
 ```bash
-python3 tools/build-vita.py --check
-python3 tools/build-vita.py game release
+python3 tools/build-vita.py --check      # 只检查环境
+python3 tools/build-vita.py game release # 构建正式版 VPK
 ```
 
-`--check` 只检查环境，不安装或编译。正常构建会自动安装缺失的 Rust 工具链及 `rust-src`；也可先执行 `python3 tools/build-vita.py --setup`。Windows 可使用 `py -3` 代替 `python3`，工具会检测 WSL 并转换项目路径。通过 `VITASDK` 或 `--sdk` 指定 SDK，其他选项见 [构建与工具链](doc/03-构建与工具链.md)。
+- `--check` 不安装、不编译；正常构建会自动安装缺失的 Rust 工具链与 `rust-src`，也可先跑 `--setup`。
+- Windows 用 `py -3` 代替 `python3`，脚本会检测并转换到 WSL 路径。
+- 需要可用的 VitaSDK（GCC、newlib、平台 stubs、打包工具）以及 CMake、Ninja、Git、Bash；Vita Rust 固定 `nightly-2026-05-28`。
+- png、jpeg、z、ogg、opus、opusfile、taihen 七个静态库、shader 编译器模块与 SceShaccCgExt 已随仓库放在 `knife/vita/vendor/`，无需另行安装。
+- 首次安装 Rust/编译需要联网；工具链与缓存齐全时可设 `KNIFE_VITA_OFFLINE=1`。正式版默认不输出性能采集日志。
 
-本机仍需能运行的 VitaSDK 核心工具链（GCC、newlib、平台 stubs 和打包工具），以及 CMake、Ninja、Git 和 Bash。png、jpeg、z、ogg、opus、opusfile、taihen 七个静态库及头文件随仓库放在 `knife/vita/vendor/dependencies/`，无需向 SDK 另行安装。shader 编译器模块与 SceShaccCgExt 静态库也保存在 `knife/vita/vendor/`，无需指定本机插件路径。
+构建产物：**`release/knife-vita-game-540p.vpk`**。ELF、链接映射与构建收据在 `.work/vita/game-release-540p/`，构建日志在 `.work/logs/vita/`。完整工具链、打包与排错说明见 [构建与工具链](doc/03-构建与工具链.md)。
 
-Vita Rust 固定为 `nightly-2026-05-28`，无需额外安装桌面默认的 Rust 1.99.0。首次 Rust 安装和 Cargo 构建需要联网；已有完整工具链与缓存时可设置 `KNIFE_VITA_OFFLINE=1`。正式版默认 `KNIFE_VITA_QUIET=1`，不启用性能采集输出。
+## 安装
 
-构建成功后，安装包位于 **`release/knife-vita-game-540p.vpk`**，TITLE ID 为 `KNIF00540`。ELF、链接映射和构建收据保存在 `.work/vita/game-release-540p/`，构建日志在 `.work/logs/vita/`。
+1. 在支持自制应用的 PS Vita 上安装 VPK（或把交付目录里的 `eboot.bin` 推到 `ux0:app/KNIF00540/`）。
+   本机已构建的交付包在 `dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/`（不入库），含 `eboot.bin`、VPK 与说明文档。
+2. 把配套完整 `assets/` 复制到 **`ux0:data/WitchontheHolyNight/assets/`**。
+3. 从 LiveArea 启动。Vita 版固定使用中文 ID2；存档在 `saves/` 下。
 
-1. 在支持安装自制应用的 PS Vita 上安装 VPK。
-2. 将配套完整 `assets/` 目录复制到 **`ux0:data/knife-woh-540p/assets/`**。
-3. 从 LiveArea 启动。当前 Vita 版本固定使用中文 ID2；存档位于 `ux0:data/knife-woh-540p/saves/`。
+运行时会使用同一个数据根：
 
-## 素材与画面
+| 路径 | 内容 |
+|---|---|
+| `ux0:data/WitchontheHolyNight/assets/` | 素材包（`vita-540p-assets.json` 在根） |
+| `ux0:data/WitchontheHolyNight/saves/` | 正式版存档（自动创建） |
+| `ux0:data/WitchontheHolyNight/shader-cache/` | 运行时编译的 shader 缓存（自动生成；首次启动会慢几秒） |
+| `ux0:data/WitchontheHolyNight/perf-enable.txt` 等 | 可选的性能开关，默认关闭；见 [性能采集与分析](doc/06-性能采集与分析.md) |
+
+**从旧版升级**：在 Vita 上把整个 `ux0:data/knife-woh-540p/` 目录**重命名**为 `ux0:data/WitchontheHolyNight/`（素材、存档、性能开关一起搬过去）；不方便整目录改名时至少要把 `assets/` 与 `saves/` 移到新根。旧路径不再读取；旧的 shader 缓存目录 `ux0:/data/knife-vita/` 也可以直接删除，新缓存会重新生成。
+
+## 素材兼容性
 
 当前引擎匹配 **r7 native540 codec9** 素材包，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
 
 ```text
-a66a1318a147a901c7f76e9868e04f0551131f1128bb8dc591c242402de79d41
+4cd6342dc7a97bc702964f89cc72ecfbfdc36455072fc143af10d7f99f57a816
 ```
 
-素材需由使用者自备的 Switch 游戏数据及相应汉化资源转换得到。原始 NSP、未经转换的 romfs、旧 codec8 包和其他分辨率版本不能直接替代。VPK 不含游戏素材；已经安装匹配素材包时，无需因重新编译引擎而重复复制素材。
-
-场景、组 pixel/mask 和 UI 合成固定 **960×540**，最终居中输出到 960×544 屏幕，上下各留 2 像素。脚本保留 1920×1080 坐标，局部图片和图集使用各自尺寸。程序不读取 `scene-mode.txt`。主 newlib 堆上限为 256 MiB，各缓存按需使用；这不等于显存预算。
-
-启动出现 `ASSETS REQUIRED`、`WRONG FILE SIZE` 或 `WRONG ASSET VERSION` 时，核对素材完整性与清单版本。更新素材还需同步引擎内嵌 profile、图集索引及音频文件索引，步骤见 [更新素材元数据](doc/03-构建与工具链.md#83-更新素材元数据)。
+- 素材需由使用者自备的 Switch 游戏数据（及相应汉化资源）转换得到；原始 NSP、未经转换的 romfs、旧 codec8 包和其他分辨率版本不能直接替代。
+- VPK 不含游戏素材。已经安装匹配素材包时，仅重编引擎不需要重新复制素材；素材清单变化时 EBOOT 会做启动校验。
+- 本移植的开机感谢页改变了 `parts.hed`、`parts.mrg` 与清单，**升级到带感谢页的版本时这 3 个文件要一起更新**，否则启动会提示 `WRONG FILE SIZE` / `WRONG ASSET VERSION`。
+- 启动出现 `ASSETS REQUIRED` 等提示时，先核对素材完整性与清单版本；更新流程见 [更新素材元数据](doc/03-构建与工具链.md#83-更新素材元数据)。
 
 ## 操作
 
+本版起采用**日式（亚洲）布局**：○ 确认、× 取消。旧版本相反（西式布局）。
+
 | Vita 输入 | 剧情中的常用操作 |
 |---|---|
-| × | 确认、推进文字 |
-| ○ | 取消、返回；停止快进或切换消息窗口显示 |
-| □ | 回看日志 |
+| ○ | 确认、推进文字 |
+| × | 取消、返回；停止快进或切换消息窗口显示 |
+| □ | 回看日志（回想） |
 | △ | 系统菜单 |
 | L / R | 自动播放 / 快进 |
 | START / SELECT | 快速保存 / 快速读取 |
@@ -53,22 +91,55 @@ a66a1318a147a901c7f76e9868e04f0551131f1128bb8dc591c242402de79d41
 | 左摇杆 | 列表滚动、画面移动等界面操作 |
 | 前触摸屏 | 点击、拖动 |
 
-具体操作随菜单和演出状态变化，输入映射见 [vita_input.rs](knife/knife/src/vita_input.rs)。
+> 游戏内的按键提示沿用 Switch 版字形（Ⓐ Ⓑ Ⓧ Ⓨ 等），与实际按键的对应关系是：**Ⓐ=○、Ⓑ=×、Ⓧ=□、Ⓨ=△**。映射源码见 [vita_input.rs](knife/knife/src/vita_input.rs)。
 
-## 源码结构
+## 项目结构
 
 | 路径 | 内容 |
 |---|---|
-| [knife/](knife/) | Rust 工作区：游戏、格式解析、渲染、音频与 Vita 平台层 |
-| [knife/vita/](knife/vita/) | GXM C 后端、Cg 源码、生成着色器和系统图片 |
-| [tools/](tools/) | 本地构建、打包与素材处理脚本 |
-| [doc/](doc/README.md) | 技术文档索引：架构、渲染、资源、优化记录、构建、性能、限制、素材 |
-| [构建与工具链](doc/03-构建与工具链.md) | 跨电脑构建、依赖与维护步骤 |
-| [优化记录与实测数据](doc/05-优化记录与实测数据.md) | 20 项优化开关、历史真机对照与验证状态（960×540 终版尚未实测） |
-| `release/`、`.work/`、`dist/` | 本机产物、缓存和自备素材，不入库 |
+| [knife/](knife/) | Rust 工作区：游戏逻辑、格式解析、渲染抽象、音频与 Vita 平台层 |
+| [knife/vita/](knife/vita/) | GXM C 后端、Cg 源码、生成的运行时着色器与系统图片 |
+| [tools/](tools/) | 本地构建、打包、素材处理、开机感谢页与质检脚本 |
+| [doc/](doc/README.md) | 技术文档索引：架构、渲染、资源、优化、构建、性能、限制、素材 |
+| [doc/screenshots/](doc/screenshots/) | README 使用的实机截图 |
+| `release/`、`.work/`、`dist/` | 本机产物、缓存与自备素材，不入库 |
 
-文档入口见 [doc/README.md](doc/README.md)。历史文档快照已从工作树清理，可从 git 提交 `a670193` 的 `doc/archive/` 取回；机器可读证据保留在 [doc/evidence/](doc/evidence/)。
+## 文档
 
-## 许可
+| 文档 | 内容 |
+|---|---|
+| [01-架构总览](doc/01-架构总览.md) | 项目定位、crate 结构、Vita 帧循环与线程模型、坐标与渲染目标 |
+| [02-渲染与GPU后端](doc/02-渲染与GPU后端.md) | GXM 后端结构、批次/arena、纹理池、运行时 shader 编译与缓存 |
+| [03-构建与工具链](doc/03-构建与工具链.md) | 构建脚本、SDK/WSL 探测、VPK 打包、素材元数据更新、排错 |
+| [04-资源调度与缓存](doc/04-资源调度与缓存.md) | 资源生命周期、atlas 共享、GXT Ready、图像 worker、音频通道 |
+| [05-优化记录与实测数据](doc/05-优化记录与实测数据.md) | 20 项优化开关、历史真机对照与验证状态 |
+| [06-性能采集与分析](doc/06-性能采集与分析.md) | 优化开关/profile、采集框架、日志格式与分析工具 |
+| [07-已知限制与未验证项](doc/07-已知限制与未验证项.md) | 尚未验证的能力、平台/构建/许可限制 |
+| [08-素材与安装](doc/08-素材与安装.md) | 素材清单、从原始数据制作、安装路径与更新流程 |
 
-引擎沿用上游 [Mozilla Public License 2.0](knife/LICENSE)。第三方 SceShaccCgExt 的来源和 GPLv3 许可见 [NOTICE](knife/vita/vendor/shacccg-ext/NOTICE) 与 [LICENSE](knife/vita/vendor/shacccg-ext/LICENSE)，发布时须保留随包声明。游戏数据及汉化资源的权利归各自权利方。
+文档入口见 [doc/README.md](doc/README.md)；机器可读证据保留在 [doc/evidence/](doc/evidence/)。
+
+## 已知限制
+
+- 960×540 终版的真机 FPS/帧时间尚未系统实测；仓库中 r2/r3/r4 的实测数据对应 270p 时期（480×270 scene + 720×404 composite），只作结构证据，见 [05](doc/05-优化记录与实测数据.md)、[07](doc/07-已知限制与未验证项.md)。
+- 游戏素材、字体与汉化资源需自备；仓库与 VPK 都不包含。
+- 部分菜单/提示字形沿用 Switch 版贴图（对应关系见「操作」），不随本移植改为 Vita 符号。
+- 存档、设置与真机行为的完整兼容矩阵以 [07](doc/07-已知限制与未验证项.md) 与代码为准。
+
+## 致谢
+
+**特别感谢 @Zarathustra、@listen** —— 感谢两位朋友为这个项目长达数年的辛苦付出。
+
+开机感谢页第 1 页列出了所有支持者；以下为两页原图（源图与重新打包脚本在 [tools/credit-intro](tools/credit-intro/README.md)）：
+
+| | |
+|---|---|
+| ![感谢每一位支持者](tools/credit-intro/credit_1_supporters.png) | ![特别感谢](tools/credit-intro/credit_2_special_thanks.png) |
+
+此外感谢上游引擎 [AuroraWright/knife](https://github.com/AuroraWright/knife) 及其逆向与文档工作，以及 SceShaccCgExt、VitaSDK 与所有第三方依赖的作者。
+
+## 许可与声明
+
+- 引擎沿用上游 [Mozilla Public License 2.0](knife/LICENSE)。
+- 第三方 SceShaccCgExt 的来源与 GPLv3 许可见 [NOTICE](knife/vita/vendor/shacccg-ext/NOTICE) 与 [LICENSE](knife/vita/vendor/shacccg-ext/LICENSE)，发布时须保留随包声明。
+- 《魔法使之夜》游戏本体、图像、音频、字体与汉化资源的权利归各自权利方；本仓库不包含游戏数据。README 截图仅用于展示移植运行效果。

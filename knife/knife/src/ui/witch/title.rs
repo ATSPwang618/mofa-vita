@@ -4,8 +4,9 @@
 //!
 //! The launch task (jp_B5650) only loads: its logo rows (parts.mrg logo_fix / caution2) sit behind a branch the
 //! game never takes. Each launch's first title visit plays movie/logo.mp4 over white, shows typemoon and the
-//! caution (states 61..68); a fresh profile (G010 = 0) instead shows the title1st splash and starts the story
-//! (states 55..60, then 14).
+//! caution (states 61..68); knife inserts two supporter-credit pages of its own (states 69..72) between the
+//! movie and the caution. A fresh profile (G010 = 0) instead shows the same two pages, then the title1st splash
+//! and starts the story (states 55..60, then 14).
 
 use knife_render::{Blend, Quad, Renderer, TexRef};
 
@@ -56,6 +57,16 @@ const EXT_POS: [[[f32; 3]; 4]; 4] = [
 ];
 /// Splash backdrop per state 61..68 (dword_262F48): white, then black.
 const SPLASH_BG: [f32; 8] = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+/// parts.mrg entries of the launch's two supporter-credit pages (960x544): #2 then #3, indexed by
+/// `WitchTitle::credit_page`. The stock parts archive has neither, so a page whose entry is missing is skipped
+/// (the asset code logs the failed read; the screen never shows an empty page).
+const CREDIT_PARTS: [usize; 2] = [2, 3];
+/// Frames a credit page takes to fade in over black, and later to fade back out (states 70 / 72, at 60 Hz).
+const CREDIT_FADE: f32 = 60.0;
+/// Frames a credit page is held on screen (state 71): 180 with the two 60-frame fades makes each page last
+/// 300 frames = 5 s at 60 Hz, the author's pace. Its 60-frame fade-in is the grace period: buttons pressed
+/// there are dropped like state 66 drops them before the caution's hold (state 67).
+const CREDIT_HOLD: i32 = 180;
 /// System sounds (jp_ACEF0): 0 decide, 1 cancel / not available, 2 cursor.
 const SND_OK: usize = 0;
 const SND_NG: usize = 1;
@@ -112,6 +123,16 @@ pub struct WitchTitle {
     ext_cursor: i32,
     /// qword_F475B4: title1st_b / caution (lo), title1st_w / typemoon (hi)
     splash: [f32; 2],
+    /// parts.mrg #2 / #3, one supporter-credit page (960x544) of the launch, only while its states 69..=72 are
+    /// up: uploaded on page entry and dropped when the page leaves (about 2.09 MB of texture memory on Vita)
+    credit_tex: Option<TexRef>,
+    /// the page shown: 0 = parts.mrg #2, 1 = #3
+    credit_page: u8,
+    /// the page's own alpha: 0 -> 1 over the fade-in (state 70), back to 0 over the fade-out (state 72)
+    credit_a: f32,
+    /// the state to enter after the two pages: 65 (the caution after the logo movie) or 55 (the fresh
+    /// profile's title1st splash, which starts the story)
+    credit_after: u16,
     /// off_632980
     timer: i32,
     /// dword_45A2E8: frames before the first state runs
@@ -242,6 +263,12 @@ impl Ui {
         wt.st = 0;
         wt.out = None;
         wt.movie = false;
+        // the launch credits (states 69..=72) belong to the boot sequence: a title init drops the page and its
+        // texture; the next launch (or a debug entry) uploads it again
+        wt.credit_tex = None;
+        wt.credit_page = 0;
+        wt.credit_a = 0.0;
+        wt.credit_after = 65;
         self.screen = Screen::Title;
         self.stack.clear();
     }
@@ -273,6 +300,20 @@ impl Ui {
     pub(in crate::ui) fn wt_boot(&mut self, game: &mut Game, r: &Renderer, skip: bool) {
         self.wt.visited = skip;
         self.wt_init(game, r);
+    }
+
+    /// Debug: show supporter-credit page `page` (0 = parts.mrg #2, 1 = #3) from the start of its fade-in, as
+    /// the launch shows it after the logo movie (states 69..=72). Like the launch, a page whose parts entry is
+    /// missing is skipped silently.
+    pub(in crate::ui) fn wt_credit_debug(&mut self, game: &mut Game, r: &Renderer, page: usize) {
+        self.wt_init(game, r);
+        self.wt.credit_page = page.min(1) as u8;
+        self.wt.credit_tex = None;
+        self.wt.credit_a = 0.0;
+        self.wt.credit_after = 65;
+        self.wt.black = 1.0;
+        self.wt_any = false;
+        self.wt.st = 69;
     }
 
     /// Per frame: the 60 Hz steps of jp_8E200 and the object states (jp_AE840).
@@ -339,12 +380,16 @@ impl Ui {
                     return;
                 }
                 if game.var("G010") == 0 {
-                    // a fresh profile: the title1st splash, then the story
+                    // a fresh profile: the supporter credits first (knife shows them to new players too), then
+                    // the title1st splash and the story
                     self.wt.fade = 0.0;
                     self.wt.visited = true;
                     self.wt.splash = [1.0, 1.0];
-                    self.wt.st = 55;
                     self.wt.black = 1.0;
+                    self.wt.credit_page = 0;
+                    self.wt.credit_tex = None;
+                    self.wt.credit_after = 55;
+                    self.wt.st = 69;
                     return;
                 }
                 if !self.wt.visited {
@@ -368,7 +413,7 @@ impl Ui {
                 if v >= 1.0 {
                     self.wt.fade = 1.0;
                     // jp_64F60 marks the BGM heard; jp_9C470 plays it at full volume at once
-                    let bgm = if self.wt.complete { 42 } else { 65 };
+                    let bgm = super::title_bgm(self.wt.complete) as usize;
                     crate::game::set_bit(&mut game.heard, bgm);
                     if game.sound.bgm_state().is_none_or(|(id, _)| id != bgm as i32) {
                         game.play_bgm(bgm as i32, 1.0, 0.0);
@@ -569,8 +614,13 @@ impl Ui {
                 game.gallery_movie = false;
                 self.wt.black += f / 60.0;
                 if self.wt.black > 1.0 {
-                    self.wt.st = 65;
                     self.wt.black = 1.0;
+                    // between the logo movie and the caution: the launch's supporter-credit pages (knife-only
+                    // states 69..=72; skipped silently when parts.mrg has no such entries)
+                    self.wt.credit_page = 0;
+                    self.wt.credit_tex = None;
+                    self.wt.credit_after = 65;
+                    self.wt.st = 69;
                 }
             }
             65 => {
@@ -596,13 +646,79 @@ impl Ui {
                     self.wt.black = 1.0;
                 }
             }
+            // knife's launch credits, between state 64's black and the caution (not in jp_8E200), one step per
+            // 60 Hz frame: 69 picks a page up (parts.mrg #2 / #3), 70 fades it in over 60 frames, 71 holds it for
+            // 180 frames, 72 fades it out over 60 frames; then the next page (69) or `credit_after` (65, or 55 on
+            // a fresh profile) follows. A page lasts 300 frames = 5 s and its texture lives only while its states
+            // do.
+            69 => {
+                // the previous page's texture was dropped before this state was entered, so at most one page
+                // is resident (about 2.09 MB of texture memory on Vita)
+                self.wt.credit_tex = None;
+                let page = usize::from(self.wt.credit_page).min(1);
+                self.wt.credit_tex = game.assets.parts_texture(r, CREDIT_PARTS[page]);
+                if self.wt.credit_tex.is_none() {
+                    // parts.mrg has no such entry (the stock archive has only #0 / #1): drop the page silently
+                    if self.wt.credit_page == 0 {
+                        self.wt.credit_page = 1;
+                    } else {
+                        self.wt.st = u32::from(self.wt.credit_after);
+                    }
+                    return;
+                }
+                self.wt.black = 1.0;
+                self.wt.credit_a = 0.0;
+                self.wt_any = false;
+                self.wt.st = 70;
+            }
+            70 => {
+                // the black lifts as the page's own alpha comes up behind it
+                self.wt.black -= f / CREDIT_FADE;
+                self.wt.credit_a += f / CREDIT_FADE;
+                if self.wt.black <= 0.0 {
+                    self.wt.black = 0.0;
+                    self.wt.credit_a = 1.0;
+                    // buttons pressed during the fade-in only arm wt_any: drop them as state 66 does, so they
+                    // cannot skip the page before its first held frame
+                    self.wt_any = false;
+                    self.wt.timer = CREDIT_HOLD;
+                    self.wt.st = 71;
+                }
+            }
+            71 => {
+                let t = self.wt.timer;
+                self.wt.timer -= 1;
+                // held for 180 frames; a button from the first held frame on starts the fade-out, and the last
+                // frame falls through without one
+                if std::mem::take(&mut self.wt_any) || t <= 1 {
+                    self.wt.timer = 0;
+                    self.wt.st = 72;
+                }
+            }
+            72 => {
+                self.wt.black += f / CREDIT_FADE;
+                self.wt.credit_a -= f / CREDIT_FADE;
+                if self.wt.black > 1.0 {
+                    self.wt.black = 1.0;
+                    self.wt.credit_a = 0.0;
+                    // the page is covered: free it before the next state picks the other one up
+                    self.wt.credit_tex = None;
+                    if self.wt.credit_page == 0 {
+                        self.wt.credit_page = 1;
+                        self.wt.st = 69;
+                    } else {
+                        self.wt.st = u32::from(self.wt.credit_after);
+                    }
+                }
+            }
             _ => {}
         }
     }
 
-    /// A button or a touch during a splash (states 57 / 59 / 63 / 67: any pad button, a new touch).
+    /// A button or a touch during a splash (states 57 / 59 / 63 / 67: any pad button, a new touch) or on one of
+    /// the launch's credit pages (states 69..=72; state 71 takes it to skip the page).
     fn wt_any_input(&mut self) -> bool {
-        if matches!(self.wt.st, 55..=68) {
+        if matches!(self.wt.st, 55..=72) {
             self.wt_any = true;
             return true;
         }
@@ -684,7 +800,7 @@ impl Ui {
             Pad::B => {
                 // state 11 cancel: the menu starts over from state 4 (cursor back to its default)
                 self.wt.groups[0] = false;
-                let bgm = if self.wt.complete { 42 } else { 65 };
+                let bgm = super::title_bgm(self.wt.complete);
                 if game.sound.bgm_state().is_none_or(|(id, _)| id != bgm) {
                     game.play_bgm(bgm, 1.0, 0.0);
                 }
@@ -857,6 +973,16 @@ impl Ui {
             Self::wt_black(r, out, wt.black);
             return;
         }
+        if matches!(st, 69..=72) {
+            // the launch's supporter-credit pages, like the cautions: black, the page at its alpha, the black
+            // over it. The page's texture exists only while these states do.
+            if wt.black < 1.0 {
+                out.push(Quad::rect(r.white.clone(), full, [0.0, 0.0, 0.0, 1.0]));
+                self.wt_credit_quad(out, wt.credit_a);
+            }
+            Self::wt_black(r, out, wt.black);
+            return;
+        }
         if !wt.active || wt.wait > 0 || st == 0 || game.var("G010") == 0 {
             return;
         }
@@ -995,6 +1121,15 @@ impl Ui {
         let [tw, th] = t.uv_extent();
         let [x, y, w, h] = src.unwrap_or([0.0, 0.0, t.width as f32, t.height as f32]);
         let mut q = Quad::rect(t.clone(), dst, [1.0, 1.0, 1.0, a]).with_uv_rect(x / tw, y / th, (x + w) / tw, (y + h) / th);
+        q.blend = Blend::Alpha;
+        out.push(q);
+    }
+
+    /// The supporter-credit page (parts.mrg #2 / #3; 960x544 over the 1920x1080 canvas, i.e. 1:1 on screen)
+    /// across the whole screen at alpha `a`; the screen stays black while the page has no texture.
+    fn wt_credit_quad(&self, out: &mut Vec<Quad>, a: f32) {
+        let Some(t) = &self.wt.credit_tex else { return };
+        let mut q = Quad::rect(t.clone(), [0.0, 0.0, W, H], [1.0, 1.0, 1.0, a.clamp(0.0, 1.0)]);
         q.blend = Blend::Alpha;
         out.push(q);
     }

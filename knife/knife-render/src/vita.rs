@@ -28,19 +28,11 @@ pub use knife_render_api::{
     Shade, SoftClip, Vertex,
 };
 
-// The native 960x540 variant renders the scene/effect chain at the display's
-// content size and the present pass places it inside the 960x544 scanout (2 px
-// letterbox top and bottom). The 270p variant keeps the quarter-density chain so
-// rebuilding KNIF00270 does not silently inherit native targets. Script
-// coordinates remain the 1920x1080 logical canvas in both.
-#[cfg(feature = "assets-540p")]
+// The scene/effect chain renders at the display's content size and the present
+// pass places it inside the 960x544 scanout (2 px letterbox top and bottom).
+// Script coordinates remain the 1920x1080 logical canvas.
 pub const RENDER_W: u32 = 960;
-#[cfg(feature = "assets-540p")]
 pub const RENDER_H: u32 = 540;
-#[cfg(not(feature = "assets-540p"))]
-pub const RENDER_W: u32 = 480;
-#[cfg(not(feature = "assets-540p"))]
-pub const RENDER_H: u32 = 270;
 
 // Bound recorded CPU work independently of native texture/vertex ring budgets.
 // Exceeding either limit is a reported error, never a partial frame submission.

@@ -571,7 +571,7 @@ A record holds the page's ring entry as in Tsukihime: the position, its message,
 
 All menus are new code, drawn from per-language atlases at 1/3 × 0.41481 scale through a system of 374 sprite objects.
 
-- **Boot and title.** The first title visit of each launch plays the logo movie over white, then the TYPE-MOON logo and the caution screen. A fresh profile instead shows a splash and starts the story at once. The title offers Continue (when the resume record is in use), Start, Load, Config and Extra. Finishing the game switches it to its second background, logo and BGM (42 instead of 65).
+- **Boot and title.** The first title visit of each launch plays the logo movie over white, then the TYPE-MOON logo and the caution screen. A fresh profile instead shows a splash and starts the story at once. The title offers Continue (when the resume record is in use), Start, Load, Config and Extra. Finishing the game switches it to its second background, logo and BGM (42 instead of 2).
 - **Extra.** Three modes:
   - **Archive:** a bookshelf of the 20 chapters. A book opens a panel listing the chapter's scenes four at a time, with thumbnails, and plays the chosen scene through `246_ARCHIVE`.
   - **CG:** 21 pages of 5 × 4 cards and a viewer with zoom and panning.

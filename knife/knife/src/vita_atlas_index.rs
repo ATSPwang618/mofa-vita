@@ -10,12 +10,7 @@ pub struct Atlas {
     pub stored_sectors:u16,pub unpacked_sectors:u16,pub decoded_bytes:usize,
     pub members:&'static [Member],
 }
-#[cfg(feature="assets-540p")]
 include!("../data/vita_atlas_index_540p.rs");
-#[cfg(not(feature="assets-540p"))]
-const MANIFEST:&str="";
-#[cfg(not(feature="assets-540p"))]
-static ATLASES:&[Atlas]=&[];
 pub fn find(manifest:&str,index:usize,entry:&knife_core::format::archive::ArchiveEntry)->Option<&'static Atlas>{
     if manifest!=MANIFEST{return None;}
     ATLASES.iter().find(|a|a.index==index && a.entry==entry.name && a.offset==entry.offset

@@ -14,12 +14,12 @@ if (!['en', 'zc'].includes(lang)) throw new Error('Usage: verify-vita-release-in
 const backend = (process.env.KNIFE_VITA3K_BACKEND ?? 'VULKAN').toUpperCase();
 const measure = process.env.KNIFE_VITA_PERF === '1';
 if (!['OPENGL', 'VULKAN'].includes(backend)) throw new Error('KNIFE_VITA3K_BACKEND must be OPENGL or VULKAN');
-const tag = `integration270-${lang}-${backend.toLowerCase()}-${Date.now()}-${randomBytes(3).toString('hex')}`;
+const tag = `integration540-${lang}-${backend.toLowerCase()}-${Date.now()}-${randomBytes(3).toString('hex')}`;
 const pref = path.join(work, `pref-${tag}`);
 const executable = process.env.KNIFE_VITA3K_EXE ?? path.join(root, '.work/vita/emulator-memory-fixed/Vita3K.exe');
 const debuggerExe = process.env.KNIFE_VITA3K_DEBUGGER ?? path.join(root, '.work/vita/debugger/vita3k-owned-debugger.exe');
-const vpk = path.join(root, '.work/vita/game-release/knife-vita-game-270p.vpk');
-const assets = path.join(root, 'dist/Witch-on-the-Holy-Night-Chengkong-270p-Vita/assets');
+const vpk = path.join(root, '.work/vita/game-release-540p/knife-vita-game-540p.vpk');
+const assets = path.join(root, 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets');
 const { BridgeClient } = await import(pathToFileURL(path.join(path.dirname(executable), 'mcp/server/dist/bridge-client.js')).href);
 const bridge = new BridgeClient(`knife-${tag}`, randomBytes(32).toString('hex'));
 const digest = data => createHash('sha256').update(data).digest('hex');
@@ -31,17 +31,17 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const receipt = { tested_at: new Date().toISOString(), language: lang, profile: pref,
   guest_renderer: 'direct GXM', host_emulator_backend_requested: backend,
   scope: 'Real-pad menu, manual save/load and backlog observation in an isolated release profile; screenshot and file evidence only, no internal-state, hardware, FPS or full-game claim',
-  build: await identity(path.join(root, 'doc/vita-game-release-build.json')),
+  build: await identity(path.join(root, '.work/vita/game-release-540p/vita-game-release-540p-build.json')),
   observation_tool: await identity(fileURLToPath(import.meta.url)),
   image_check_tool: await identity(path.join(root, 'tools/vita_capture_check.py')),
   vpk: await identity(vpk), emulator: await identity(executable), debugger: await identity(debuggerExe),
-  asset_manifest: await identity(path.join(assets, 'vita-270p-assets.json')),
+  asset_manifest: await identity(path.join(assets, 'vita-540p-assets.json')),
   captures: [], observations: [], inputs: [], runtime_verified: false, hardware_verified: false };
 receipt.performance_enabled = measure;
 
-await fs.mkdir(path.join(pref, 'ux0/data/knife-woh'), { recursive: true });
-if (measure) await fs.writeFile(path.join(pref, 'ux0/data/knife-woh/perf-enable.txt'), '1\n', { flag: 'wx' });
-await fs.symlink(assets, path.join(pref, 'ux0/data/knife-woh/assets'), 'junction');
+await fs.mkdir(path.join(pref, 'ux0/data/WitchontheHolyNight'), { recursive: true });
+if (measure) await fs.writeFile(path.join(pref, 'ux0/data/WitchontheHolyNight/perf-enable.txt'), '1\n', { flag: 'wx' });
+await fs.symlink(assets, path.join(pref, 'ux0/data/WitchontheHolyNight/assets'), 'junction');
 await fs.symlink(process.env.KNIFE_VITA3K_FIRMWARE ?? (() => { throw new Error('Set KNIFE_VITA3K_FIRMWARE to your firmware directory'); })(), path.join(pref, 'vs0'), 'junction');
 if (lang === 'zc') {
   // Use only our isolated generated DEV fixture; never a personal save.
@@ -50,7 +50,7 @@ if (lang === 'zc') {
   if (data.length !== 0x3FB800 || data.readInt16LE(0x28) !== 1) throw new Error('Unexpected generated English fixture layout');
   const before = digest(data);
   data.writeInt16LE(2, 0x28); // WITCH.sys_config (4) + wcfg.LANGUAGE (0x24).
-  const dest = path.join(pref, 'ux0/data/knife-woh/saves/witch/savedata000');
+  const dest = path.join(pref, 'ux0/data/WitchontheHolyNight/saves/witch/savedata000');
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await fs.writeFile(dest, data, { flag: 'wx' });
   receipt.generated_language_fixture = { source, source_sha256: before, output: await identity(dest),
@@ -113,7 +113,7 @@ try {
   await pulse('cross'); await delay(4000); await capture('save-empty');
   await pulse('cross'); await delay(2000); await capture('save-dialog');
   await pulse('cross'); await delay(4000); await capture('save-written');
-  const savePath = path.join(pref, 'ux0/data/knife-woh/saves/witch/savedata000');
+  const savePath = path.join(pref, 'ux0/data/WitchontheHolyNight/saves/witch/savedata000');
   const savedBytes = await fs.readFile(savePath);
   receipt.manual_save_after_write = inspectWitchSave(savedBytes);
   const savedSnapshot = path.join(work, `${tag}-savedata000.bin`);
@@ -139,7 +139,7 @@ try {
   receipt.visual_correctness_verified = false;
   receipt.script_restoration_verified = false; // Release has no internal STATE log; inspect captured text separately.
   receipt.final_state = await bridge.request('session.status');
-  receipt.control_sequence_completed = receipt.final_state.phase === 'running' && receipt.final_state.titleId === 'KNIF00270';
+  receipt.control_sequence_completed = receipt.final_state.phase === 'running' && receipt.final_state.titleId === 'KNIF00540';
   // frameReady/FPS do not prove a visible picture: OpenGL can submit black frames.
   receipt.image_check = JSON.parse(execFileSync(process.env.KNIFE_VITA_CAPTURE_PYTHON ?? 'python',
     [path.join(root, 'tools/vita_capture_check.py')], {
@@ -169,7 +169,7 @@ try {
   receipt.host_log = await identity(log);
   if (measure) {
     // Read only this run's own profile after owned shutdown; preserve raw evidence.
-    const source = path.join(pref, 'ux0/data/knife-woh/performance.log');
+    const source = path.join(pref, 'ux0/data/WitchontheHolyNight/performance.log');
     try {
       const performance = path.join(root, 'doc/logs/vita', `${tag}-performance.log`);
       const data = await fs.readFile(source);
@@ -189,7 +189,7 @@ try {
     && !receipt.error && receipt.exit?.code === 0
     && !receipt.forced_owned_cleanup && receipt.unexpected_diagnostic_files.length === 0
     && (!measure || receipt.performance_verified));
-  const report = path.join(root, 'doc', `vita-270p-${tag}.json`);
+  const report = path.join(root, 'doc', `vita-540p-${tag}.json`);
   await fs.writeFile(report, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   console.log(JSON.stringify({ receipt: report, runtime_verified: receipt.runtime_verified,
     control_sequence_completed: receipt.control_sequence_completed,

@@ -37,6 +37,13 @@ const BUILD_TAG: &str = match option_env!("KNIFE_BUILD_TAG") {
     None => "dev",
 };
 
+fn build_identity() -> String {
+    let mut tag = String::new();
+    knife_perf::json_string(&mut tag, BUILD_TAG);
+    format!("{{\"kind\":\"build_identity\",\"build_tag\":{tag},\"sound_cache_limit\":{}}}\n",
+        knife_perf::memory_budget::CPU_SOUND_BYTES)
+}
+
 const TITLE_ID: &str = match option_env!("KNIFE_VITA_TITLE_ID") {
     Some(id) => id,
     None => "KNIF00270",
@@ -61,6 +68,7 @@ impl PerfLog {
         if option_env!("KNIFE_VITA_QUIET") == Some("1") { return Ok(None); }
         if !knife_platform_vita::perf_switch::console_enabled(Path::new(PERF_ROOT),
             option_env!("KNIFE_PERF_CONSOLE") == Some("1"))? { return Ok(None); }
+        knife_platform_vita::audit::console(&build_identity())?;
         let (scene, canvas) = knife_render::performance_dimensions();
         let profile = if cfg!(feature = "assets-540p") { "540p-native-unorm-v2" } else { "270p-v1" };
         let quoted = |value: &str| { let mut out = String::new(); knife_perf::json_string(&mut out, value); out };
@@ -141,6 +149,8 @@ impl PerfLog {
         if self.window.elapsed() < Duration::from_secs(5) { return Ok(true); }
         let console_started = Instant::now();
         let batch = knife_platform_vita::audit::ConsoleBatch::begin();
+        // A short identity survives late attachment and stays below chunk size.
+        knife_platform_vita::audit::console(&build_identity())?;
         let elapsed = self.window.elapsed().as_millis();
         let sample = self.frames.take();
         let (image, worker) = game.assets.image_performance();

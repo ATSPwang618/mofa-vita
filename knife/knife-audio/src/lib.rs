@@ -3,6 +3,7 @@
 
 pub mod bfsar;
 pub mod codec;
+pub mod pcm_cache;
 #[cfg(target_os = "vita")]
 mod vita_opus;
 #[cfg(any(test, target_os = "vita"))]

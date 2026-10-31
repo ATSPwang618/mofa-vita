@@ -169,12 +169,12 @@ impl Drop for Scope {
 
 #[repr(usize)]
 #[derive(Clone, Copy)]
-pub enum Gauge { StageInflight, StageRequestedBytes, StageReadyBytes, ResidentBytes, EncodedBytes, GradeLutBytes, GradeResultBytes, ArchiveTinyBytes, TextCacheBytes, TextCacheEntries, GroupCacheBytes, SourceCacheBytes, GlyphShadowBytes, StagePrefixBytes, GlyphPageBytes, GlyphPageEntries, AudioStreamChannels, AudioStreamBufferBytes, Count }
+pub enum Gauge { StageInflight, StageRequestedBytes, StageReadyBytes, ResidentBytes, EncodedBytes, GradeLutBytes, GradeResultBytes, ArchiveTinyBytes, TextCacheBytes, TextCacheEntries, GroupCacheBytes, SourceCacheBytes, GlyphShadowBytes, StagePrefixBytes, GlyphPageBytes, GlyphPageEntries, AudioStreamChannels, AudioStreamBufferBytes, SoundCacheBytes, SoundCacheEntries, Count }
 pub const GAUGE_NAMES: &[&str] = &["stage_inflight", "stage_requested_bytes", "stage_ready_bytes",
     "resident_deferred_bytes", "retained_encoded_bytes", "grade_lut_bytes", "grade_result_bytes", "archive_tiny_bytes",
     "text_cache_bytes", "text_cache_entries", "group_cache_bytes", "source_cache_bytes",
     "glyph_shadow_bytes", "stage_prefix_bytes", "glyph_page_bytes", "glyph_page_entries",
-    "audio_stream_channels", "audio_stream_buffer_bytes"];
+    "audio_stream_channels", "audio_stream_buffer_bytes", "sound_cache_bytes", "sound_cache_entries"];
 static GAUGES: [AtomicU64; Gauge::Count as usize] = [const { AtomicU64::new(0) }; Gauge::Count as usize];
 static PEAKS: [AtomicU64; Gauge::Count as usize] = [const { AtomicU64::new(0) }; Gauge::Count as usize];
 pub fn gauge_set(g: Gauge, value: u64) {

@@ -167,6 +167,15 @@ pub fn decode_nopus_part(data: &[u8], from: usize, to: usize) -> Result<(usize, 
 /// Decode one channel of GameCube/Wii/Switch DSP-ADPCM.
 pub fn decode_dsp(data: &[u8], samples: usize, coefs: &[i16; 16], hist: (i16, i16)) -> Vec<f32> {
     let mut out = Vec::with_capacity(samples);
+    decode_dsp_into(data, samples, coefs, hist, |_, sample| out.push(sample));
+    out
+}
+
+/// Decode straight into a caller-owned channel, without another PCM allocation.
+pub(crate) fn decode_dsp_into(
+    data: &[u8], samples: usize, coefs: &[i16; 16], hist: (i16, i16),
+    mut store: impl FnMut(usize, f32),
+) {
     let (mut h1, mut h2) = (hist.0 as i32, hist.1 as i32);
     let mut i = 0;
     'frames: for frame in data.chunks(8) {
@@ -184,12 +193,11 @@ pub fn decode_dsp(data: &[u8], samples: usize, coefs: &[i16; 16], hist: (i16, i1
                 let s = (s >> 11).clamp(-32768, 32767);
                 h2 = h1;
                 h1 = s;
-                out.push(s as f32 / 32768.0);
+                store(i, s as f32 / 32768.0);
                 i += 1;
             }
         }
     }
-    out
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use std::{collections::HashMap, fs::File, io::{Read, Seek, SeekFrom}, path::Path
 
 use anyhow::{Context, Result, bail};
 
-use crate::codec::{Pcm, decode_dsp};
+use crate::codec::{Pcm, decode_dsp_into};
 
 fn u8_(d: &[u8], o: usize) -> Result<u8> {
     d.get(o).copied().context("bfsar: out of range")
@@ -391,51 +391,50 @@ pub fn decode_fwav(d: &[u8]) -> Result<Pcm> {
     // exception with no panic message).
     const MAX_SAMPLES: usize = 4_000_000;
     anyhow::ensure!(samples <= MAX_SAMPLES, "FWAV sample count {samples} exceeds the bounded decoder");
-    let chans = ref_table(d, b + 20)?;
-    anyhow::ensure!(chans.len() <= 2, "FWAV has {} channels", chans.len());
-    let mut channels: Vec<Vec<f32>> = Vec::new();
-    for ci in chans.into_iter().flatten() {
-        let sample_off = i32_(d, ci + 4)? as usize;
-        let sdata = d.get(data + 8 + sample_off..).context("bad sample offset")?;
-        let ch = match encoding {
-            2 => {
-                let adpcm = ci + i32_(d, ci + 12)? as usize;
-                let mut coefs = [0i16; 16];
-                for (k, c) in coefs.iter_mut().enumerate() {
-                    *c = u16_(d, adpcm + k * 2)? as i16;
-                }
-                let h0 = u16_(d, adpcm + 34)? as i16;
-                let h1 = u16_(d, adpcm + 36)? as i16;
-                decode_dsp(sdata, samples, &coefs, (h0, h1))
-            }
-            1 => (0..samples)
-                .map(|i| u16_(sdata, i * 2).map(|v| v as i16 as f32 / 32768.0).unwrap_or(0.0))
-                .collect(),
-            0 => (0..samples)
-                .map(|i| sdata.get(i).map(|&v| v as i8 as f32 / 128.0).unwrap_or(0.0))
-                .collect(),
-            e => bail!("unsupported FWAV encoding {e}"),
-        };
-        channels.push(ch);
+    anyhow::ensure!(encoding <= 2, "unsupported FWAV encoding {encoding}");
+    anyhow::ensure!(u32_(d, b + 20)? <= 2, "FWAV has too many channels");
+    // Resolve both channels before allocating the output. Channel metadata is
+    // tiny; channel-length float arrays previously doubled the stereo peak.
+    let mut channels = [None, None];
+    let mut channel_count = 0;
+    for ci in ref_table(d, b + 20)?.into_iter().flatten() {
+        let sample_off = data.checked_add(8).and_then(|x| x.checked_add(i32_(d, ci + 4).ok()? as usize))
+            .context("bad sample offset")?;
+        let sdata = d.get(sample_off..).context("bad sample offset")?;
+        let mut coefs = [0i16; 16];
+        let mut history = (0, 0);
+        if encoding == 2 {
+            let adpcm = ci.checked_add(i32_(d, ci + 12)? as usize).context("ADPCM offset overflow")?;
+            for (k, c) in coefs.iter_mut().enumerate() { *c = u16_(d, adpcm + k * 2)? as i16; }
+            history = (u16_(d, adpcm + 34)? as i16, u16_(d, adpcm + 36)? as i16);
+        }
+        channels[channel_count] = Some((sdata, coefs, history));
+        channel_count += 1;
     }
-    if channels.is_empty() {
-        bail!("FWAV without channels");
+    anyhow::ensure!(channel_count != 0, "FWAV without channels");
+    let mut frames = Vec::new();
+    frames.try_reserve_exact(samples).context("FWAV PCM allocation")?;
+    frames.resize(samples, [0.0; 2]);
+    for (channel, (sdata, coefs, history)) in channels.into_iter().flatten().enumerate() {
+        match encoding {
+            2 => decode_dsp_into(sdata, samples, &coefs, history,
+                |i, sample| frames[i][channel] = sample),
+            1 => for (i, frame) in frames.iter_mut().enumerate() {
+                frame[channel] = u16_(sdata, i * 2).map(|v| v as i16 as f32 / 32768.0).unwrap_or(0.0);
+            },
+            _ => for (i, frame) in frames.iter_mut().enumerate() {
+                frame[channel] = sdata.get(i).map(|&v| v as i8 as f32 / 128.0).unwrap_or(0.0);
+            },
+        }
     }
-    let frames = (0..samples)
-        .map(|i| {
-            let l = channels[0].get(i).copied().unwrap_or(0.0);
-            match channels.get(1) {
-                Some(c) => [l, c.get(i).copied().unwrap_or(0.0)],
-                // nn::atk pans a mono voice to the centre with the sqrt curve: 1 / sqrt 2 on each side
-                None => [l * std::f32::consts::FRAC_1_SQRT_2; 2],
-            }
-        })
-        .collect();
+    if channel_count == 1 {
+        for frame in &mut frames { *frame = [frame[0] * std::f32::consts::FRAC_1_SQRT_2; 2]; }
+    }
     Ok(Pcm {
         sample_rate: rate,
         frames,
         loop_range: looping.then_some((loop_start, samples)),
-        mono: channels.len() == 1,
+        mono: channel_count == 1,
     })
 }
 

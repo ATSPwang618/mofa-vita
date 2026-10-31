@@ -3,8 +3,9 @@
 use knife_perf::{Metric, Scope, Gauge};
 use crate::grade::Bake;
 #[cfg(target_os = "vita")]
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
@@ -380,7 +381,7 @@ pub struct Assets {
     image_skipped: std::collections::HashSet<String>,
     #[cfg(target_os = "vita")]
     image_perf: ImagePerf,
-    sounds: HashMap<String, Option<Arc<Pcm>>>,
+    sounds: RefCell<knife_audio::pcm_cache::PcmCache>,
     /// Indexed by allui entry, so EN/ZC variants and language-neutral atlases do not collide.
     /// A cached first texture identifies the owning Renderer before reuse.
     #[cfg(target_os = "vita")]
@@ -551,7 +552,7 @@ impl Assets {
             image_skipped: Default::default(),
             #[cfg(target_os = "vita")]
             image_perf: ImagePerf::default(),
-            sounds: HashMap::new(),
+            sounds: RefCell::new(knife_audio::pcm_cache::PcmCache::default()),
             #[cfg(target_os = "vita")]
             ui_atlases: RefCell::new(HashMap::new()),
         sysmes_cache: RefCell::new(HashMap::new()),
@@ -948,7 +949,8 @@ impl Assets {
         // Do not immediately refill optional CPU owners just dropped under
         // pressure. Maintenance clears this latch only above the high water.
         self.cpu_cache_pressure.set(true);
-        let mut released=self.byte_stage.trim_lru(need);
+        let mut released=self.sounds.borrow_mut().trim_idle(need);
+        released+=self.byte_stage.trim_lru(need.saturating_sub(released));
         released+=self.atlas_cache.trim_lru(need.saturating_sub(released),false);
         released+=graded_cache::trim_lru(need.saturating_sub(released));
         released+=crate::grade::trim_cache(need.saturating_sub(released));
@@ -1986,46 +1988,71 @@ impl Assets {
     /// Decode a sound effect from the BFSAR (`MOON_SE03001` -> `WSD_moon_se03001`).
     pub fn sound_effect(&mut self, name: &str) -> Option<Arc<Pcm>> {
         let key = name.to_ascii_lowercase();
-        if let Some(s) = self.sounds.get(&key) {
-            return s.clone();
+        if let Some(pcm) = self.sounds.borrow_mut().get(&key) {
+            return pcm;
         }
-        let res = self
-            .sar
-            .load_wave_sound(&format!("wsd_{key}"))
-            .or_else(|_| self.sar.load_wave_sound(&key))
-            .or_else(|_| self.load_stream_file(&format!("stream/{name}.opus")));
+        let res = self.sound_pcm(|| self.sar.load_wave_sound(&format!("wsd_{key}"))
+            .or_else(|error| if Self::audio_allocation_failed(&error) { Err(error) }
+                else { self.sar.load_wave_sound(&key) })
+            .or_else(|error| if Self::audio_allocation_failed(&error) { Err(error) }
+                else { self.load_stream_file(&format!("stream/{name}.opus")) }));
         let pcm = match res {
             Ok(p) => Some(Arc::new(p)),
             Err(e) => {
                 tracing::warn!("sound {name}: {e:#}");
+                // Memory pressure is transient; do not permanently negative-cache it.
+                if Self::audio_allocation_failed(&e) { return None; }
                 None
             }
         };
-        if self.sounds.len() > 256 {
-            self.sounds.clear();
-        }
-        self.sounds.insert(key, pcm.clone());
+        self.sounds.borrow_mut().insert(key, pcm.clone());
         pcm
     }
 
     /// A wave sound by BFSAR item id (sub_710's dword_3341A0 ids), cached with the named sounds.
     pub fn sound_effect_id(&mut self, item: u32) -> Option<Arc<Pcm>> {
         let key = format!("#{item:x}");
-        if let Some(s) = self.sounds.get(&key) {
-            return s.clone();
+        if let Some(pcm) = self.sounds.borrow_mut().get(&key) {
+            return pcm;
         }
-        let pcm = match self.sar.load_wave_sound_id(item) {
+        let pcm = match self.sound_pcm(|| self.sar.load_wave_sound_id(item)) {
             Ok(p) => Some(Arc::new(p)),
             Err(e) => {
                 tracing::warn!("sound {item:#x}: {e:#}");
+                if Self::audio_allocation_failed(&e) { return None; }
                 None
             }
         };
-        if self.sounds.len() > 256 {
-            self.sounds.clear();
-        }
-        self.sounds.insert(key, pcm.clone());
+        self.sounds.borrow_mut().insert(key, pcm.clone());
         pcm
+    }
+
+    fn audio_allocation_failed(error: &anyhow::Error) -> bool {
+        error.chain().any(|cause| cause.is::<std::collections::TryReserveError>()
+            || cause.downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::OutOfMemory))
+    }
+
+    fn sound_pcm(&self, mut load: impl FnMut() -> Result<Pcm>) -> Result<Pcm> {
+        #[cfg(target_os = "vita")]
+        {
+            // Reserve room before a whole FWAV read (<=8 MiB) plus the final
+            // stereo PCM (<=16 MiB), rather than waiting for end-of-frame trim.
+            let target = knife_perf::memory_budget::CPU_TARGET_HEADROOM
+                + knife_perf::memory_budget::CPU_SOUND_BYTES;
+            if let Ok(memory) = knife_platform_vita::memory_available() {
+                self.vita_trim_cpu_caches(target.saturating_sub(memory.heap_headroom as usize));
+            }
+        }
+        let result = load();
+        #[cfg(target_os = "vita")]
+        if result.as_ref().is_err_and(Self::audio_allocation_failed) {
+            // Fragmentation can reject a large block despite aggregate free
+            // bytes. Release idle CPU owners and retry exactly once.
+            self.vita_trim_cpu_caches(24 * knife_perf::memory_budget::MIB);
+            return load();
+        }
+        result
     }
 
     pub fn load_stream_file(&self, rel: &str) -> Result<Pcm> {

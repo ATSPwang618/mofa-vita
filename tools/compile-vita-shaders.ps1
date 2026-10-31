@@ -4,10 +4,20 @@ Set-StrictMode -Version Latest
 
 # Use the user's locally installed compiler; no compiler or runtime module is copied.
 if ([string]::IsNullOrWhiteSpace($Compiler)) {
-    $Compiler = 'D:/unity/PSVITA/sdk/host_tools/bin/psp2cgc.exe'
+    foreach ($name in @('psp2cgc', 'psp2cgc.exe')) {
+        $command = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue
+        if ($command) { $Compiler = $command.Source; break }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($Compiler)) {
+    throw 'psp2cgc was not found. Set KNIFE_VITA_CGC, pass -Compiler, or add psp2cgc to PATH.'
+}
+if (-not (Test-Path -LiteralPath $Compiler -PathType Leaf)) {
+    $command = Get-Command $Compiler -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $command) { throw "Shader compiler was not found: $Compiler. Set KNIFE_VITA_CGC or pass -Compiler with its executable path." }
+    $Compiler = $command.Source
 }
 $compilerPath = (Get-Item -LiteralPath $Compiler).FullName
-if (-not [IO.File]::Exists($compilerPath)) { throw 'Shader compiler must be a regular file' }
 $root = (Get-Item -LiteralPath $PSScriptRoot).Parent.FullName
 $sourceRoot = Join-Path $root 'knife/vita/shaders'
 $outputRoot = Join-Path $root '.work/vita/shaders'

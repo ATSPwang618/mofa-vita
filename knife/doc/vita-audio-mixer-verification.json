@@ -17,9 +17,9 @@
     "failure": "new gracefully disables audio on startup failure; try_new returns error; last_error reports asynchronous decoder/output failures; rejected voices and stopped/retired voices set finished; EOF closes stream; Drop sends shutdown, joins mixer then stops output"
   },
   "verification": {
-    "host_command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=/tmp/knife-audio-mixer-target cargo test --offline --locked -p knife-audio --lib -- --test-threads=1",
+    "host_command": "VITASDK=${VITASDK} CARGO_TARGET_DIR=/tmp/knife-audio-mixer-target cargo test --offline --locked -p knife-audio --lib -- --test-threads=1",
     "host_result": "10 passed, 0 failed: decoder, BFSAR, curves, resampling, PCM stereo loop/gain, prefix swap/stop, pause/resume, pending bound/drop; no native Vita runtime exercised",
-    "arm_check_command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=/tmp/knife-audio-mixer-target cargo +nightly-2026-05-28 check --offline --locked -Z build-std=std,panic_abort -p knife-audio --target armv7-sony-vita-newlibeabihf",
+    "arm_check_command": "VITASDK=${VITASDK} CARGO_TARGET_DIR=/tmp/knife-audio-mixer-target cargo +nightly-2026-05-28 check --offline --locked -Z build-std=std,panic_abort -p knife-audio --target armv7-sony-vita-newlibeabihf",
     "arm_check_result": "passed; target tree has knife-platform-vita and excludes kira",
     "arm_link": "Separate /tmp/knife-audio-link-check Cargo binary using knife-audio path dependency and calling Audio::new/flush, arm-vita-eabi-gcc linker, nightly build-std=std,panic_abort --target armv7-sony-vita-newlibeabihf --offline: cargo build passed; temporary /tmp output cleared across WSL calls"
   },

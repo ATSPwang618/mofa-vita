@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 task_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-test_dir=/root/.cache/knife-vita-glyph-pages
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+test_dir="${XDG_CACHE_HOME:-$HOME/.cache}/knife-vita-glyph-pages"
 mkdir -p -- "$test_dir"
 cat > "$test_dir/harness.rs" <<EOF
 #[path = "$task_root/knife/knife/src/text/atlas.rs"]

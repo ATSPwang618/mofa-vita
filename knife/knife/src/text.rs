@@ -10,7 +10,9 @@ use knife_core::linebreak::LineBreak;
 use knife_render::{Blend, Quad, Renderer, Shade, TexRef};
 
 mod atlas;
-use atlas::{GlyphAtlas, PAGE_SIZE};
+use atlas::PAGE_SIZE;
+#[cfg(not(target_os = "vita"))]
+use atlas::GlyphAtlas;
 
 #[derive(Clone, Copy)]
 struct Glyph {
@@ -160,25 +162,47 @@ pub struct FontAtlas {
     data: Arc<Vec<u8>>,
     gpos_kern: std::cell::RefCell<HashMap<(u16, u16), i16>>,
     ex: Option<ExFont>,
+    #[cfg(not(target_os = "vita"))]
     atlas: GlyphAtlas<TexRef, Option<Glyph>>,
+    #[cfg(target_os = "vita")]
+    atlas: atlas::ImmutableAtlas<TexRef, Glyph>,
+}
+
+#[cfg(target_os = "vita")]
+impl Drop for FontAtlas {
+    fn drop(&mut self) {
+        knife_perf::gauge_sub(knife_perf::Gauge::GlyphPageBytes, self.atlas.bytes() as u64);
+        knife_perf::gauge_sub(knife_perf::Gauge::GlyphPageEntries, self.atlas.pages() as u64);
+    }
 }
 
 impl FontAtlas {
     pub fn new(r: &Renderer, mut data: Vec<u8>) -> anyhow::Result<Self> {
+        let init = knife_perf::Scope::new(knife_perf::Metric::FontInit);
+        let bytes = data.len() as u64;
         // The atlas keeps the bytes twice (FontArc plus the GPOS table's copy); a
         // multi-megabyte font that fits once must not turn into an allocation abort.
         anyhow::ensure!(data.len() <= 24 * 1024 * 1024, "font file too large: {} bytes", data.len());
         // the glyphs with bytes after their endchar, which nn::fontll draws (`cff::normalize`)
+        let parse = knife_perf::Scope::new(knife_perf::Metric::FontParse);
         knife_core::format::cff::normalize(&mut data);
         let font = FontArc::try_from_vec(data.clone())?;
+        parse.finish(bytes, 0);
+        #[cfg(not(target_os = "vita"))]
         let tex = r.create_writable(PAGE_SIZE, PAGE_SIZE, true, "font atlas");
+        #[cfg(target_os = "vita")]
+        let _ = r;
+        init.finish(bytes, 1);
         Ok(Self {
             font,
             fallback: Vec::new(),
             data: Arc::new(data),
             gpos_kern: Default::default(),
             ex: None,
+            #[cfg(not(target_os = "vita"))]
             atlas: GlyphAtlas::new(tex, PAGE_SIZE),
+            #[cfg(target_os = "vita")]
+            atlas: atlas::ImmutableAtlas::new(PAGE_SIZE, atlas::VITA_POOL_BYTES, atlas::VITA_POOL_PAGES),
         })
     }
 
@@ -194,8 +218,14 @@ impl FontAtlas {
                 r8[(y * w + x) as usize] = rgba[(((h - 1 - y) * w + x) * 4) as usize];
             }
         }
-        let tex = r.create_writable(w, h, true, "exfont");
-        r.write_region(&tex, [0, 0, w, h], 1, &r8);
+        #[cfg(target_os = "vita")]
+        let tex = r.try_upload(w, h, knife_render::Upload::R8(&r8), "exfont")?;
+        #[cfg(not(target_os = "vita"))]
+        let tex = {
+            let tex = r.create_writable(w, h, true, "exfont");
+            r.write_region(&tex, [0, 0, w, h], 1, &r8);
+            tex
+        };
         self.ex = Some(ExFont { font, tex });
         Ok(())
     }
@@ -208,8 +238,11 @@ impl FontAtlas {
     /// faces the language's three font files as one nn::font font list, and the cache takes a glyph from the
     /// first font that has it (English: Helvetica Neue has no U+3000 or ■, which come from FOT-Seurat, en3).
     pub fn add_fallback(&mut self, mut data: Vec<u8>) -> anyhow::Result<()> {
+        let parse = knife_perf::Scope::new(knife_perf::Metric::FontParse);
+        let bytes = data.len() as u64;
         knife_core::format::cff::normalize(&mut data);
         self.fallback.push(FontArc::try_from_vec(data)?);
+        parse.finish(bytes, 1);
         Ok(())
     }
 
@@ -386,9 +419,179 @@ impl FontAtlas {
         0
     }
 
+    /// Prepare the entire laid-out page before applying reveal order. Fill,
+    /// ruby size, italic, wobble and rim are draw parameters of the same base
+    /// bitmap. Run/exfont glyphs already live in a separate immutable sheet.
+    pub fn prewarm(&mut self, r: &Renderer, chars: &[PlacedChar]) -> anyhow::Result<usize> {
+        #[cfg(target_os = "vita")]
+        { self.prewarm_chars(r, chars.iter().filter(|c| c.run.is_none()).map(|c| c.c), true) }
+        #[cfg(not(target_os = "vita"))]
+        { let _ = (r, chars); Ok(0) }
+    }
+
+    #[cfg(target_os = "vita")]
+    fn raster_glyph(&self, c: char) -> anyhow::Result<Option<atlas::R8Glyph<Glyph>>> {
+        let scope = knife_perf::Scope::new(knife_perf::Metric::GlyphRaster);
+        let font = self.face(c);
+        let id = font.glyph_id(c);
+        let Some(outlined) = font.outline_glyph(id.with_scale_and_position(Self::px(font, BASE_SIZE), ab_glyph::point(0.0, 0.0))) else {
+            scope.finish(0, 0);
+            return Ok(None);
+        };
+        let bounds = outlined.px_bounds();
+        let (w, h) = (bounds.width().ceil() as u32 + 1, bounds.height().ceil() as u32 + 1);
+        anyhow::ensure!(w <= 1022 && h <= 1022, "glyph exceeds maximum independent page");
+        let bytes = (w as usize).checked_mul(h as usize).ok_or_else(|| anyhow::anyhow!("glyph size overflow"))?;
+        let mut pixels = Vec::new();
+        pixels.try_reserve_exact(bytes)?;
+        pixels.resize(bytes, 0);
+        outlined.draw(|x, y, coverage| {
+            if let Some(pixel) = pixels.get_mut((y * w + x) as usize) {
+                *pixel = (coverage.clamp(0.0, 1.0) * 255.0) as u8;
+            }
+        });
+        scope.finish(bytes as u64, 1);
+        Ok(Some(atlas::R8Glyph {
+            glyph: Glyph { rect: [0, 0, w, h], off: [bounds.min.x, bounds.min.y] },
+            size: [w, h], pixels,
+        }))
+    }
+
+    #[cfg(target_os = "vita")]
+    fn prewarm_chars<I>(&mut self, r: &Renderer, chars: I, skip_ex: bool) -> anyhow::Result<usize>
+    where I: Iterator<Item = char> + Clone {
+        // This is the steady reveal path: no allocation, raster, texture write
+        // or upload after the complete page was prepared once.
+        if chars.clone().all(|c| (skip_ex && self.has_ex(c)) || self.atlas.contains(c)) { return Ok(0); }
+        let scope = knife_perf::Scope::new(knife_perf::Metric::GlyphPrewarm);
+        let mut unique = std::collections::HashSet::new();
+        let mut wanted = Vec::new();
+        for c in chars {
+            if (skip_ex && self.has_ex(c)) || !unique.insert(c) { continue; }
+            if wanted.len() == 1024 {
+                knife_perf::add(knife_perf::Metric::GlyphPrewarmFallback, 0, 1);
+                anyhow::bail!("text page exceeds bounded glyph preparation");
+            }
+            wanted.push(c);
+        }
+        // Only a small zeroed scratch page exists on CPU. Published pages have
+        // stable owners and no retained or cloned shadow pixels.
+        let bytes = u64::from(PAGE_SIZE) * u64::from(PAGE_SIZE);
+        knife_perf::gauge_add(knife_perf::Gauge::GlyphShadowBytes, bytes);
+        let mut prepared = self.prepare_glyph_pages(r, &wanted);
+        if matches!(&prepared, Err(atlas::PrepareError::Upload(_))) {
+            let (before_bytes, before_pages) = (self.atlas.bytes(), self.atlas.pages());
+            let evicted = self.atlas.trim_unrequested(&wanted);
+            let retry = evicted.pages != 0;
+            self.account_glyph_pool(before_bytes, before_pages, evicted);
+            if retry { prepared = self.prepare_glyph_pages(r, &wanted); }
+        }
+        knife_perf::gauge_sub(knife_perf::Gauge::GlyphShadowBytes, bytes);
+        match prepared {
+            Ok(Some(page)) => {
+                let (before_bytes, before_pages) = (self.atlas.bytes(), self.atlas.pages());
+                let (rasterized, evicted) = self.atlas.commit(page);
+                self.account_glyph_pool(before_bytes, before_pages, evicted);
+                scope.finish(0, rasterized as u64);
+                Ok(rasterized)
+            }
+            Ok(None) => { scope.finish(0, 0); Ok(0) }
+            Err(error) => {
+                let reason = match &error {
+                    atlas::PrepareError::Allocation => 2,
+                    atlas::PrepareError::Capacity => 3,
+                    atlas::PrepareError::Raster(_) => 4,
+                    atlas::PrepareError::Upload(_) => 5,
+                };
+                knife_perf::add(knife_perf::Metric::GlyphPrewarmFallback, 0, reason);
+                Err(anyhow::anyhow!("preparing immutable glyph pages: {error:?}"))
+            }
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    fn prepare_glyph_pages(&self, r: &Renderer, wanted: &[char])
+        -> Result<Option<atlas::PreparedR8<TexRef, Glyph>>, atlas::PrepareError<anyhow::Error>>
+    {
+        self.atlas.prepare_r8(wanted, |c| self.raster_glyph(c),
+            |mut glyph, [x, y]| { glyph.rect[0] = x; glyph.rect[1] = y; glyph },
+            |size, pixels| Self::upload_glyph_page(r, size, pixels))
+    }
+
+    #[cfg(target_os = "vita")]
+    fn upload_glyph_page(r: &Renderer, [w, h]: [u32; 2], pixels: &[u8]) -> anyhow::Result<(TexRef, usize)> {
+        let upload = knife_perf::Scope::new(knife_perf::Metric::GlyphPageUpload);
+        let pitch = w.checked_add(7).ok_or_else(|| anyhow::anyhow!("glyph pitch overflow"))? & !7;
+        let payload = pitch.checked_mul(h).ok_or_else(|| anyhow::anyhow!("glyph page overflow"))?;
+        let charge = knife_platform_vita::gxm::Gxm::texture_charge(payload).map_err(anyhow::Error::msg)? as usize;
+        let texture = r.try_upload(w, h, knife_render::Upload::R8(pixels), "immutable glyph page")?;
+        upload.finish(pixels.len() as u64, 1);
+        Ok((texture, charge))
+    }
+
+    #[cfg(target_os = "vita")]
+    fn account_glyph_pool(&self, before_bytes: usize, before_pages: usize, evicted: atlas::Evicted) {
+        for (gauge, before, after) in [
+            (knife_perf::Gauge::GlyphPageBytes, before_bytes, self.atlas.bytes()),
+            (knife_perf::Gauge::GlyphPageEntries, before_pages, self.atlas.pages()),
+        ] {
+            if after >= before { knife_perf::gauge_add(gauge, (after - before) as u64); }
+            else { knife_perf::gauge_sub(gauge, (before - after) as u64); }
+        }
+        if evicted.pages != 0 {
+            knife_perf::add(knife_perf::Metric::GlyphPageEvict, evicted.bytes as u64, evicted.pages as u64);
+        }
+    }
+
+    /// A single-glyph fallback also publishes fresh immutable storage. This
+    /// covers unusually wide base glyphs and a failed large batch without ever
+    /// updating a sampled page or restoring the old Finish/rename path.
+    #[cfg(target_os = "vita")]
+    fn glyph_fallback(&mut self, r: &Renderer, c: char) -> anyhow::Result<Option<(Glyph, TexRef)>> {
+        let Some(bitmap) = self.raster_glyph(c)? else { return Ok(None); };
+        let [w, h] = bitmap.size;
+        let (tw, th) = ((w + 2 + 7) & !7, (h + 2 + 7) & !7);
+        let bytes = (tw * th) as usize;
+        let mut pixels = Vec::new();
+        pixels.try_reserve_exact(bytes)?;
+        pixels.resize(bytes, 0);
+        knife_perf::gauge_add(knife_perf::Gauge::GlyphShadowBytes, bytes as u64);
+        for row in 0..h as usize {
+            pixels[row * tw as usize..row * tw as usize + w as usize]
+                .copy_from_slice(&bitmap.pixels[row * w as usize..(row + 1) * w as usize]);
+        }
+        let result = (|| {
+            let (texture, charge) = Self::upload_glyph_page(r, [tw, th], &pixels)?;
+            let (before_bytes, before_pages) = (self.atlas.bytes(), self.atlas.pages());
+            let evicted = self.atlas.insert_page(c, texture.clone(), bitmap.glyph, charge)
+                .map_err(|_| anyhow::anyhow!("independent glyph exceeds page pool admission"))?;
+            self.account_glyph_pool(before_bytes, before_pages, evicted);
+            Ok(Some((bitmap.glyph, texture)))
+        })();
+        knife_perf::gauge_sub(knife_perf::Gauge::GlyphShadowBytes, bytes as u64);
+        result
+    }
+
     /// The glyph as nn::font's cache holds it: rasterized at the base size (font manager +124, 40 px) with its
     /// box on whole pixels, which the draw scales to the slot size.
     fn glyph(&mut self, r: &Renderer, c: char) -> Option<(Glyph, TexRef)> {
+        #[cfg(target_os = "vita")]
+        {
+            if let Some((texture, glyph)) = self.atlas.get(c) { return Some((*glyph, texture.clone())); }
+            if self.atlas.contains(c) { return None; }
+            if self.prewarm_chars(r, std::iter::once(c), false).is_ok() {
+                return self.atlas.get(c).map(|(texture, glyph)| (*glyph, texture.clone()));
+            }
+            return match self.glyph_fallback(r, c) {
+                Ok(glyph) => glyph,
+                Err(_) => {
+                    knife_perf::add(knife_perf::Metric::GlyphPrewarmFallback, 0, 6);
+                    None
+                }
+            };
+        }
+        #[cfg(not(target_os = "vita"))]
+        {
         if let Some((texture, g)) = self.atlas.get(c) {
             return g.map(|glyph| (glyph, texture.clone()));
         }
@@ -419,6 +622,7 @@ impl FontAtlas {
         }));
         self.atlas.glyphs.insert(c, g);
         g.map(|glyph| (glyph, self.atlas.texture.clone()))
+        }
     }
 
     /// Quad for one glyph with its pen at (x, baseline).
@@ -434,14 +638,14 @@ impl FontAtlas {
             return None;
         }
         let [gx, gy, gw, gh] = g.rect;
-        let a = self.atlas.size() as f32;
+        let [aw, ah] = texture.uv_extent();
         let k = size / BASE_SIZE;
         let q = Quad::rect(
             texture,
             [x + g.off[0] * k * sx - (sx - 1.0) * size / 2.0, baseline + g.off[1] * k, gw as f32 * k * sx, gh as f32 * k],
             color,
         )
-        .with_uv_rect(gx as f32 / a, gy as f32 / a, (gx + gw) as f32 / a, (gy + gh) as f32 / a);
+        .with_uv_rect(gx as f32 / aw, gy as f32 / ah, (gx + gw) as f32 / aw, (gy + gh) as f32 / ah);
         Some(Quad {
             blend: Blend::Alpha,
             shade: Shade::Text,
@@ -476,6 +680,12 @@ impl FontAtlas {
         let mut pen = x;
         let mut prev = None;
         let chars: Vec<char> = slot_chars(s).collect();
+        #[cfg(target_os = "vita")]
+        {
+            let dash_sheet = self.has_ex(EX_DASH);
+            let _ = self.prewarm_chars(r,
+                chars.iter().copied().filter(|&c| !dash_sheet || run_kind(c) != Some(EX_DASH)), false);
+        }
         let prop = prop_runs(&chars, Pass::Text);
         let mut i = 0;
         while i < chars.len() {

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -26,7 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, default=ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-project.zip')
     parser.add_argument('--destination', type=Path, default=ROOT / '.work/compact-package-review')
-    parser.add_argument('--distro', default='pocket-ubuntu')
+    parser.add_argument('--distro', default=os.environ.get('KNIFE_WSL_DISTRO'))
     args = parser.parse_args()
     target = args.destination.resolve()
     if target.exists():
@@ -58,7 +59,7 @@ def main() -> None:
     version = tomllib.loads((source / 'knife/knife/Cargo.toml').read_text(encoding='utf-8'))['package']['version']
     assert version == '0.9.4'
     print(f'Verified {len(names)} ZIP members; building from {source}', flush=True)
-    subprocess.run(['wsl', '-d', args.distro, '--', 'bash', './tools/build-compact.sh'], cwd=source, check=True)
+    subprocess.run(['wsl'] + (['-d', args.distro] if args.distro else []) + ['--', 'bash', './tools/build-compact.sh'], cwd=source, check=True)
     executable = source / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/knife.exe'
     raw = executable.read_bytes()
     pe = struct.unpack_from('<I', raw, 0x3c)[0]

@@ -1,10 +1,12 @@
 [CmdletBinding()]
-param([string]$Distro = 'pocket-ubuntu')
+param([string]$Distro = $env:KNIFE_WSL_DISTRO)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$projectPosix = (& wsl.exe -d $Distro -- wslpath -u $projectRoot.Replace('\', '/')).Trim()
+$wslArgs = @()
+if ($Distro) { $wslArgs = @('-d', $Distro) }
+$projectPosix = (& wsl.exe @wslArgs -- wslpath -u $projectRoot.Replace('\', '/')).Trim()
 if ($LASTEXITCODE -ne 0 -or !$projectPosix.StartsWith('/')) { throw 'WSL path resolution failed' }
-& wsl.exe -d $Distro -- env PATH=/opt/vitasdk/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin `
+& wsl.exe @wslArgs -- `
     bash "$projectPosix/tools/test-vita-gxm-present.sh"
 if ($LASTEXITCODE -ne 0) {
     throw 'Host GXM present regression failed; inspect doc/logs/vita/gxm-present-host.log'

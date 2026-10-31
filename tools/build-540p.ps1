@@ -3,19 +3,22 @@ param(
     [switch]$DebugTools,
     [string]$SourceAssets,
     [string]$ModRoot,
-    [ValidateRange(1, 32)][int]$Jobs = 8
+    [ValidateRange(1, 32)][int]$Jobs = 8,
+    [string]$Distro = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
+$wslArgs = @()
+if ($Distro) { $wslArgs += @('-d', $Distro) }
 Push-Location -LiteralPath $taskRoot
 try {
-    $buildArgs = @('-d', 'pocket-ubuntu', '--', 'bash', './tools/build-windows.sh')
+    $buildArgs = $wslArgs + @('--', 'bash', './tools/build-windows.sh')
     if ($DebugTools) { $buildArgs += '--debug-tools' }
-    & wsl @buildArgs
+    & wsl.exe @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Windows engine build failed' }
     if ($PrepareAssets) {
-        & wsl -d pocket-ubuntu -- bash ./tools/build-windows.sh --kdu
+        & wsl.exe @wslArgs -- bash ./tools/build-windows.sh --kdu
         if ($LASTEXITCODE -ne 0) { throw 'Texture converter build failed' }
         $assetArgs = @('-u', 'tools/create_540p.py', '--jobs', $Jobs)
         if ($SourceAssets) { $assetArgs += @('--source', $SourceAssets) }

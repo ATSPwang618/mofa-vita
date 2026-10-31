@@ -14,7 +14,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 REPO = ROOT / "knife"
 LOGS = ROOT / "doc/logs/vita"
-CACHE = Path(os.environ.get("CARGO_TARGET_DIR", "/root/.cache/knife-vita-text-agent"))
+CACHE = Path(os.environ.get("CARGO_TARGET_DIR") or str(Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "knife-vita-text-agent")).expanduser()
+OFFLINE = " --offline" if os.environ.get("KNIFE_VITA_OFFLINE") == "1" else ""
 ELF = CACHE / "armv7-sony-vita-newlibeabihf/vita/vita-text-probe.elf"
 ASSETS = Path(os.environ.get("KNIFE_TEXT_ASSETS", str(ROOT / "dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/assets")))
 FONT_NAMES = [
@@ -151,10 +152,10 @@ receipt = {
             "required_linked_symbols": linked_symbols, "weak_undefined_symbols": undefined,
             "strong_undefined_symbols": [], "cache": str(CACHE)},
     "commands": {
-        "host": "env PATH=/opt/vitasdk/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin bash knife/probes/vita-text/test-host.sh green",
-        "host_cargo": "cargo +1.99.0 test --offline --manifest-path knife/probes/vita-text/Cargo.toml --lib -- --nocapture --skip text::tests::cff_glyphs_after_endchar_outline",
-        "arm": "env PATH=/opt/vitasdk/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin bash knife/probes/vita-text/build-arm.sh",
-        "arm_cargo": "cargo +nightly-2026-05-28 build -Z build-std=std,panic_abort --locked --offline --manifest-path knife/probes/vita-text/Cargo.toml --profile vita --target armv7-sony-vita-newlibeabihf --bin vita-text-probe",
+        "host": "bash knife/probes/vita-text/test-host.sh green",
+        "host_cargo": f"cargo +1.99.0 test{OFFLINE} --manifest-path knife/probes/vita-text/Cargo.toml --lib -- --nocapture --skip text::tests::cff_glyphs_after_endchar_outline",
+        "arm": "bash knife/probes/vita-text/build-arm.sh",
+        "arm_cargo": f"cargo +nightly-2026-05-28 build -Z build-std=std,panic_abort --locked{OFFLINE} --manifest-path knife/probes/vita-text/Cargo.toml --profile vita --target armv7-sony-vita-newlibeabihf --bin vita-text-probe",
     },
     "dev_runtime_contract": {"title_id": "KNIF00008", "binary": "vita-text-probe",
                              "font_root": "ux0:data/knife-woh-dev/text-assets",

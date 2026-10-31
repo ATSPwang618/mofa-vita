@@ -459,7 +459,7 @@ impl Mixer {
                 })),
                 #[cfg(target_os = "vita")]
                 Source::Stream { path, loop_range } => {
-                    match StreamSound::open(
+                    match StreamSound::spawn(
                         path,
                         loop_range,
                         start.ctl,
@@ -530,6 +530,12 @@ enum StreamDecoder {
 #[cfg(target_os = "vita")]
 impl StreamDecoder {
     fn open(path: &std::path::Path) -> Result<Self, String> {
+        let _probe = knife_perf::Scope::new(knife_perf::Metric::AudioStreamOpen);
+        // Manifest-backed Ogg names can go straight to the validating decoder.
+        if path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("ogg")) {
+            let name = path.to_str().ok_or("stream path is not UTF-8")?;
+            return AudioStream::open_file(name).map(Self::Ogg).map_err(|e| e.to_string());
+        }
         let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
         let mut magic = [0u8; 4];
         file.read_exact(&mut magic).map_err(|e| e.to_string())?;
@@ -569,58 +575,28 @@ impl StreamDecoder {
         }
     }
 }
+#[cfg(any(test, target_os = "vita"))]
+#[path = "stream_pump.rs"]
+mod stream_pump;
 #[cfg(target_os = "vita")]
-struct StreamSound {
+struct StreamCursor {
     decoder: StreamDecoder,
-    ctl: Arc<Mutex<Control>>,
-    finished: Arc<AtomicBool>,
-    pcm: [[f32; 2]; CHUNK_FRAMES],
-    cursor: usize,
-    filled: usize,
-    position: u64,
-    loop_range: Option<(u64, u64)>,
-    looping: bool,
-    mono: bool,
-    done: bool,
+    pcm: [[f32; 2]; CHUNK_FRAMES], cursor: usize, filled: usize,
+    position: u64, loop_range: Option<(u64, u64)>, looping: bool, mono: bool,
 }
 #[cfg(target_os = "vita")]
-impl StreamSound {
-    fn open(
-        path: PathBuf,
-        loop_range: Option<(u64, u64)>,
-        ctl: Arc<Mutex<Control>>,
-        finished: Arc<AtomicBool>,
-        start: usize,
-        looping: bool,
-    ) -> Result<Self, (String, Arc<AtomicBool>)> {
-        let mut decoder = StreamDecoder::open(&path).map_err(|e| (e, finished.clone()))?;
-        let loop_range =
-            loop_range.map(|(a, b)| (a.min(decoder.total_frames()), b.min(decoder.total_frames())));
-        if let Some((a, b)) = loop_range
-            && a >= b
-        {
-            return Err(("stream loop range outside source".into(), finished));
-        }
-        if start as u64 > decoder.total_frames() {
-            return Err(("stream start exceeds source".into(), finished));
-        }
-        decoder
-            .seek(start as u64)
-            .map_err(|e| (e.to_string(), finished.clone()))?;
+impl StreamCursor {
+    fn open(path: PathBuf, loop_range: Option<(u64, u64)>, start: usize, looping: bool)
+        -> Result<Self, String>
+    {
+        let mut decoder = StreamDecoder::open(&path)?;
+        let loop_range = loop_range.map(|(a,b)| (a.min(decoder.total_frames()),b.min(decoder.total_frames())));
+        if loop_range.is_some_and(|(a,b)| a >= b) { return Err("stream loop range outside source".into()); }
+        if start as u64 > decoder.total_frames() { return Err("stream start exceeds source".into()); }
+        decoder.seek(start as u64)?;
         let mono = decoder.channels() == 1;
-        Ok(Self {
-            decoder,
-            ctl,
-            finished,
-            pcm: [[0.0; 2]; CHUNK_FRAMES],
-            cursor: 0,
-            filled: 0,
-            position: start as u64,
-            loop_range,
-            looping,
-            mono,
-            done: false,
-        })
+        Ok(Self { decoder, pcm: [[0.0;2];CHUNK_FRAMES], cursor:0, filled:0,
+            position:start as u64, loop_range, looping, mono })
     }
     fn sample(&mut self) -> Result<Option<[f32; 2]>, String> {
         if self.looping {
@@ -661,34 +637,58 @@ impl StreamSound {
         self.position += 1;
         Ok(Some(value))
     }
-    fn process_frames(&mut self, mix: &mut [[f32; 2]; CHUNK_FRAMES]) -> Result<(), String> {
-        let control = self.ctl.clone();
-        let mut ctl = control.lock();
-        let pan = pan_matrix(self.mono, ctl.pan);
-        for dst in mix.iter_mut() {
-            if self.done || ctl.stop_now {
-                self.done = true;
-                break;
-            }
-            if ctl.paused {
-                continue;
-            }
-            ctl.volume.t += SAMPLE_TIME;
-            if ctl.stop_after_ramp && ctl.volume.done() && ctl.volume.value() <= 0.0 {
-                self.done = true;
-                break;
-            }
-            let Some(s) = self.sample()? else {
-                self.done = true;
-                break;
+}
+#[cfg(target_os = "vita")]
+impl stream_pump::Reader for StreamCursor {
+    fn mono(&self) -> bool { self.mono }
+    fn read(&mut self, out: &mut [[f32;2]]) -> Result<usize,String> {
+        let mut n=0;
+        for dst in out { let Some(value)=self.sample()? else { break }; *dst=value; n+=1; }
+        Ok(n)
+    }
+}
+#[cfg(target_os = "vita")]
+struct StreamSound {
+    pump: stream_pump::Pump, ctl: Arc<Mutex<Control>>, finished: Arc<AtomicBool>, done: bool,
+}
+#[cfg(target_os = "vita")]
+impl StreamSound {
+    fn spawn(path: PathBuf, loop_range: Option<(u64,u64)>, ctl: Arc<Mutex<Control>>,
+        finished: Arc<AtomicBool>, start: usize, looping: bool)
+        -> Result<Self,(String,Arc<AtomicBool>)>
+    {
+        let pump=stream_pump::Pump::spawn(move || StreamCursor::open(path,loop_range,start,looping))
+            .map_err(|error|(error,finished.clone()))?;
+        Ok(Self { pump,ctl,finished,done:false })
+    }
+    fn process_frames(&mut self, mix: &mut [[f32;2];CHUNK_FRAMES]) -> Result<(),String> {
+        let control=self.ctl.clone(); let mut ctl=control.lock();
+        let mut matrix = None;
+        for (index, dst) in mix.iter_mut().enumerate() {
+            if self.done || ctl.stop_now { self.done=true; break; }
+            if ctl.paused { continue; }
+            let (sample,mono)=match self.pump.sample() {
+                stream_pump::Poll::Sample(sample,mono)=>(sample,mono),
+                stream_pump::Poll::Pending=>{
+                    // A stopped/fading pending channel must not live forever
+                    // merely because its file worker has not produced PCM yet.
+                    if ctl.stop_after_ramp {
+                        ctl.volume.t += SAMPLE_TIME * (CHUNK_FRAMES - index) as f64;
+                        if ctl.volume.done() && ctl.volume.value() <= 0.0 { self.done = true; }
+                    }
+                    break; // other tracks still mix this block
+                },
+                stream_pump::Poll::End=>{self.done=true;break;},
+                stream_pump::Poll::Failed(error)=>return Err(error),
             };
-            let v = ctl.curve.apply(ctl.volume.value() * ctl.gain);
-            dst[0] += (s[0] * pan[0][0] + s[1] * pan[1][0]) * v;
-            dst[1] += (s[0] * pan[0][1] + s[1] * pan[1][1]) * v;
+            ctl.volume.t+=SAMPLE_TIME;
+            if ctl.stop_after_ramp && ctl.volume.done() && ctl.volume.value()<=0.0 {self.done=true;break;}
+            let pan=*matrix.get_or_insert_with(|| pan_matrix(mono,ctl.pan));
+            let v=ctl.curve.apply(ctl.volume.value()*ctl.gain);
+            dst[0]+=(sample[0]*pan[0][0]+sample[1]*pan[1][0])*v;
+            dst[1]+=(sample[0]*pan[0][1]+sample[1]*pan[1][1])*v;
         }
-        if self.done {
-            self.finished.store(true, Ordering::Release);
-        }
+        if self.done { self.finished.store(true,Ordering::Release); }
         Ok(())
     }
 }

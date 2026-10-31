@@ -1,4 +1,5 @@
 #include "image_decode.h"
+#include "perf_audit.h"
 #include "jpeg_hw.h"
 
 #include <limits.h>
@@ -83,7 +84,9 @@ static void *decode_allocate(DecodeMemory *memory, size_t bytes, int pool) {
     memory->allocations = allocation;
     memory->used += charge;
     void *result = (uint8_t *)allocation + ALLOCATION_HEADER;
+    const uint64_t zero_started = kv_perf_begin();
     memset(result, 0, payload);
+    kv_perf_end(KV_PERF_DECODE_WORK_ZERO, zero_started, payload, 0);
     return result;
 }
 
@@ -136,7 +139,9 @@ static int allocate_pixels(DecodeMemory *memory, uint32_t length) {
         return 0;
     }
     memory->used += length;
+    const uint64_t started = kv_perf_begin();
     memset(memory->pixels, 0, length);
+    kv_perf_end(KV_PERF_DECODE_ZERO, started, length, 0);
     return 1;
 }
 
@@ -175,6 +180,7 @@ static void png_read_memory(png_structp png, png_bytep output, size_t bytes) {
     PngDecode *context = png_get_io_ptr(png);
     if (bytes > context->length - context->offset) png_error(png, "Truncated PNG");
     memcpy(output, context->encoded + context->offset, bytes);
+    kv_perf_count(KV_PERF_PNG_INPUT_COPY, bytes);
     context->offset += bytes;
 }
 
@@ -183,12 +189,13 @@ static uint32_t read_be32(const uint8_t *bytes) {
            ((uint32_t)bytes[2] << 8) | bytes[3];
 }
 
-static int32_t decode_png(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba) {
+static int32_t decode_png_inner(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba, int gray_only) {
     /* Classify oversized IHDRs before libpng's generic user-limit error. */
     KvDecodedImage preliminary = {0};
     if (length >= 24 && memcmp(encoded + 12, "IHDR", 4) == 0 &&
         image_shape(read_be32(encoded + 16), read_be32(encoded + 20), &preliminary) != KV_IMAGE_OK)
         return KV_IMAGE_DIMENSIONS;
+    if (gray_only) { preliminary.stride = preliminary.width; preliminary.length /= 4; }
     if (preliminary.length > max_rgba) return KV_IMAGE_BUDGET;
     PngDecode *const context = calloc(1, sizeof(*context));
     if (context == NULL) return KV_IMAGE_MEMORY;
@@ -218,22 +225,32 @@ static int32_t decode_png(const uint8_t *encoded, uint32_t length, KvDecodedImag
     context->memory.error = image_shape(png_get_image_width(context->png, context->info),
         png_get_image_height(context->png, context->info), &context->shape);
     if (context->memory.error != KV_IMAGE_OK) goto cleanup;
+    if (gray_only) { context->shape.stride = context->shape.width; context->shape.length /= 4; }
     if (context->shape.length > max_rgba) { context->memory.error = KV_IMAGE_BUDGET; goto cleanup; }
     int color = png_get_color_type(context->png, context->info);
     int depth = png_get_bit_depth(context->png, context->info);
     int has_transparency = png_get_valid(context->png, context->info, PNG_INFO_tRNS) != 0;
+    if (gray_only && color != PNG_COLOR_TYPE_GRAY && color != PNG_COLOR_TYPE_GRAY_ALPHA) {
+        context->memory.error = KV_IMAGE_UNSUPPORTED; goto cleanup;
+    }
     if (depth == 16) png_set_strip_16(context->png);
     if (color == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(context->png);
     if (color == PNG_COLOR_TYPE_GRAY && depth < 8) png_set_expand_gray_1_2_4_to_8(context->png);
-    if (has_transparency) png_set_tRNS_to_alpha(context->png);
-    if (color == PNG_COLOR_TYPE_GRAY || color == PNG_COLOR_TYPE_GRAY_ALPHA)
-        png_set_gray_to_rgb(context->png);
-    if ((color & PNG_COLOR_MASK_ALPHA) == 0 && !has_transparency)
-        png_set_add_alpha(context->png, 255, PNG_FILLER_AFTER);
+    if (gray_only) {
+        // RULE shaders consume only .r. Ignore PNG alpha exactly as the old RGBA
+        // upload + .r sampling did; leave grayscale sample/gamma values unchanged.
+        if (color == PNG_COLOR_TYPE_GRAY_ALPHA) png_set_strip_alpha(context->png);
+    } else {
+        if (has_transparency) png_set_tRNS_to_alpha(context->png);
+        if (color == PNG_COLOR_TYPE_GRAY || color == PNG_COLOR_TYPE_GRAY_ALPHA)
+            png_set_gray_to_rgb(context->png);
+        if ((color & PNG_COLOR_MASK_ALPHA) == 0 && !has_transparency)
+            png_set_add_alpha(context->png, 255, PNG_FILLER_AFTER);
+    }
     int passes = png_set_interlace_handling(context->png);
     png_read_update_info(context->png, context->info);
     if (png_get_bit_depth(context->png, context->info) != 8 ||
-        png_get_channels(context->png, context->info) != 4 ||
+        png_get_channels(context->png, context->info) != (gray_only ? 1 : 4) ||
         png_get_rowbytes(context->png, context->info) != context->shape.stride) {
         context->memory.error = KV_IMAGE_UNSUPPORTED;
         goto cleanup;
@@ -447,7 +464,7 @@ static void jpeg_source_skip(j_decompress_ptr jpeg, long bytes) {
     jpeg->src->bytes_in_buffer -= (size_t)bytes;
 }
 
-static int32_t decode_jpeg(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba) {
+static int32_t decode_jpeg_inner(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba) {
     JpegDecode *const context = calloc(1, sizeof(*context));
     if (context == NULL) return KV_IMAGE_MEMORY;
     context->memory.used = sizeof(*context) + JPEG_BOOTSTRAP_RESERVE;
@@ -536,6 +553,18 @@ cleanup:
     return result;
 }
 
+static int32_t decode_png(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba, int gray_only) {
+    const uint64_t started = kv_perf_begin();
+    const int result = decode_png_inner(encoded, length, out, max_rgba, gray_only);
+    kv_perf_end(KV_PERF_PNG_DECODE, started, result == 0 ? out->length : 0, result != 0);
+    return result;
+}
+static int32_t decode_jpeg(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba) {
+    const uint64_t started = kv_perf_begin();
+    const int result = decode_jpeg_inner(encoded, length, out, max_rgba);
+    kv_perf_end(KV_PERF_JPEG_SOFTWARE_DECODE, started, result == 0 ? out->length : 0, result != 0);
+    return result;
+}
 int32_t kv_image_decode(const uint8_t *encoded, uint32_t length, KvDecodedImage *out) {
     return kv_image_decode_bounded(encoded, length, out, KV_IMAGE_WIDTH_LIMIT * KV_IMAGE_HEIGHT_LIMIT * 4U);
 }
@@ -547,7 +576,7 @@ int32_t kv_image_decode_bounded(const uint8_t *encoded, uint32_t length, KvDecod
     if (encoded == NULL || length == 0 || max_rgba == 0) return KV_IMAGE_ARGUMENT;
     if (length > KV_IMAGE_ENCODED_LIMIT) return KV_IMAGE_INPUT_LIMIT;
     if (length >= sizeof(signature) && memcmp(encoded, signature, sizeof(signature)) == 0) {
-        int32_t rc = decode_png(encoded, length, out, max_rgba);
+        int32_t rc = decode_png(encoded, length, out, max_rgba, 0);
         kv_image_record_software(1, rc == KV_IMAGE_OK); return rc;
     }
     if (length >= 2 && encoded[0] == 0xff && encoded[1] == 0xd8) {
@@ -556,6 +585,17 @@ int32_t kv_image_decode_bounded(const uint8_t *encoded, uint32_t length, KvDecod
         kv_image_record_software(0, rc == KV_IMAGE_OK); return rc;
     }
     return KV_IMAGE_FORMAT;
+}
+
+int32_t kv_image_decode_gray_bounded(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_bytes) {
+    static const uint8_t signature[] = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+    if (out == NULL || out->pixels != NULL) return KV_IMAGE_ARGUMENT;
+    memset(out, 0, sizeof(*out));
+    if (encoded == NULL || length == 0 || max_bytes == 0) return KV_IMAGE_ARGUMENT;
+    if (length > KV_IMAGE_ENCODED_LIMIT) return KV_IMAGE_INPUT_LIMIT;
+    if (length < sizeof(signature) || memcmp(encoded, signature, sizeof(signature)) != 0) return KV_IMAGE_FORMAT;
+    int32_t rc = decode_png(encoded, length, out, max_bytes, 1);
+    kv_image_record_software(1, rc == KV_IMAGE_OK); return rc;
 }
 
 void kv_image_free(KvDecodedImage *image) {

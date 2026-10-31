@@ -7,6 +7,7 @@ pub mod bntx;
 pub mod bntx_decode;
 pub mod cff;
 pub mod compact;
+pub mod gxt_decode;
 pub mod mzp;
 pub mod mzx;
 pub mod nx;

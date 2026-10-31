@@ -9,7 +9,7 @@
 #include <float.h>
 
 enum { TEST_VERTEX_FLOATS = 28, TEST_VERTEX_LIMIT = 32760,
-    TEST_SHADER_COUNT = 16, TEST_BLEND_COUNT = 9 };
+    TEST_SHADER_COUNT = 26, TEST_BLEND_COUNT = 10 };
 typedef struct Input { KvEffectVertex v[3]; float p[8]; } Input;
 static unsigned cases, checks, failures, accepted_cases, rejected_cases;
 
@@ -79,9 +79,15 @@ static void preconditions(void) {
     }
     const uint32_t bad_shader[] = {TEST_SHADER_COUNT, UINT32_MAX};
     const uint32_t bad_blend[] = {TEST_BLEND_COUNT, UINT32_MAX};
+    check("precondition.reserved-text-capability.24", in.v, sizeof(in.v), in.p,
+        3, 24, 5, KV_BAD_ARGUMENT, 0);
+    /* Keep this fixture admissible to every later plain-source guard so the
+     * enum mutant exposes the boundary itself. Blend retains the old fixture. */
+    Input plain = fresh();
+    plain.p[1] = 0; plain.p[4] = -1; plain.p[6] = 0; plain.p[7] = 0;
     for (unsigned i = 0; i < 2; ++i) {
         snprintf(name, sizeof(name), "precondition.shader.%u", bad_shader[i]);
-        check(name, in.v, sizeof(in.v), in.p, 3, bad_shader[i], 0, KV_BAD_ARGUMENT, 0);
+        check(name, plain.v, sizeof(plain.v), plain.p, 3, bad_shader[i], 5, KV_BAD_ARGUMENT, 0);
         snprintf(name, sizeof(name), "precondition.blend.%u", bad_blend[i]);
         check(name, in.v, sizeof(in.v), in.p, 3, 0, bad_blend[i], KV_BAD_ARGUMENT, 0);
     }
@@ -89,9 +95,85 @@ static void preconditions(void) {
      * negative enum tests cannot pass through blanket rejection. */
     for (uint32_t shader = 0; shader < TEST_SHADER_COUNT; ++shader)
         for (uint32_t blend = 0; blend < TEST_BLEND_COUNT; ++blend) {
+            if (shader == 24) continue; /* checked capability, never a shader */
+            if (effect_fetch_shader(shader) && blend != 5) continue;
+            in = fresh();
+            in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : 1.0f;
+            if (shader == 22) { memset(in.p, 0, sizeof(in.p)); }
+            else if (shader >= 19) {
+                in.p[1] = 0; in.p[4] = -1; in.p[7] = shader == 19 ? 1 : 0;
+                if (shader == 23) in.p[5] = 0;
+            }
             snprintf(name, sizeof(name), "valid.shader.%u.blend.%u", shader, blend);
             check(name, in.v, sizeof(in.v), in.p, 3, shader, blend, 0, 0);
         }
+    in = fresh();
+    in.p[0] = 1.0f;
+    check("invalid.fetch.hardware-alpha-double-blend", in.v, sizeof(in.v), in.p, 3, 17, 0, KV_BAD_ARGUMENT, 0);
+    check("invalid.fetch19.operation-mismatch", in.v, sizeof(in.v), in.p, 3, 18, 5, KV_BAD_ARGUMENT, 0);
+    in.p[0] = 19.0f;
+    check("valid.fetch19.opaque", in.v, sizeof(in.v), in.p, 3, 18, 5, 0, 0);
+    in.p[0] = 1.0f;
+    for (uint32_t shader = 19; shader <= 25; ++shader) {
+        if (shader == 22 || shader == 24) continue;
+        Input base = fresh();
+        base.p[0] = shader == 19 || shader == 23 ? 19 : shader == 20 ? 11 : shader == 25 ? 2 : 13;
+        base.p[1] = 0; base.p[4] = -1; base.p[7] = shader == 19 ? 1 : 0;
+        if (shader == 23) base.p[5] = 0;
+        snprintf(name, sizeof(name), "valid.specialised.%u", shader);
+        check(name, base.v, sizeof(base.v), base.p, 3, shader, 5, 0, 0);
+        for (unsigned field = 0; field < 5; ++field) {
+            Input bad = base;
+            const unsigned parameter[5] = {0, 1, 4, 6, 7};
+            bad.p[parameter[field]] = field == 0 ? 1 : field == 2 ? 0 : field == 4 ? 1-base.p[7] : shader == 23 ? 2 : 1;
+            snprintf(name, sizeof(name), "invalid.specialised.%u.param.%u", shader, parameter[field]);
+            check(name, bad.v, sizeof(bad.v), bad.p, 3, shader, 5, KV_BAD_ARGUMENT, 0);
+        }
+        for (unsigned field = 0; field < 20; ++field) {
+            Input bad = base;
+            // Equal haze on every vertex bypasses the old equality guard, so
+            // these cases exercise the new no-effect contract itself.
+            for (unsigned vertex = 0; vertex < 3; ++vertex) {
+                float floats[28]; memcpy(floats, &bad.v[vertex], sizeof(floats));
+                floats[8+field] = 0.1f;
+                if (field == 16) floats[26] = 4; // otherwise valid active soft LUT
+                memcpy(&bad.v[vertex], floats, sizeof(floats));
+            }
+            snprintf(name, sizeof(name), "invalid.specialised.%u.haze-soft.%u", shader, field);
+            check(name, bad.v, sizeof(bad.v), bad.p, 3, shader, 5, KV_BAD_ARGUMENT, 0);
+        }
+    }
+    Input ps19 = fresh(); ps19.p[0] = 19; ps19.p[1] = 0; ps19.p[4] = -1; ps19.p[5] = 0;
+    for (unsigned fill = 0; fill < 2; ++fill) for (unsigned noalpha = 0; noalpha < 2; ++noalpha) {
+        Input good = ps19; good.p[1] = fill; good.p[6] = noalpha;
+        snprintf(name, sizeof(name), "valid.ps19-source.fill.%u.noalpha.%u", fill, noalpha);
+        check(name, good.v, sizeof(good.v), good.p, 3, 23, 5, 0, 0);
+    }
+    const float invalid_source_flags[] = {-1, 0.5f, 1.5f, 2};
+    for (unsigned field = 0; field < 2; ++field) for (unsigned value = 0; value < 4; ++value) {
+        Input bad = ps19; bad.p[field ? 6 : 1] = invalid_source_flags[value];
+        snprintf(name, sizeof(name), "invalid.ps19-source.flag.%u.value.%u", field, value);
+        check(name, bad.v, sizeof(bad.v), bad.p, 3, 23, 5, KV_BAD_ARGUMENT, 0);
+    }
+    Input bad_rule_flags = ps19; bad_rule_flags.p[5] = 8;
+    check("invalid.ps19-source.rule-flags", bad_rule_flags.v, sizeof(bad_rule_flags.v), bad_rule_flags.p, 3, 23, 5, KV_BAD_ARGUMENT, 0);
+    Input sprite = fresh(); memset(sprite.p, 0, sizeof(sprite.p));
+    for (unsigned field = 0; field < 8; ++field) {
+        Input bad = sprite; bad.p[field] = 1;
+        snprintf(name, sizeof(name), "invalid.plain-sprite.param.%u", field);
+        check(name, bad.v, sizeof(bad.v), bad.p, 3, 22, 0, KV_BAD_ARGUMENT, 0);
+    }
+    for (unsigned field = 0; field < 20; ++field) {
+        Input bad = sprite;
+        for (unsigned vertex = 0; vertex < 3; ++vertex) {
+            float values[28]; memcpy(values, &bad.v[vertex], sizeof(values));
+            values[8+field] = 0.1f; if (field == 16) values[26] = 4;
+            memcpy(&bad.v[vertex], values, sizeof(values));
+        }
+        snprintf(name, sizeof(name), "invalid.plain-sprite.haze-soft.%u", field);
+        check(name, bad.v, sizeof(bad.v), bad.p, 3, 22, 0, KV_BAD_ARGUMENT, 0);
+    }
+    in = fresh();
     KvEffectVertex *large = calloc(TEST_VERTEX_LIMIT, sizeof(*large));
     if (!large) abort();
     const size_t bytes = TEST_VERTEX_LIMIT * sizeof(*large);

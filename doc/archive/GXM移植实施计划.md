@@ -52,7 +52,7 @@ flowchart TD
 
 普通源图 35,007 张：PNG 31,527、JPEG 3,480，每张最多 960×540。外部音频 9,470 个 Ogg **Opus**，48 kHz；影片为 logo、英语片头、澄空片头共 3 个 MP4。运行时两张 960×1080 双语纵向条带，每语言视图仍为 960×540；不能误认为单语言高清背景或在未核对索引时直接删除。
 
-最初审计为 [补充工具清单](../vita-review-toolchain-inventory.json) 和 [审计日志](../logs/vita-review-toolchain-inventory.log)，其中未发现着色器工具的结论仅代表当时搜索范围。当前实际构建以 [平台构建收据](../vita-platform-build.json)、[基础 GXP 收据](../vita-shaders-build.json) 和 [完整特效 GXP 收据](../vita-effects-shaders-build.json) 为准。WSL 为 `pocket-ubuntu`，SDK 为 `/opt/vitasdk`。
+最初审计为 [补充工具清单](../vita-review-toolchain-inventory.json) 和 [审计日志](../logs/vita-review-toolchain-inventory.log)，其中未发现着色器工具的结论仅代表当时搜索范围。当前实际构建以 [平台构建收据](../vita-platform-build.json)、[基础 GXP 收据](../vita-shaders-build.json) 和 [完整特效 GXP 收据](../vita-effects-shaders-build.json) 为准。WSL 为 `${WSL_DISTRO}`，SDK 为 `${VITASDK}`。
 
 | 项目 | 2026-10-27 本机观察 | 实施动作 |
 | --- | --- | --- |
@@ -62,11 +62,11 @@ flowchart TD
 | CMake / Ninja / cargo-vita | 已安装；现有脚本使用 CMake STATIC 和 Rust/Cargo 最终链接 | 不建立第二套 C 可执行程序链接 |
 | 默认 nightly | rustc 1.100.0-nightly，未带 rust-src | 不用浮动 nightly 交付 |
 | nightly-2026-05-28 | rustc 1.98.0-nightly，匹配 rust-src；已实际 build-std 和完整游戏 ARM 链接 | 当前脚本固定该日期工具链；链接通过不代表游戏流程通过 |
-| VITASDK 环境变量 | 原审计 shell 未设置；当前构建脚本显式设置 | `/opt/vitasdk`，记录环境和最终链接 map |
+| VITASDK 环境变量 | 原审计 shell 未设置；当前构建脚本显式设置 | `${VITASDK}`，记录环境和最终链接 map |
 | GXM / Display / Ctrl / AvPlayer / Audio stub | 已安装；完整游戏已链接 GXM/Display/输入/线程/文件/AudioOut/AvPlayer | AudioOut 使用 `libSceAudio_stub.a`；[10:27 UTC 三片 source-view 有限探针（原证据目录 .work 已清理） 已通过 Vita3K，仍缺完整片头、听感及真机验收 |
 | libpng / libjpeg / zlib / libopusfile / libopus | 已实际静态链接，PNG/JPEG 与 Opus 有限定探针结果 | ABI、错误释放、预算和输出范围见各项收据 |
 | VitaGL / vitaShaRK / SceShaccCgExt 等静态库 | 已存在 | 开发路径；构建选项、运行依赖尚待探针 |
-| psp2cgc | `D:/unity/PSVITA/sdk/host_tools/bin/psp2cgc.exe`，SDK 3.5.0 build 13276，可运行 | 已编译基础 VS/FS 和完整 1 VS+15 FS；记录固定参数/哈希，不复制或分发 Sony 编译器/模块 |
+| psp2cgc | `${SDK_HOST_TOOLS}/psp2cgc.exe`，SDK 3.5.0 build 13276，可运行 | 已编译基础 VS/FS 和完整 1 VS+15 FS；记录固定参数/哈希，不复制或分发 Sony 编译器/模块 |
 
 原计划概括“rust-src 缺失”过于宽泛，现纠正为默认 nightly 缺失、日期固定工具链已有且已用于交叉构建。平台/渲染库、字体/混音/存档等探针和完整游戏入口均已有 ARM 链接证据；各探针的通过范围仍须与完整游戏实际运行区分。
 
@@ -223,7 +223,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-vita.ps1 -Mode effects
 
 ## 7. 构建、部署与完成定义
 
-现有 [tools/build-vita.ps1](../../tools/build-vita.ps1) 在 `pocket-ubuntu` 调用 [tools/build-vita.sh](../../tools/build-vita.sh)，固定工具链、离线 GXP、C STATIC，由 Rust 唯一链接 ELF→VELF→SELF，再生成 SFO/VPK 并核验导入/属性/哈希。现有模式为 platform/gxm/image/effects/audio/pipeline/text/audio-mixer/game/movie/compressed/ui-color，DEV TITLE_ID 为 KNIF00002–KNIF00013，输出 `.work/vita/<mode>`。game 是普通 Game/Ui，最新包上限 **7,200 帧**；movie/compressed/ui-color 是各自边界的独立探针。模拟器用全新 DEV profile 和 NTFS junction 引用当前 540p/实验资源，启动前重新核对输入哈希。最新保存/恢复使用独立内存计数诊断模拟器、Vulkan 和 memory-mapping disabled；构建、显式环境变量及命令见 [复现入口](存读档与模拟器内存调查.md#6-复现入口)。原版模拟器保留，普通释放计数修正不等于整套模拟器通过；宿主正常退出、像素及真机门槛仍保留。
+现有 [tools/build-vita.ps1](../../tools/build-vita.ps1) 在 `${WSL_DISTRO}` 调用 [tools/build-vita.sh](../../tools/build-vita.sh)，固定工具链、离线 GXP、C STATIC，由 Rust 唯一链接 ELF→VELF→SELF，再生成 SFO/VPK 并核验导入/属性/哈希。现有模式为 platform/gxm/image/effects/audio/pipeline/text/audio-mixer/game/movie/compressed/ui-color，DEV TITLE_ID 为 KNIF00002–KNIF00013，输出 `.work/vita/<mode>`。game 是普通 Game/Ui，最新包上限 **7,200 帧**；movie/compressed/ui-color 是各自边界的独立探针。模拟器用全新 DEV profile 和 NTFS junction 引用当前 540p/实验资源，启动前重新核对输入哈希。最新保存/恢复使用独立内存计数诊断模拟器、Vulkan 和 memory-mapping disabled；构建、显式环境变量及命令见 [复现入口](存读档与模拟器内存调查.md#6-复现入口)。原版模拟器保留，普通释放计数修正不等于整套模拟器通过；宿主正常退出、像素及真机门槛仍保留。
 
 当前 Vita cfg、完整应用入口和 DEV 探针已直接调用 GXM；最终继续使用该原生路线，缺 shader、组件或资源不符就明确失败。VitaGL 只保留为可选开发方案，当前不是 DEV 构建依赖。部署检查版本/空间、复制后验证清单，相同哈希资源跳过，不制造第二套完整素材。M5 的最终 TITLE_ID 和正式交付须按原验收范围复核，不能把 DEV 探针或有限帧游戏运行当作正式游戏包验收。
 

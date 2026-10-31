@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import platform
 import re
 import shutil
 import subprocess
@@ -37,16 +39,25 @@ def main():
         dest = run / "sources" / p.relative_to(ROOT)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(p, dest)
-    wsl_root = subprocess.check_output(["wsl.exe", "-d", "pocket-ubuntu", "--", "wslpath",
-                                        "-a", ROOT.as_posix()], text=True).strip()
-    command = ["wsl.exe", "-d", "pocket-ubuntu", "--", "env",
-               "PATH=/root/.cargo/bin:/usr/bin:/bin", "CARGO_TARGET_DIR=/root/.cache/knife-vita",
-               "cargo", "+nightly-2026-05-28", "test", "--manifest-path",
-               wsl_root + "/knife/Cargo.toml", "--offline", "--locked", "-p", "knife-render"]
-    result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    env = os.environ.copy()
+    env["PATH"] = str(Path(env.get("CARGO_HOME", str(Path.home() / ".cargo"))) / "bin") + os.pathsep + env.get("PATH", "")
+    runner = []
+    project_path = ROOT.as_posix()
+    if platform.system() == "Windows":
+        runner = ["wsl.exe"]
+        if env.get("KNIFE_WSL_DISTRO"):
+            runner += ["-d", env["KNIFE_WSL_DISTRO"]]
+        project_path = subprocess.check_output(runner + ["--", "wslpath", "-a", str(ROOT)], text=True).strip()
+        runner += ["--", "bash", "-lc", 'export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"; exec "$@"', "knife-render-tests"]
+    command = runner + ["cargo", "+nightly-2026-05-28", "test", "--manifest-path",
+                        project_path + "/knife/Cargo.toml", "--locked", "-p", "knife-render"]
+    if env.get("KNIFE_VITA_OFFLINE") == "1":
+        command.append("--offline")
+    result = subprocess.run(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     log = run / "output.log"
     log.write_bytes(result.stdout)
     public_log = ROOT / "doc/logs/vita/270p-render-host.log"
+    public_log.parent.mkdir(parents=True, exist_ok=True)
     public_log.write_bytes(result.stdout)
     output = result.stdout.decode("utf-8", errors="replace")
     print(output)
@@ -60,8 +71,7 @@ def main():
                "command": command, "result": "PASS", "exit_code": result.returncode,
                "passed": sum(int(m[1]) for m in matches), "failures": 0, "ignored": 0,
                "run_directory": run.relative_to(ROOT).as_posix(),
-               "compiler": subprocess.check_output(["wsl.exe", "-d", "pocket-ubuntu", "--",
-                   "/root/.cargo/bin/rustc", "+nightly-2026-05-28", "--version"], text=True).strip(),
+               "compiler": subprocess.check_output(runner + ["rustc", "+nightly-2026-05-28", "--version"], env=env, text=True).strip(),
                "source_files": records, "source_files_unchanged_during_test": True,
                "source_snapshots": [identity(run / "sources" / p.relative_to(ROOT)) for p in sorted(sources)],
                "log": identity(public_log), "retained_log": identity(log),

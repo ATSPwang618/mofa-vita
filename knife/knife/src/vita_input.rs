@@ -151,6 +151,7 @@ impl Input {
         let mut pad = CtrlData::default();
         // SAFETY: pointers refer to initialized, properly aligned repr(C) buffers; count is one.
         let status = unsafe { sceCtrlPeekBufferPositive(0, &mut pad, 1) };
+        crate::vita_watchdog::input(pad.buttons, status);
         anyhow::ensure!(status == 1, "sceCtrlPeekBufferPositive: {status:#x}");
         self.buttons = pad.buttons;
         let axis = |v: u8| -> i32 { (v as i32 - 128).clamp(-128, 127) };

@@ -1,5 +1,5 @@
 [workspace]
-members = ["knife-core", "kdu", "knife-render", "knife-render-api", "knife-audio", "knife", "knife-platform-vita"]
+members = ["knife-core", "knife-perf", "kdu", "knife-render", "knife-render-api", "knife-audio", "knife", "knife-platform-vita"]
 resolver = "2"
 
 [workspace.dependencies]

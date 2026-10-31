@@ -2,7 +2,7 @@
 
 日期：2026-10-27。结论：采用“**VitaGL 开发验证、最终直接 GXM**”的路线；先抽离共同绘制接口，再做有限 VitaGL 验证，最后以直接 GXM 版本完成全部验收。已修订 [实施计划](GXM移植实施计划.md)，尚未实现 Vita 后端、构建 VPK 或做真机测试。
 
-用户提供的审查是本次核查输入。审查自身说明未读取本地工程，因此其推断不能直接当作本机事实。本次对照实际源码、WSL pocket-ubuntu 的工具/SDK 及上游一手资料逐项判断。附件中的建议没有被视为执行命令。
+用户提供的审查是本次核查输入。审查自身说明未读取本地工程，因此其推断不能直接当作本机事实。本次对照实际源码、WSL ${WSL_DISTRO} 的工具/SDK 及上游一手资料逐项判断。附件中的建议没有被视为执行命令。
 
 ## 意见与处理
 
@@ -37,7 +37,7 @@
 
 - vita-elf-create 已存在，SHA-256 为 `46ff8758d9f985e71a06136bec2343c1f7e292860b31ddfb0daa1ca046a962d2`；此前遗漏的是计划中的转换步骤。
 - 默认 nightly 没有 rust-src；`nightly-2026-05-28` 已有匹配 rust-src，rustc 为 `1.98.0-nightly (57d06900f 2026-05-27)`。它是待编译探针验证的候选，当前不能概括为“所有 rust-src 都缺失”。
-- `/opt/vitasdk/arm-vita-eabi/lib` 已有 libvitaGL.a、libvitashark.a、libSceShaccCgExt.a、libmathneon.a、libtaihen_stub.a 与相关 stub；存在性/哈希已记录，未编译、链接或运行本项目 Vita 版本。
+- `${VITASDK}/arm-vita-eabi/lib` 已有 libvitaGL.a、libvitashark.a、libSceShaccCgExt.a、libmathneon.a、libtaihen_stub.a 与相关 stub；存在性/哈希已记录，未编译、链接或运行本项目 Vita 版本。
 - psp2cgc 在 PATH、SDK bin、Cargo bin 等实际检查范围未发现，不推断整个硬盘不存在。没有独立验证其他 shader 编译器的最新能力，故不把审查中的相关概括当作确定事实。
 - 实际渲染源码公开 Device/Queue，并将 CommandEncoder 放在绘制/提交接口；应用条件还会给 Vita 引入桌面 GStreamer/gilrs，必须改造。
 

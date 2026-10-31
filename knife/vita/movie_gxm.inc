@@ -34,15 +34,16 @@ int32_t kv_gxm_movie_texture_rebind(KvGxm *g, KvGxmTexture *t,
         || t->width != width || t->height != height) return KV_BAD_ARGUMENT;
     /* A previous movie frame might still be sampled by commands submitted
        since present; finish before replacing the borrowed pointer. */
-    sceGxmFinish(g->context);
+    perf_finish(g->context, KV_PERF_FINISH_MOVIE);
     SceGxmTexture next = t->descriptor;
     int rc = movie_descriptor(&next, frame, width, height);
     if (rc < 0) return fail(g, "movie YVU420P2 rebind", rc);
     t->descriptor = next;
+    t->last_use = t->last_read = t->last_write = 0;
     return 0;
 }
 int32_t kv_gxm_movie_gpu_finish(KvGxm *g) {
     if (!active(g) || g->scene_open) return KV_STATE;
-    sceGxmFinish(g->context);
+    perf_finish(g->context, KV_PERF_FINISH_MOVIE);
     return 0;
 }

@@ -27,7 +27,9 @@ fn p95_is_a_bucket_bound_and_long_outliers_are_not_discarded() {
     for _ in 0..4 { window.record(30_000, 0, 0, 33_333); }
     window.record(2_000_000, 0, 0, 2_000_000);
     let sample = window.take();
+    assert_eq!(sample.p50_work_upper_us, 2_000);
     assert_eq!(sample.p95_work_upper_us, 2_000);
+    assert_eq!(sample.p99_work_upper_us, 33_333);
     assert_eq!(sample.max_work_us, 2_000_000);
     assert_eq!(sample.over_16ms, 5);
     let mut single = FrameWindow::default();

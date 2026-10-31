@@ -1,11 +1,9 @@
 //! Windowless native Vita entry using the game's ordinary Game/Ui state machines.
-use crate::{assets, game, motion, save, savedata, ui, vita_input::Input};
+use crate::{assets, game, motion, save, savedata, ui, vita_input::Input, vita_watchdog as watchdog};
 use anyhow::{Context, Result};
 use knife_platform_vita::{asset_check, boot_error, gxm::Gxm};
 use knife_render::Renderer;
 use std::{
-    fs::File,
-    io::{BufWriter, Write},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -44,58 +42,105 @@ const TITLE_ID: &str = match option_env!("KNIFE_VITA_TITLE_ID") {
     None => "KNIF00270",
 };
 
-// Optional hardware measurement: one file handle, fixed histogram, one buffered
-// aggregate every five seconds. Disabled runs do not sample or format per frame.
+// Console-only measurement, fixed histogram and bounded detail every five seconds.
+// Disabled runs do not take the additional snapshots or format samples.
 struct PerfLog {
-    file: BufWriter<File>,
     started: Instant,
     window: Instant,
     frames: knife_platform_vita::frame_timing::FrameWindow,
-    bytes: usize,
+    before: crate::vita_audit::FrameProbe,
+    classes: crate::vita_audit::FrameClasses,
+    pending_class: Option<crate::vita_audit::SlowFrame>,
+    class_started: Instant,
+    worst: Option<crate::vita_audit::SlowFrame>,
+    previous_console_us: u64,
+    snapshot_us: u64,
 }
 impl PerfLog {
-    const MAX_BYTES: usize = 256 * 1024;
-    fn open(scene_mode: &str) -> std::io::Result<Option<Self>> {
-        let Some(flag) = knife_platform_vita::perf_switch::find_enabled(Path::new(PERF_ROOT))?
-            else { return Ok(None); };
-        let file = File::create(format!("{PERF_ROOT}/performance.log"))?;
+    fn open() -> std::io::Result<Option<Self>> {
+        if option_env!("KNIFE_VITA_QUIET") == Some("1") { return Ok(None); }
+        if !knife_platform_vita::perf_switch::console_enabled(Path::new(PERF_ROOT),
+            option_env!("KNIFE_PERF_CONSOLE") == Some("1"))? { return Ok(None); }
+        let (scene, canvas) = knife_render::performance_dimensions();
+        let profile = if cfg!(feature = "assets-540p") { "540p-native-unorm-v2" } else { "270p-v1" };
+        let quoted = |value: &str| { let mut out = String::new(); knife_perf::json_string(&mut out, value); out };
         // Read the loader-visible heap/stack sizes: a zero here proves a constant
         // was dropped by --gc-sections, which no build receipt can catch.
         let memory = knife_platform_vita::runtime_memory();
-        let header = format!(concat!("{{\"kind\":\"header\",\"schema\":2,\"guest_renderer\":\"direct GXM\",",
+        let header = format!(concat!("{{\"kind\":\"header\",\"schema\":3,\"guest_renderer\":\"direct GXM\",",
             "\"newlib_heap_bytes\":{},\"libc_heap_bytes\":{},\"main_stack_bytes\":{},",
             "\"main_priority\":{},",
-            "\"build_tag\":\"{}\",\"arm_mhz\":{},\"bus_mhz\":{},\"gpu_mhz\":{},",
-            "\"clock_rc\":[{},{},{},{}],\"scene_divisor\":{},\"scene_mode\":\"{}\",",
-            "\"ui_tex_error\":\"{}\",",
-            "\"title_id\":\"{}\",\"profile\":\"540p-native-v1\",\"flag\":\"{}\",",
-            "\"scene_size\":[960,540],\"composite_size\":[960,540],",
+            "\"build_tag\":{},\"arm_mhz\":{},\"bus_mhz\":{},\"gpu_mhz\":{},",
+            "\"clock_rc\":[{},{},{},{}],\"scene_divisor\":{},\"scene_mode\":{},",
+            "\"ui_tex_error\":{},",
+            "\"title_id\":\"{}\",\"profile\":{},\"asset_manifest_sha256\":{},\"flag\":\"{}\",",
+            "\"scene_size\":[{},{}],\"composite_size\":[{},{}],\"resolution_source\":\"code\",\"color_contract\":\"encoded-unorm8-uchar4\",\"asset_gxt_codec\":9,",
             "\"audio_pcm_pool_bytes\":23040,\"audio_queue_blocks\":4,",
-            "\"audio_block_us\":20000,\"audio_mix_scope\":\"mix render including decode\",",
+            "\"audio_block_us\":20000,\"audio_mix_scope\":\"ready PCM mix; stream IO/decode on independent channels\",",
+            "\"audio_stream_channels\":8,\"audio_stream_queue_blocks\":10,\"audio_stream_pool_blocks\":12,\"audio_stream_pool_ceiling_bytes\":737280,",
             "\"frame_work_excludes_pacer\":true,\"render_is_cpu_submission_including_waits\":true,",
             "\"memory_scope\":\"GXM mappings and separate JPEG temporary CDRAM; excludes Rust and codec heap\",",
             "\"worker_time_scope\":\"archive read plus selected software/hardware decode\",",
             "\"jpeg_hardware_cdram_reserve\":3145728,",
-            "\"image_worker_audio_counters\":\"cumulative u32; wrap possible\",\"interval_ms\":5000,\"max_bytes\":262144}}\n"),
+            "\"image_worker_audio_counters\":\"cumulative u32; wrap possible\",\"interval_ms\":5000,\"sink\":\"sceClibPrintf\",\"audit_schema\":1,\"audit_counter_bits\":64,\"frame_work_excludes_logger\":true}}\n"),
             memory.newlib_heap_bytes, memory.libc_heap_bytes, memory.main_stack_bytes,
-            memory.main_priority, BUILD_TAG, CLOCKS.get().copied().unwrap_or((0, 0, 0)).0,
+            memory.main_priority, quoted(BUILD_TAG), CLOCKS.get().copied().unwrap_or((0, 0, 0)).0,
             CLOCKS.get().copied().unwrap_or((0, 0, 0)).1, CLOCKS.get().copied().unwrap_or((0, 0, 0)).2,
             CLOCK_RC.get().copied().unwrap_or((0, 0, 0, 0)).0, CLOCK_RC.get().copied().unwrap_or((0, 0, 0, 0)).1,
             CLOCK_RC.get().copied().unwrap_or((0, 0, 0, 0)).2, CLOCK_RC.get().copied().unwrap_or((0, 0, 0, 0)).3,
-            knife_render::scene_divisor(), scene_mode,
-            crate::ui::last_atlas_error().unwrap_or_default().replace('"', "'"),
-            TITLE_ID, flag.to_string_lossy());
-        let mut file = BufWriter::with_capacity(4096, file);
-        file.write_all(header.as_bytes())?;
-        file.flush()?;
-        Ok(Some(Self { file, started: Instant::now(), window: Instant::now(),
-            frames: Default::default(), bytes: header.len() }))
+            knife_render::scene_divisor(), quoted("fixed-540p"),
+            quoted(&crate::ui::last_atlas_error().unwrap_or_default()),
+            TITLE_ID, quoted(profile), quoted(knife_platform_vita::audit::ASSET_MANIFEST), "console", scene[0], scene[1], canvas[0], canvas[1]);
+        let header = header.trim_end().strip_suffix('}').expect("header JSON object").to_owned()
+            + &format!(",\"optimization_mask\":{},\"optimizations\":{},\"stage_signature\":\"complete-v1\",\"frame_classes_schema\":1,\"frame_classes_scope\":\"redraw/reuse/other by actual stage events; wall settled at next frame probe boundary; first_frame/last_frame authoritative\",\"named_wait_scope\":\"finish+transfer+batch+display; EndScene separate; copy/draw parent scopes overlap\"}}\n",
+                knife_perf::optimizations::mask(), quoted(&knife_perf::optimizations::names()));
+        let header = header.trim_end().strip_suffix('}').expect("header object").to_owned()
+            + &format!(concat!(",\"logger_transport\":\"bounded-worker-v1\",\"audit_bank_policy\":\"changed-cumulative-v1\",",
+                "\"previous_console_scope\":\"main collect/enqueue; printf is console_worker_last_us\",",
+                "\"language_fixed\":{},\"cache_budgets\":{{\"cpu_source\":{},\"cpu_graded\":{},\"gpu_resource\":{},\"gpu_text\":{},\"gpu_group\":{},\"gpu_total_with_jpeg\":109051904}}}}\n"),
+                if cfg!(feature = "assets-540p") { 2 } else { -1 },
+                knife_perf::memory_budget::CPU_SOURCE_BYTES, knife_perf::memory_budget::CPU_GRADED_BYTES,
+                knife_perf::memory_budget::GPU_RESOURCE_BYTES, knife_perf::memory_budget::GPU_TEXT_BYTES,
+                knife_perf::memory_budget::GPU_GROUP_BYTES);
+        knife_platform_vita::audit::console(&header)?;
+        knife_perf::set_enabled(true);
+        knife_platform_vita::audit::set_enabled(true);
+        Ok(Some(Self { started: Instant::now(), window: Instant::now(), frames: Default::default(),
+            before: Default::default(), classes: Default::default(), pending_class: None,
+            class_started: Instant::now(), worst: None, previous_console_us: 0, snapshot_us: 0 }))
+    }
+    fn begin_frame(&mut self) {
+        let started = Instant::now();
+        if let Some(previous) = self.pending_class.take() {
+            self.classes.record(previous, started.duration_since(self.class_started).as_micros() as u64);
+        }
+        self.class_started = started;
+        self.before = crate::vita_audit::FrameProbe::capture();
+        self.snapshot_us += started.elapsed().as_micros() as u64;
+    }
+    fn finish_startup(&mut self) -> std::io::Result<()> {
+        let started = Instant::now();
+        let batch = knife_platform_vita::audit::ConsoleBatch::begin();
+        crate::vita_audit::emit(0, "startup", None)?;
+        batch.finish()?;
+        self.previous_console_us = started.elapsed().as_micros() as u64;
+        self.window = Instant::now();
+        Ok(())
     }
 
     fn record(&mut self, frame: u64, work: u64, update: u64, render: u64, wall: u64,
         game: &game::Game, renderer: &Renderer) -> std::io::Result<bool> {
         self.frames.record(work, update, render, wall);
+        let snapshot_started = Instant::now();
+        let probe = crate::vita_audit::FrameProbe::capture().delta(self.before);
+        self.snapshot_us += snapshot_started.elapsed().as_micros() as u64;
+        let observed = crate::vita_audit::SlowFrame { frame, scene: game.scene_index,
+            pc: game.current_pc(), work, update, render, probe };
+        if self.worst.is_none_or(|w| work > w.work) { self.worst = Some(observed); }
+        self.pending_class = Some(observed);
         if self.window.elapsed() < Duration::from_secs(5) { return Ok(true); }
+        let console_started = Instant::now();
+        let batch = knife_platform_vita::audit::ConsoleBatch::begin();
         let elapsed = self.window.elapsed().as_millis();
         let sample = self.frames.take();
         let (image, worker) = game.assets.image_performance();
@@ -146,7 +191,8 @@ impl PerfLog {
             "\"jpeg_info_chroma_pitch\":{},\"jpeg_info_color_space\":{},",
             "\"audio_submitted\":{},\"audio_output\":{},\"audio_underruns\":{},\"audio_idle\":{},",
             "\"audio_queue_full\":{},\"audio_peak_queued\":{},\"audio_mix_blocks\":{},",
-            "\"audio_mix_max_us\":{},\"audio_mix_late\":{},\"audio_clipped_samples\":{}}}\n"),
+            "\"audio_mix_max_us\":{},\"audio_mix_late\":{},\"audio_clipped_samples\":{},",
+            "\"p50_work_upper_us\":{},\"p99_work_upper_us\":{},\"previous_console_us\":{},\"probe_snapshot_us\":{}}}\n"),
             self.started.elapsed().as_millis(), elapsed, frame, sample.frames, game.scene_index, game.current_pc(),
             sample.work_us, sample.update_us, sample.render_us, sample.wall_us,
             sample.max_work_us, sample.p95_work_upper_us, sample.over_16ms, sample.over_33ms,
@@ -178,15 +224,27 @@ impl PerfLog {
             codec.last_info_size, codec.last_info_y_pitch, codec.last_info_chroma_pitch,
             codec.last_info_color_space, audio.submitted, audio.output, audio.underruns, audio.idle,
             audio.queue_full, audio.peak_queued, audio.mix_blocks, audio.mix_max_us, audio.mix_late,
-            audio.clipped_samples);
-        if self.bytes + line.len() + 80 > Self::MAX_BYTES {
-            self.file.write_all(b"{\"kind\":\"limit\",\"reason\":\"256 KiB log bound; gameplay continues\"}\n")?;
-            self.file.flush()?;
-            return Ok(false);
-        }
-        self.file.write_all(line.as_bytes())?;
-        self.file.flush()?; // no sync_all and no reopen on the frame path
-        self.bytes += line.len();
+            audio.clipped_samples, sample.p50_work_upper_us, sample.p99_work_upper_us, self.previous_console_us, self.snapshot_us);
+        let transport = knife_platform_vita::audit::console_stats();
+        let memory = knife_platform_vita::memory_available().ok();
+        let available = memory.unwrap_or_default();
+        let line = line.trim_end().strip_suffix('}').expect("sample object").to_owned()
+            + &format!(concat!(",\"console_worker_last_us\":{},\"console_worker_total_us\":{},\"console_batches\":{},",
+                "\"console_dropped_batches\":{},\"console_write_failures\":{},\"console_queued_bytes\":{},",
+                "\"language_id\":{},\"memory_available\":{},\"kernel_main_free\":{},\"kernel_cdram_free\":{},\"heap_used\":{},\"heap_headroom\":{}}}\n"),
+                transport.last_us, transport.total_us, transport.completed, transport.dropped, transport.failures,
+                transport.queued_bytes, game.assets.language(), memory.is_some(), available.kernel_main,
+                available.kernel_cdram, available.heap_used, available.heap_headroom);
+        knife_platform_vita::audit::console(&line)?;
+        let compact = format!("{{\"kind\":\"frame_window\",\"frame\":{frame},\"frames\":{},\"elapsed_ms\":{},\"window_ms\":{},\"scene\":{},\"pc\":{},\"work_us\":{},\"render_us\":{},\"update_us\":{},\"wall_us\":{},\"max_work_us\":{},\"p50_work_upper_us\":{},\"p95_work_upper_us\":{},\"p99_work_upper_us\":{},\"over_16ms\":{},\"over_33ms\":{}}}\n",
+            sample.frames,self.started.elapsed().as_millis(),elapsed,game.scene_index,game.current_pc(),
+            sample.work_us,sample.render_us,sample.update_us,sample.wall_us,sample.max_work_us,
+            sample.p50_work_upper_us,sample.p95_work_upper_us,sample.p99_work_upper_us,sample.over_16ms,sample.over_33ms);
+        knife_platform_vita::audit::console(&compact)?;
+        self.classes.emit(frame, elapsed)?;
+        crate::vita_audit::emit(frame, "window", self.worst.take())?;
+        batch.finish()?;
+        self.previous_console_us = console_started.elapsed().as_micros() as u64;
         self.window = Instant::now();
         Ok(true)
     }
@@ -215,24 +273,25 @@ impl DevLog {
 }
 
 /// On hardware a panic otherwise only aborts, leaving a core with no symbols. This
-/// appends the location and message to the performance log so one run identifies it.
+/// prints the location and message to the console so one run identifies it.
 fn install_panic_hook() {
+    if option_env!("KNIFE_VITA_QUIET") == Some("1") {
+        std::panic::set_hook(Box::new(|_| {}));
+        return;
+    }
     std::panic::set_hook(Box::new(|info| {
         let location = info.location().map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_else(|| "unknown".into());
         let message = info.payload().downcast_ref::<&str>().map(|s| (*s).to_string())
             .or_else(|| info.payload().downcast_ref::<String>().cloned())
             .unwrap_or_default();
-        let line = format!("{{\"kind\":\"panic\",\"location\":\"{}\",\"message\":\"{}\"}}\n",
-            location.replace('"', "'"), message.replace('"', "'").replace('\n', " "));
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .create(true).append(true).open(format!("{PERF_ROOT}/performance.log"))
-        {
-            use std::io::Write;
-            let _ = file.write_all(line.as_bytes());
-            let _ = file.flush();
-        }
-        eprintln!("{line}");
+        let mut line = String::from("{\"kind\":\"panic\",\"location\":");
+        knife_perf::json_string(&mut line, &location);
+        line.push_str(",\"message\":");
+        let message: String = message.chars().take(1000).collect();
+        knife_perf::json_string(&mut line, &message);
+        line.push_str("}\n");
+        let _ = knife_platform_vita::audit::console(&line);
     }));
 }
 
@@ -259,6 +318,8 @@ pub fn run() -> Result<()> {
 
 fn run_game(log: &mut DevLog) -> Result<()> {
     install_panic_hook();
+    #[cfg(feature = "assets-540p")]
+    savedata::set_language_override(2);
     let limit = if option_env!("KNIFE_VITA_DEV_DIAGNOSTICS") == Some("1") {
         option_env!("KNIFE_VITA_DEV_MAX_FRAMES").and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
     } else { None };
@@ -275,44 +336,35 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     }
     let _ = CLOCKS.set((arm_mhz, bus_mhz, gpu_mhz));
     let _ = CLOCK_RC.set((rc_arm, rc_bus, rc_gpu, rc_xbar));
-    // Optional density override so one package can A/B the scene chain on hardware.
-    // Read before the log header so the header states which mode actually applied.
-    let scene_mode_text = std::fs::read_to_string(format!("{PERF_ROOT}/scene-mode.txt")).ok();
-    let mode = scene_mode_text.as_deref().map(|text| text.trim().to_ascii_lowercase());
-    // Default: scene chain at 480x270 and the composite/UI at 720x405 (upscaled once by
-    // the present blit). The composite is the largest per-frame pass (30 ms at 960x540),
-    // while the scene chain is already cheap at 480x270.
-    let scene_divisor = match mode.as_deref() {
-        Some(text) if text.starts_with("quarter") || text == "4" => 4,
-        Some(text) if text.starts_with("native") || text == "1" => 1,
-        Some(text) if text.starts_with("full") => 1,
-        _ => 2,
-    };
-    let canvas_scale = match mode.as_deref() {
-        Some(text) if text.starts_with("full") || text.starts_with("half")
-            || text.starts_with("quarter") || text.starts_with("native")
-            || text == "1" || text == "2" || text == "4" => (1, 1),
-        _ => (3, 8),
-    };
-    knife_render::set_canvas_scale(canvas_scale.0, canvas_scale.1);
-    knife_render::set_scene_divisor(scene_divisor);
+    // Full-scene targets are fixed to the compiled 540p asset profile.
+    // Runtime configuration no longer changes scene or composite dimensions.
 
-    let scene_mode_label = scene_mode_text.as_deref().map(str::trim).filter(|t| !t.is_empty())
-        .unwrap_or("none");
-    log.event(&format!("SCENE divisor={scene_divisor} canvas={}x file={scene_mode_label:?}",
-        if canvas_scale == (1, 1) { "native".to_string() } else { format!("{}/{}", canvas_scale.0, canvas_scale.1) }));
-    // Create/flush the opt-in header before archive, font and renderer startup,
-    // so even an early failure leaves the selected build/profile visible.
-    let mut perf = match PerfLog::open(scene_mode_label) {
-        Ok(log) => log,
-        Err(error) => { tracing::warn!("Optional Vita performance log disabled: {error}"); None },
+    let optimization_file = format!("{PERF_ROOT}/optimization-profile.txt");
+    let selected = match std::fs::read_to_string(&optimization_file) {
+        Ok(text) => knife_perf::optimizations::parse(&text).map_err(anyhow::Error::msg)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => knife_perf::optimizations::IMPLEMENTED,
+        Err(error) => return Err(error).context("reading optimization profile"),
     };
+    knife_perf::optimizations::set(selected);
+    knife_platform_vita::audit::set_options(selected);
+
+    log.event("SCENE fixed=960x540 composite=960x540 source=code");
+    // Emit the selected dimensions before archive, font and renderer startup.
+    let mut perf = match PerfLog::open() {
+        Ok(log) => log,
+        Err(error) => { tracing::warn!("Optional Vita console metrics disabled: {error}"); None },
+    };
+    if perf.is_some() {
+        if let Err(error) = watchdog::start() {
+            tracing::warn!("Runtime watchdog unavailable: {error}");
+        }
+    }
     let assets_dir = PathBuf::from(ASSETS);
     let check_started = Instant::now();
     match asset_check::check_assets(&assets_dir) {
         Ok(report) => {
-            log.event(&format!("ASSETS 270p key-files={} read-bytes={} check-ms={:.3}",
-                report.files, report.read_bytes, check_started.elapsed().as_secs_f64() * 1000.));
+            log.event(&format!("ASSETS profile={} key-files={} read-bytes={} check-ms={:.3}",
+                if cfg!(feature = "assets-540p") { "540p" } else { "270p" }, report.files, report.read_bytes, check_started.elapsed().as_secs_f64() * 1000.));
             log.event("ASSETS verified Witch/EN+Chengkong");
         },
         Err(error) => {
@@ -320,7 +372,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
             // embedded ASCII glyphs and one 480x270 image, with no asset fallback.
             log.event(&format!("ASSET_CHECK REJECT {error}"));
             boot_error::show(&error, limit).map_err(anyhow::Error::msg)
-                .context("display 270p asset startup error")?;
+                .context("display asset startup error")?;
             return Err(error.into());
         }
     }
@@ -351,16 +403,32 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     log.event("GAME ready");
     let mut ui = ui::Ui::new(&mut game, &renderer);
     ui.boot(&mut game, &renderer, false);
+    ui.warm_runtime_font(&game, &renderer);
     let mut input = Input::new()?;
     log.event("UI booted; input ready");
+    if let Some(perf_log) = &mut perf {
+        if let Err(error) = perf_log.finish_startup() {
+            tracing::warn!("Performance console stopped: {error}");
+            perf = None;
+            knife_perf::set_enabled(false);
+            knife_platform_vita::audit::set_enabled(false);
+        }
+    }
     let mut last = Instant::now();
     let mut last_logged_buttons = 0;
     loop {
+        watchdog::frame(frame + 1);
+        watchdog::game(&game);
+        watchdog::phase(watchdog::PERF_LOG);
+        if let Some(log) = &mut perf { log.begin_frame(); }
         let now = Instant::now();
         let wall_us = perf.as_ref().map(|_| (now - last).as_micros() as u64).unwrap_or(0);
         let step = (now - last).as_secs_f32().mul_add(1000.0, 0.0).min(100.0);
         last = now;
-        input.poll(&mut game, &mut ui, &renderer)?;
+        watchdog::phase(watchdog::INPUT);
+        { let _scope = knife_perf::Scope::new(knife_perf::Metric::InputPoll);
+            input.poll(&mut game, &mut ui, &renderer)?;
+        }
         game.paused = ui.game_paused();
         let (held, advance) = ui.held_input();
         game.set_held(held, advance);
@@ -368,17 +436,35 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         if !game.paused {
             ui.rewind_before_script(&mut game);
         }
-        ui.story_input(&mut game, &renderer, step);
-        game.update(&renderer, step);
-        ui.update(&mut game, &renderer, step);
-        game.sound.flush();
+        watchdog::phase(watchdog::STORY_INPUT);
+        { let _scope = knife_perf::Scope::new(knife_perf::Metric::StoryInput);
+            ui.story_input(&mut game, &renderer, step);
+        }
+        watchdog::phase(watchdog::GAME_UPDATE);
+        { let _scope = knife_perf::Scope::new(knife_perf::Metric::GameUpdate);
+            game.update(&renderer, step);
+        }
+        watchdog::game(&game);
+        watchdog::phase(watchdog::UI_UPDATE);
+        { let _scope = knife_perf::Scope::new(knife_perf::Metric::UiUpdate);
+            ui.update(&mut game, &renderer, step);
+        }
+        watchdog::phase(watchdog::AUDIO_FLUSH);
+        { let _scope = knife_perf::Scope::new(knife_perf::Metric::AudioFlush);
+            game.sound.flush();
+        }
         game.system_menu_shown = ui.system_menu_shown();
         let update_us = perf.as_ref().map(|_| now.elapsed().as_micros() as u64).unwrap_or(0);
         let render_started = perf.as_ref().map(|_| Instant::now());
+        watchdog::game(&game);
+        watchdog::phase(watchdog::RENDER);
         game.render(&mut renderer, &mut |game, renderer, quads| {
             ui.draw(game, renderer, quads)
         });
         frame += 1;
+        watchdog::phase(watchdog::CACHE_MAINTENANCE);
+        game.vita_cache_maintenance(&renderer, frame);
+        watchdog::phase(watchdog::PERF_LOG);
         if let (Some(perf_log), Some(render_started)) = (&mut perf, render_started) {
             let render_us = render_started.elapsed().as_micros() as u64;
             let work_us = now.elapsed().as_micros() as u64;
@@ -386,8 +472,10 @@ fn run_game(log: &mut DevLog) -> Result<()> {
                 Ok(true) => {},
                 Ok(false) => perf = None,
                 Err(error) => {
-                    tracing::warn!("Optional Vita performance log stopped: {error}");
+                    tracing::warn!("Optional Vita console metrics stopped: {error}");
                     perf = None;
+                    knife_perf::set_enabled(false);
+                    knife_platform_vita::audit::set_enabled(false);
                 },
             }
         }
@@ -427,6 +515,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
             log.event(&format!("FINITE RUN COMPLETE frames={frame}"));
             return Ok(());
         }
+        watchdog::phase(watchdog::PACER);
         if let Some(wait) = Duration::from_micros(16_667).checked_sub(last.elapsed()) {
             std::thread::sleep(wait);
         }

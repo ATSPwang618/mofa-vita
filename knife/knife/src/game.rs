@@ -5,6 +5,17 @@ use std::{
     sync::Arc,
 };
 
+mod bake_batch;
+#[cfg(target_os = "vita")]
+mod text_cache;
+#[cfg(target_os = "vita")]
+mod group_schedule;
+#[cfg(target_os = "vita")]
+mod group_cache;
+#[cfg(target_os = "vita")]
+mod group_batch;
+#[cfg(target_os = "vita")]
+mod stage_prefix;
 mod choice;
 mod flow_jump;
 mod focus;
@@ -541,6 +552,7 @@ pub struct Game {
     pub assets: Assets,
     motions: MotionTable,
     pub stage: Stage,
+    rebake_batch: bake_batch::Batch,
     pub sound: Sound,
     font: FontAtlas,
     /// ja3 FOT-Seurat: the message text while the window is a bubble (see `msg_font`)
@@ -559,6 +571,12 @@ pub struct Game {
     script: Arc<Scene>,
     pc: usize,
     pub wait: Wait,
+    #[cfg(target_os = "vita")]
+    resource_command: Option<(usize, usize)>,
+    #[cfg(target_os = "vita")]
+    resource_pending: bool,
+    #[cfg(target_os = "vita")]
+    resource_error: Option<String>,
     pub vars: HashMap<String, i32>,
     page: Page,
     sel_opts: Vec<ChoiceOpt>,
@@ -571,6 +589,8 @@ pub struct Game {
     teatime: Option<teatime::TeaTime>,
     /// choice option texts and their blur (texture 5)
     choice_text_rt: Option<RenderTarget>,
+    #[cfg(target_os = "vita")]
+    text_cache: text_cache::Pool,
     choice_glow: Option<RenderTarget>,
     sysmes: Option<Vec<String>>,
     trans: Option<Transition>,
@@ -861,6 +881,8 @@ pub struct Game {
     /// Vita lends this as group scratch only between the old-frame capture
     /// and the stage -> scene copy in render(); no scene contents survive there.
     scene_rt: RenderTarget,
+    /// Last logical scene was read-only stage; FADS must capture that source next frame.
+    scene_is_stage: bool,
     /// FADS owns this snapshot only while capturing or drawing a transition.
     /// An inactive Vita scene must not pin another full 2 MiB surface.
     #[cfg(target_os = "vita")]
@@ -881,6 +903,10 @@ pub struct Game {
     /// The layer group surfaces (stage::Draw): pixel (off_AE0CC8) and mask (off_AE0CD0) keep their
     /// contents across frames. The composite scratch has no surviving contents between composites.
     group_rt: Option<[RenderTarget; 2]>,
+    #[cfg(target_os = "vita")]
+    group_cache: group_cache::Cache,
+    #[cfg(target_os = "vita")]
+    stage_prefix: stage_prefix::Cache,
     #[cfg(not(target_os = "vita"))]
     group_composite_rt: Option<RenderTarget>,
     /// FCLN focus lines / falling notes, the stage byte that restarts them on load (6569) and their
@@ -983,6 +1009,7 @@ impl Game {
             assets,
             motions,
             stage: Stage::new(),
+            rebake_batch: bake_batch::Batch::default(),
             sound: Sound::new(),
             font,
             font_bubble: None,
@@ -996,6 +1023,12 @@ impl Game {
             script,
             pc: 0,
             wait: Wait::Halt,
+            #[cfg(target_os = "vita")]
+            resource_command: None,
+            #[cfg(target_os = "vita")]
+            resource_pending: false,
+            #[cfg(target_os = "vita")]
+            resource_error: None,
             vars: HashMap::new(),
             page: Page::default(),
             sel_opts: Vec::new(),
@@ -1004,6 +1037,8 @@ impl Game {
             wik_parts: None,
             teatime: None,
             choice_text_rt: None,
+            #[cfg(target_os = "vita")]
+            text_cache: text_cache::Pool::default(),
             choice_glow: None,
             sysmes: None,
             trans: None,
@@ -1136,6 +1171,7 @@ impl Game {
             #[cfg(not(target_os = "vita"))]
             prefetched: std::sync::mpsc::channel(),
             scene_rt: r.create_scene_target(CANVAS_W, CANVAS_H, "scene"),
+            scene_is_stage: false,
             #[cfg(target_os = "vita")]
             old_rt: None,
             #[cfg(not(target_os = "vita"))]
@@ -1147,6 +1183,10 @@ impl Game {
             ghost: ghost::Ghost::default(),
             ghost_rt: None,
             group_rt: None,
+            #[cfg(target_os = "vita")]
+            group_cache: group_cache::Cache::default(),
+            #[cfg(target_os = "vita")]
+            stage_prefix: stage_prefix::Cache::default(),
             #[cfg(not(target_os = "vita"))]
             group_composite_rt: None,
             focus: focus::Focus::default(),
@@ -1159,6 +1199,10 @@ impl Game {
     // ---- script control -------------------------------------------------------
 
     pub fn start_scene(&mut self, index: usize, label: Option<&str>) {
+        #[cfg(target_os = "vita")]
+        let _diagnostic = crate::vita_watchdog::scene_load(index);
+        #[cfg(target_os = "vita")]
+        self.reset_resource_command();
         let Some(script) = self.assets.scene(index) else {
             tracing::error!("scene {index} missing");
             self.ended = true;
@@ -1188,6 +1232,73 @@ impl Game {
 
     pub fn current_pc(&self) -> usize {
         self.pc
+    }
+
+    #[cfg(target_os = "vita")]
+    fn reset_resource_command(&mut self) {
+        self.resource_command = None;
+        self.resource_pending = false;
+        self.resource_error = None;
+        self.assets.reset_image_needed_context();
+    }
+
+    #[cfg(target_os = "vita")]
+    fn resource_event(&self, status: &str, detail: &str) {
+        if !knife_perf::enabled() { return; }
+        let mut quoted = String::new();
+        knife_perf::json_string(&mut quoted, &detail.chars().take(768).collect::<String>());
+        let (scene, pc) = self.resource_command.unwrap_or((self.scene_index, self.pc.saturating_sub(1)));
+        let _ = knife_platform_vita::audit::console(&format!(
+            "{{\"kind\":\"resource_event\",\"schema\":1,\"scene\":{scene},\"pc\":{pc},\"status\":\"{status}\",\"detail\":{quoted}}}\n"));
+    }
+
+    #[cfg(target_os = "vita")]
+    fn stch_image_needed(&mut self, r: &Renderer, name: &str, bake: crate::grade::Bake)
+        -> Option<Arc<crate::assets::Image>>
+    {
+        match self.assets.poll_image_needed(r, name, bake) {
+            crate::assets::ImageNeeded::Ready(image) => Some(image),
+            crate::assets::ImageNeeded::Pending => {
+                if self.resource_command.is_none() {
+                    self.resource_command = Some((self.scene_index, self.pc.saturating_sub(1)));
+                    self.resource_event("pending", name);
+                }
+                self.resource_pending = true;
+                None
+            }
+            crate::assets::ImageNeeded::Failed(error) => {
+                self.resource_command.get_or_insert((self.scene_index, self.pc.saturating_sub(1)));
+                if self.resource_error.is_none() { self.resource_event("failed", &error); }
+                self.resource_error = Some(error);
+                self.resource_pending = true;
+                None
+            }
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_diagnostic_resource(&self) -> (bool, bool) {
+        (self.resource_command.is_some() || self.resource_pending, self.resource_error.is_some())
+    }
+
+    #[cfg(target_os = "vita")]
+    fn retry_resource_command(&mut self, r: &Renderer) {
+        let Some((scene, pc)) = self.resource_command else { return; };
+        if self.paused || self.resource_error.is_some() { return; }
+        if scene != self.scene_index || pc != self.pc { self.reset_resource_command(); return; }
+        let Some(command) = self.script.commands.get(pc).cloned() else { return; };
+        crate::vita_watchdog::command(scene, pc, &command.name);
+        self.pc = pc + 1;
+        self.resource_pending = false;
+        self.exec(r, &command);
+        if self.resource_pending { self.pc = pc; }
+        else {
+            self.resource_event("ready", "STCH loaded; resume dispatch");
+            self.resource_command = None;
+            // Resume subsequent setters/FADS before publishing the new stage.
+            // This frame still presents the old complete stage.
+            self.resource_pending = true;
+        }
     }
 
     /// Observe the resumable snapshot without cloning or changing game state.
@@ -1462,6 +1573,19 @@ impl Game {
     // ---- per-frame update ---------------------------------------------------------
 
     pub fn update(&mut self, r: &Renderer, dt: f32) {
+        #[cfg(target_os = "vita")]
+        {
+            if self.resource_command.is_some() {
+                // Resource latency must not advance story motions, text heads
+                // or transition clocks. Audio and the outer UI loop stay live.
+                self.sound.begin_frame(dt);
+                self.sound.end_frame();
+                self.sound.update();
+                self.retry_resource_command(r);
+                return;
+            }
+            self.resource_pending = false;
+        }
         self.frame_no += 1;
         #[cfg(target_os = "vita")]
         self.prefetch_images(r);
@@ -1499,6 +1623,8 @@ impl Game {
         }
         for _ in 0..self.speed.max(1) {
             self.update_step(r, dt);
+            #[cfg(target_os = "vita")]
+            if self.resource_command.is_some() { break; }
         }
         if !self.paused {
             self.step_read_fades(dt);
@@ -1768,6 +1894,10 @@ impl Game {
             }
             self.dispatch_ms = 0.0;
         }
+        // A failed resource stays on its exact instruction. Menus, input and
+        // the rest of the frame continue; seek/load resets its generation.
+        #[cfg(target_os = "vita")]
+        if self.resource_error.is_some() { return; }
         let mut budget = 20000;
         while self.resume_ms <= 0.0 && self.wait == Wait::None && !self.ended && !self.hold && !self.rewinding && !self.rest_hold && budget > 0 {
             // the next-scene seek runs whole in this frame (sub_802C0's AE0568 loop)
@@ -1779,8 +1909,37 @@ impl Game {
                 self.ended = true;
                 break;
             };
+            #[cfg(target_os = "vita")]
+            crate::vita_watchdog::command(self.scene_index, self.pc, &cmd.name);
+            #[cfg(target_os = "vita")]
+            let dispatched = (self.scene_index, self.pc);
             self.pc += 1;
+            // Original sub_3DE0/sub_4030/sub_4120 set stage parameters; pre_alter
+            // materializes the image at its use/commit boundary. Only these
+            // audited setters and source-independent transform setters may join
+            // a batch. Every source read, snapshot, motion, seek or other opcode
+            // is an explicit barrier before that instruction executes.
+            let coalesce = knife_perf::optimizations::enabled(knife_perf::optimizations::COALESCE_BAKE)
+                && matches!(cmd.op, Op::Cmd(_)) && bake_batch::Batch::allows(&cmd.name);
+            if !coalesce { self.flush_rebakes(r); }
+            self.rebake_batch.set_active(coalesce);
+            #[cfg(target_os = "vita")]
+            { self.resource_pending = false; }
             self.exec(r, &cmd);
+            self.rebake_batch.set_active(false);
+            #[cfg(target_os = "vita")]
+            {
+                if self.resource_pending {
+                    // STCH has not published its new layer. Retry this exact
+                    // command next frame; do not replay PGST/STCP or advance.
+                    self.pc = dispatched.1;
+                    break;
+                }
+                if self.resource_command == Some(dispatched) {
+                    self.resource_event("ready", "STCH committed");
+                    self.resource_command = None;
+                }
+            }
             // script_dispatch always returns after these (loc_7FEF0), also when they leave no wait (every CLO, STCF,
             // `_NOP_`, TOMW without a movie), so the commands after them run the next frame (Switch 196 at 1980:
             // the click cuts the voice a frame before the SESP behind PGST / CLO3)
@@ -1803,6 +1962,11 @@ impl Game {
                 break;
             }
         }
+        #[cfg(target_os = "vita")]
+        if self.resource_pending { return; }
+        // Covers the actual 20,000-op budget, run-off-end, hold, wait, skip and
+        // seek/frame exits, rather than assuming a future FADS will be reached.
+        self.flush_rebakes(r);
         // the pass that ended the seek: script_dispatch went on to the next wait first
         if self.seek_ended && !self.seek_node {
             self.seek_pass_end(r);
@@ -2549,9 +2713,13 @@ impl Game {
                 return;
             }
             Op::Message => {
+                let _message_probe = knife_perf::Scope::new(knife_perf::Metric::Message);
                 self.menu_lock = false;
                 // `_ZM` takes the `_Z` path first (0x78efc): backup refresh and type 9 entry
-                self.refresh_backup();
+                {
+                    let _probe = knife_perf::Scope::new(knife_perf::Metric::MessageBackup);
+                    self.refresh_backup();
+                }
                 // sub_6E0D0: a scene point's message count goes down, the `@n` push hold ends
                 if self.scene_msgs >= 1 {
                     self.scene_msgs -= 1;
@@ -2593,7 +2761,10 @@ impl Game {
                     }
                     None => false,
                 };
-                let text = self.resolve_text(raw);
+                let text = {
+                    let _probe = knife_perf::Scope::new(knife_perf::Metric::MessageResolve);
+                    self.resolve_text(raw)
+                };
                 // sub_391A0 draws the last F823 - 1 history messages above this one: the page starts over at
                 // a message with F823 <= 1 (the scripts count F823 up before each message, zero it at a page end)
                 // (only in page mode, F822 == 1; otherwise every message has the window to itself)
@@ -2611,7 +2782,10 @@ impl Game {
                     }
                 }
                 let (text, wait) = message_end(&text);
-                self.show_message(&message_end(raw).0, wait);
+                {
+                    let _probe = knife_perf::Scope::new(knife_perf::Metric::MessageLayout);
+                    self.show_message(&message_end(raw).0, wait);
+                }
                 // sub_A7790 without 0x20000: the slot's 2 frame delay (none in the seek, 0x1000) costs the reveal
                 // the next frame's steps; MSAD keeps the progress and has none. Witch on the Holy Night's jp_6E0D0
                 // sets 0x1000 for CLO5's F1103 == 2 instead, so its seek keeps the delay
@@ -2626,14 +2800,17 @@ impl Game {
                     self.wait = Wait::Message { voice: voiced && code != Some(b'n') };
                 }
                 self.msg_text = raw_text;
-                self.record_message();
+                {
+                    let _probe = knife_perf::Scope::new(knife_perf::Metric::MessageHistory);
+                    self.record_message();
+                }
                 self.ring_hold = code == Some(b'n');
                 return;
             }
             Op::Cmd(_) => {}
         }
         let name = c.name.as_str();
-        self.note_stage_change(c);
+        self.note_stage_change(r, c);
         match name {
             // variables and flow
             "WKST" => {
@@ -4079,7 +4256,7 @@ impl Game {
     ///   (sub_802C0) and FADS's wait (with F985, which nothing sets) read it.
     ///
     /// All three are in the saved F subset.
-    fn note_stage_change(&mut self, c: &Command) {
+    fn note_stage_change(&mut self, r: &Renderer, c: &Command) {
         let arg = |i: usize| c.int(i);
         // signed `> 39` guards accept -1 (all layers); unsigned ones only 0..=39; absent args pass
         let signed = |i: usize| arg(i).is_none_or(|l| l <= 39);
@@ -4119,6 +4296,11 @@ impl Game {
             _ => false,
         };
         if backs_up && self.var("F991") == 0 {
+            // Normally the first setter sets F991, and no batched handler
+            // clears it. Keep this internal snapshot an explicit barrier too.
+            let active = self.rebake_batch.active();
+            self.flush_rebakes(r);
+            self.rebake_batch.set_active(active);
             // sub_5F3B0: a type 1 ring entry, then the stage is the backup
             self.push_ring_event(1);
             self.stage_backup = Some(self.stage_bytes());
@@ -4585,10 +4767,23 @@ impl Game {
             _ => None,
         };
         let upper = base.to_ascii_uppercase();
+        #[cfg(target_os = "vita")]
+        let resolved_name = variant.as_deref().filter(|v| self.assets.has_image_source(v))
+            .unwrap_or(&base).to_owned();
         let source = match upper.as_str() {
             "BLACK" => Source::Color([0.0; 3]),
             "WHITE" => Source::Color([1.0; 3]),
             _ => {
+                #[cfg(target_os = "vita")]
+                let img = {
+                    // A copied layer's CPU grade changes pixels only, not image
+                    // geometry. Demand its final pixels once so retries never
+                    // alternate between ungraded and graded worker keys.
+                    let bake = prev.as_ref().filter(|p| src_layer.is_some() && p.bake.cpu())
+                        .map_or(crate::grade::Bake::NONE, |p| p.bake);
+                    self.stch_image_needed(r, &resolved_name, bake)
+                };
+                #[cfg(not(target_os = "vita"))]
                 let img = variant
                     .as_deref()
                     .and_then(|v| self.assets.image(r, v))
@@ -4596,6 +4791,8 @@ impl Game {
                 match img {
                     Some(i) => Source::Image(i),
                     None => {
+                        #[cfg(target_os = "vita")]
+                        if self.resource_pending { return; }
                         #[cfg(target_os = "vita")]
                         tracing::error!(pc = self.pc, layer = li,
                             name = %variant.as_deref().unwrap_or(&base), base = %base,
@@ -4618,6 +4815,9 @@ impl Game {
         {
             set_bit(&mut self.seen, b);
         }
+        #[cfg(target_os = "vita")]
+        let mut l = Layer::new(resolved_name, source, x, y, prio);
+        #[cfg(not(target_os = "vita"))]
         let mut l = Layer::new(variant.unwrap_or(base), source, x, y, prio);
         if let Some(p) = &prev {
             l.zoom_x = Tween::fixed(p.zoom_x.value());
@@ -4680,12 +4880,14 @@ impl Game {
                 l.stec_color = p.stec_color;
                 l.snx = p.snx;
                 l.snx4 = p.snx4;
-                if p.bake.cpu()
-                    && let Source::Image(_) = l.source
-                    && let Some(img) = self.assets.image_graded(r, &l.name, p.bake)
-                {
-                    l.source = Source::Image(img);
-                    l.bake = p.bake;
+                if p.bake.cpu() && matches!(l.source, Source::Image(_)) {
+                    #[cfg(target_os = "vita")]
+                    { l.bake = p.bake; } // final pixels were demanded above
+                    #[cfg(not(target_os = "vita"))]
+                    if let Some(img) = self.assets.image_graded(r, &l.name, p.bake) {
+                        l.source = Source::Image(img);
+                        l.bake = p.bake;
+                    }
                 }
             }
         }
@@ -4859,8 +5061,9 @@ impl Game {
 
     #[cfg(target_os = "vita")]
     fn voice_stream_path(&self, name: &str) -> Option<std::path::PathBuf> {
-        let path=self.assets.stream_path(&format!("stream/{name}.opus"));
-        if path.is_file() {Some(path)} else {tracing::warn!("voice {name}: missing {}",path.display());None}
+        let found = self.assets.stream_path_existing(&format!("stream/{name}.opus"));
+        if found.is_none() { tracing::warn!("voice {name}: no matching stream"); }
+        found
     }
 
     /// sub_6E0D0: a voice plays unless voices are off or its speaker's row is muted, at that row's volume.
@@ -4868,6 +5071,7 @@ impl Game {
     /// `replay`: it becomes the voice the replay button plays (AE06A8), as at a message start, which first stops
     /// both voice players (sub_9C3B0); VPL2 leaves the last voice playing.
     fn play_voice(&mut self, n: &str, replay: bool) {
+        let _probe = knife_perf::Scope::new(knife_perf::Metric::VoiceSchedule);
         if self.skip || self.seek_node || !self.settings.voice_on {
             return;
         }
@@ -5747,6 +5951,27 @@ impl Game {
             let (font_main, font_bubble) = (&mut self.font, &mut self.font_bubble);
             let zs = &self.page.zs;
             let msgs = &self.page.msgs;
+            #[cfg(target_os = "vita")]
+            {
+                // Warm hidden future glyphs as well. A reveal only changes
+                // quad alpha after this single immutable-page preparation.
+                match font_bubble.as_mut() {
+                    Some(font) if bubble_font => { let _ = font.prewarm(r, &self.page.chars); }
+                    Some(font) if zs.iter().any(Option::is_some) => {
+                        let mut ordinary = Vec::new();
+                        let mut alternate = Vec::new();
+                        let mut message = 0;
+                        for (index, placed) in self.page.chars.iter().enumerate() {
+                            while message + 1 < msgs.len() && msgs[message + 1].0 <= index { message += 1; }
+                            if zs.get(message).copied().flatten().is_some() { alternate.push(*placed); }
+                            else { ordinary.push(*placed); }
+                        }
+                        let _ = font_main.prewarm(r, &ordinary);
+                        let _ = font.prewarm(r, &alternate);
+                    }
+                    _ => { let _ = font_main.prewarm(r, &self.page.chars); }
+                }
+            }
             let cur = msgs.last().map_or(usize::MAX, |m| m.0);
             let fades: Vec<f32> = (0..msgs.len())
                 .map(|i| {
@@ -5866,6 +6091,15 @@ impl Game {
             out.push(rect(820.0, 510.0, 920.0, 530.0, 0.5));
             out.push(rect(822.0 + held * 96.0 / 180.0, 512.0, 918.0, 528.0, 0.0));
         }
+        #[cfg(target_os = "vita")]
+        if self.resource_error.is_some() {
+            let x = CANVAS_W as f32 * 0.08;
+            let y = CANVAS_H as f32 * 0.08;
+            out.push(Quad::rect(r.white.clone(), [x, y, CANVAS_W as f32 * 0.84, 112.0], [0.0, 0.0, 0.0, 0.9]));
+            self.font.draw_str_slot(r, &mut out,
+                "资源加载失败，剧情已暂停。请打开菜单重新读档。",
+                [36.0, 36.0], 0.0, [x + 20.0, y + 64.0], [1.0; 4]);
+        }
         out
     }
 
@@ -5976,25 +6210,28 @@ impl Game {
 
     fn render_stage(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) {
         use crate::stage::Draw;
+        #[cfg(target_os = "vita")]
+        self.group_cache.begin_frame();
         let draws = self.stage.draws(&r.white, &self.border);
         #[cfg(target_os = "vita")]
         {
-            // Hash the draw list: texture identity, position, uv and colour decide whether
-            // last frame's stage composite could have been reused verbatim.
+            // Every rendering input participates, including source pixel generations.
             let layer_hash = |d: &Draw| -> u64 {
-                let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-                let mut mix = |bits: u64| h = (h ^ bits).wrapping_mul(0x100_0000_01b3);
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
                 match d {
-                    Draw::Stage(q) | Draw::Pixel { quad: q, .. } | Draw::Mask { quad: q, .. } => {
-                        mix(Arc::as_ptr(&q.tex) as usize as u64);
-                        mix(u64::from(q.color[0].to_bits()) << 32 | u64::from(q.color[3].to_bits()));
-                        for p in q.pos {
-                            mix(u64::from(p[0].to_bits()) << 32 | u64::from(p[1].to_bits()));
-                        }
+                    Draw::Stage(q) => { 0u8.hash(&mut h); q.render_signature().hash(&mut h); }
+                    Draw::Pixel { quad, clear } => {
+                        1u8.hash(&mut h); clear.hash(&mut h); quad.render_signature().hash(&mut h);
                     }
-                    Draw::Composite { alpha, .. } => mix(u64::from(alpha.to_bits())),
+                    Draw::Mask { quad, clear } => {
+                        2u8.hash(&mut h); clear.hash(&mut h); quad.render_signature().hash(&mut h);
+                    }
+                    Draw::Composite { blend, alpha } => {
+                        3u8.hash(&mut h); blend.hash(&mut h); alpha.to_bits().hash(&mut h);
+                    }
                 }
-                h
+                h.finish()
             };
             let layers: Vec<u64> = draws.iter().map(layer_hash).collect();
             // Per-layer change distribution: how many layers move per frame, and whether the
@@ -6018,6 +6255,13 @@ impl Game {
                 *previous = layers.clone();
             }
             let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            // Cache is specific to this target/layout and clear color, not a global layer hash.
+            for bits in [Arc::as_ptr(&self.stage_rt.tex) as usize as u64,
+                self.stage.backdrop_drawn as u64, self.stage_rt.tex.width as u64,
+                self.stage_rt.tex.height as u64, u64::from(self.stage_rt.tex.physical_size()[0]),
+                u64::from(self.stage_rt.tex.physical_size()[1])] {
+                hash = (hash ^ bits).wrapping_mul(0x100_0000_01b3);
+            }
             for bits in &layers {
                 hash = (hash ^ bits).wrapping_mul(0x100_0000_01b3);
             }
@@ -6032,14 +6276,89 @@ impl Game {
                 STAGE_REPEATS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             if reusable {
+                knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
                 // The stage target still holds exactly this frame's layers: skip the ~40
                 // layer draws and their passes. Clears, copies and effects still run.
                 return;
             }
         }
+        #[cfg(target_os = "vita")]
+        knife_perf::add(knife_perf::Metric::StageRedraw, 0, 0);
         let mut run: Vec<Quad> = Vec::new();
         let b = if self.stage.backdrop_drawn == 1 { 1.0 } else { 0.0 };
         let mut clear = Some([b, b, b, 1.0]);
+        #[cfg(target_os = "vita")]
+        if draws.iter().all(|draw| matches!(draw, Draw::Stage(_))) {
+            let mut quads: Vec<Quad> = draws.into_iter().map(|draw| match draw {
+                Draw::Stage(quad) => quad, _ => unreachable!(),
+            }).collect();
+            // Conservative clipped screen bounding boxes, not GPU timings or
+            // bus traffic. The auxiliary value counts estimated covered pixels.
+            for q in &quads {
+                let x0 = q.pos.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min).max(0.0);
+                let y0 = q.pos.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min).max(0.0);
+                let x1 = q.pos.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max).min(CANVAS_W as f32);
+                let y1 = q.pos.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max).min(CANVAS_H as f32);
+                let physical = self.stage_rt.tex.physical_size();
+                let pixels = ((x1-x0).max(0.0) * (y1-y0).max(0.0)
+                    * physical[0] as f32 / CANVAS_W as f32 * physical[1] as f32 / CANVAS_H as f32).ceil() as u64;
+                knife_perf::add(knife_perf::Metric::StageCoverage, 0, pixels);
+            }
+            if knife_perf::optimizations::enabled(knife_perf::optimizations::STAGE_PREFIX) {
+                // Old group results are lower priority in a pure-stage scene.
+                // The persistent pair and already recorded readers keep owners.
+                self.group_cache.clear();
+                self.stage_prefix.apply(r, enc, &self.stage_rt, [b,b,b,1.0], &mut quads);
+            } else { self.stage_prefix.clear(); }
+            r.draw(enc, &self.stage_rt, clear, &quads);
+            return;
+        }
+        #[cfg(target_os = "vita")]
+        self.stage_prefix.clear();
+        #[cfg(target_os = "vita")]
+        let defer_group_stage = knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_FUSED)
+            && group_schedule::can_defer(
+                self.stage_rt.tex.render_identity().0,
+                self.group_rt.as_ref().map_or([None; 2], |pair|
+                    [Some(pair[0].tex.render_identity().0), Some(pair[1].tex.render_identity().0)]),
+                draws.iter().filter_map(|draw| match draw {
+                    Draw::Stage(q) => Some((true, q)),
+                    Draw::Pixel { quad, .. } | Draw::Mask { quad, .. } => Some((false, quad)),
+                    Draw::Composite { .. } => None,
+                }).flat_map(|(stage, q)| std::iter::once((stage, q.tex.render_identity().0))
+                    .chain(q.rule.as_ref().map(|rule| (stage, rule.tex.render_identity().0)))),
+            );
+        #[cfg(target_os = "vita")]
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_FUSED) && !defer_group_stage {
+            knife_perf::add(knife_perf::Metric::GroupStageAliasFallback, 0, 0);
+        }
+        #[cfg(target_os = "vita")]
+        let cache_groups = defer_group_stage && draws.iter().all(|d| {
+            let q = match d { Draw::Stage(q) | Draw::Pixel { quad: q, .. }
+                | Draw::Mask { quad: q, .. } => q, Draw::Composite { .. } => return true };
+            std::iter::once(&q.tex).chain(q.rule.as_ref().map(|m| &m.tex)).all(|source| {
+                // Internal aliases observe writes by identity. Swapping in an
+                // immutable cached result would change those aliases, so retain
+                // the original persistent pair for the entire frame instead.
+                !self.group_cache.owns_texture(source) && self.group_rt.as_ref().is_none_or(|pair|
+                    pair.iter().all(|t| t.tex.render_identity().0 != source.render_identity().0))
+            })
+        });
+        #[cfg(target_os = "vita")]
+        if cache_groups && self.group_rt.is_some()
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_BATCH)
+        {
+            let batch = draws.iter().map(|draw| match draw {
+                Draw::Stage(q) => group_batch::Draw::Stage(q.clone()),
+                Draw::Pixel { quad, clear } => group_batch::Draw::Pixel { quad: quad.clone(), clear: *clear },
+                Draw::Mask { quad, clear } => group_batch::Draw::Mask { quad: quad.clone(), clear: *clear },
+                Draw::Composite { blend, alpha } => group_batch::Draw::Composite { blend: *blend, alpha: *alpha },
+            }).collect();
+            if group_batch::render(r, enc, &self.stage_rt, self.group_rt.as_mut().unwrap(),
+                &self.scene_rt, &mut self.group_cache, [b,b,b,1.0], batch, record_group_shape) {
+                return;
+            }
+        }
         // Group surface draws are buffered per target: a pass costs 8-20 ms on hardware
         // regardless of how few quads it holds, and alternating stage/group draws used to
         // open one pass per layer. Buffering gives each target one pass per composite.
@@ -6080,33 +6399,9 @@ impl Game {
                         // Disabled: on hardware this made whole background layers disappear
                         // (only a mask-shaped strip of the scene remained), so the per-layer
                         // mask product is not equivalent to the surface composite here.
-                        // A group whose mask is exactly one full-canvas opaque white quad and
-                        // whose opacity is 1 composites to its layer stack unchanged, so drawing
-                        // the layers straight into the stage is exact and drops three passes.
-                        let neutral_mask = pending[1].len() == 1
-                            && pending[1][0].color[3] >= 1.0
-                            && pending[1][0].blend == Blend::Opaque
-                            && pending[1][0].clip.is_none()
-                            && Arc::ptr_eq(&pending[1][0].tex, &r.white)
-                            && pending[1][0].pos[0][0] <= 0.0
-                            && pending[1][0].pos[0][1] <= 0.0
-                            && pending[1][0].pos[2][0] >= CANVAS_W as f32
-                            && pending[1][0].pos[2][1] >= CANVAS_H as f32;
-                        let neutral = neutral_mask
-                            && (alpha - 1.0).abs() < 1e-6
-                            && matches!(blend, Blend::Alpha | Blend::Over);
-                        if neutral && !pending[0].is_empty() {
-                            #[cfg(target_os = "vita")]
-                            NEUTRAL_GROUPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            for q in std::mem::take(&mut pending[0]) {
-                                run.push(q);
-                            }
-                            pending[1].clear();
-                            pending_clear[0] = false;
-                            pending_clear[1] = true;
-                            mask_clean = true;
-                            continue;
-                        }
+                        // Keep the actual surface composite. Mask alpha=1 alone does
+                        // not permit flattening arbitrary pixel blends: Opaque/PS
+                        // writes and intermediate RGBA8 rounding change the result.
                         let mask_as_texture = false;
                         let simple = mask_as_texture
                             && (alpha - 1.0).abs() < 1e-6
@@ -6124,8 +6419,7 @@ impl Game {
                             if !pending[1].is_empty() || pending_clear[1] {
                                 let quads = std::mem::take(&mut pending[1]);
                                 let fresh = std::mem::replace(&mut pending_clear[1], false);
-                                let t = &self.group_rt.as_ref().unwrap()[1];
-                                r.draw(enc, t, fresh.then_some([0.0; 4]), &quads);
+                                self.draw_group_surface(r, enc, 1, fresh, &quads, cache_groups);
                             }
                             for mut q in std::mem::take(&mut pending[0]) {
                                 q.masked = true;
@@ -6137,7 +6431,13 @@ impl Game {
                             continue;
                         }
                     }
-                    // drawn now: the scratch target is reused by the next composite
+                    // Group producers can precede these stage writes only when neither
+                    // side samples the other's destination. Keep the old order on alias.
+                    #[cfg(target_os = "vita")]
+                    if !defer_group_stage {
+                        r.draw(enc, &self.stage_rt, clear.take(), &std::mem::take(&mut run));
+                    }
+                    #[cfg(not(target_os = "vita"))]
                     r.draw(enc, &self.stage_rt, clear.take(), &std::mem::take(&mut run));
                     #[cfg(target_os = "vita")]
                     {
@@ -6171,11 +6471,16 @@ impl Game {
                             let quads = std::mem::take(&mut pending[k]);
                             let fresh = std::mem::replace(&mut pending_clear[k], false);
                             let drawn = !quads.is_empty();
-                            let t = &self.group_rt.as_ref().unwrap()[k];
-                            r.draw(enc, t, fresh.then_some([0.0; 4]), &quads);
+                            self.draw_group_surface(r, enc, k, fresh, &quads, cache_groups);
                             if k == 1 && fresh {
                                 mask_clean = !drawn;
                             }
+                        }
+                        if defer_group_stage {
+                            // Adjacent fused stage draws share its open pass. In particular,
+                            // the initial clear no longer needs an isolated stage scene.
+                            knife_perf::add(knife_perf::Metric::GroupStageDeferred, 0, run.len() as u64);
+                            r.draw(enc, &self.stage_rt, clear.take(), &std::mem::take(&mut run));
                         }
                         let [px, mask] = self.group_rt.as_ref().unwrap();
                         // render() has already captured the old scene for FADS.
@@ -6221,8 +6526,7 @@ impl Game {
                 if fresh && !pending[k].is_empty() {
                     let quads = std::mem::take(&mut pending[k]);
                     let head = std::mem::replace(&mut pending_clear[k], false);
-                    let t = &self.group_rt.as_ref().unwrap()[k];
-                    r.draw(enc, t, head.then_some([0.0; 4]), &quads);
+                    self.draw_group_surface(r, enc, k, head, &quads, cache_groups);
                 }
                 if fresh {
                     pending_clear[k] = true;
@@ -6244,16 +6548,24 @@ impl Game {
         }
         r.draw(enc, &self.stage_rt, clear, &run);
         #[cfg(target_os = "vita")]
-        if let Some(targets) = self.group_rt.as_ref() {
+        if self.group_rt.is_some() {
             for k in 0..2 {
                 if pending[k].is_empty() && !pending_clear[k] {
                     continue;
                 }
                 let quads = std::mem::take(&mut pending[k]);
                 let head = std::mem::replace(&mut pending_clear[k], false);
-                r.draw(enc, &targets[k], head.then_some([0.0; 4]), &quads);
-            }
-        }
+                self.draw_group_surface(r, enc, k, head, &quads, cache_groups);
+            } // Preserve the final pair, including non-composited tail writes.
+        } // Cached results are not a replacement for the persistent pair.
+    }
+
+    #[cfg(target_os = "vita")]
+    fn draw_group_surface(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
+        kind: usize, fresh: bool, quads: &[Quad], cache_groups: bool)
+    {
+        let pair = self.group_rt.as_mut().expect("group targets exist before production");
+        self.group_cache.draw(r, enc, pair, kind, fresh, quads, cache_groups);
     }
 
     fn group_targets(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) -> &[RenderTarget; 2] {
@@ -6296,9 +6608,14 @@ impl Game {
             }
             // Do not walk every future keyframe or run 28-field motion samples.
             // Three near-future instants, only on layers with a live motion.
-            let animation_limit = (wanted.len() + 8).min(32);
+            // Only visual lookahead changes: script/motion evaluation and callbacks stay intact.
+            // The bounded window prefers current/next variants over distant speculative images.
+            let near_window = knife_perf::optimizations::enabled(knife_perf::optimizations::ANIMATION_WINDOW);
+            let animation_limit = (wanted.len() + if near_window { 4 } else { 8 }).min(32);
             if wanted.len() < animation_limit && !self.paused && !self.skip {
-                for delta in [FRAME_MS, FRAME_MS * 3.0, FRAME_MS * 6.0] {
+                let instants = if near_window { [0.0, FRAME_MS, FRAME_MS * 2.0] }
+                    else { [FRAME_MS, FRAME_MS * 3.0, FRAME_MS * 6.0] };
+                for delta in instants {
                     for (li, layer) in self.stage.layers.iter().enumerate() {
                         let Some(layer) = layer.as_ref() else { continue };
                         let Some(state) = layer.motion.as_ref().filter(|s| !s.paused && !s.finished()) else { continue };
@@ -6347,6 +6664,8 @@ impl Game {
 
     pub fn render(&mut self, r: &mut Renderer, overlay: &mut dyn FnMut(&mut Self, &Renderer, &mut Vec<Quad>)) {
         #[cfg(target_os = "vita")]
+        self.text_cache.begin_frame();
+        #[cfg(target_os = "vita")]
         if !self.snapshot && self.trans.is_none() {
             // Every FADS entry requests its capture before sampling it. A held
             // transition keeps the target while images load; an ended one has
@@ -6370,7 +6689,8 @@ impl Game {
             let old = self.old_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "old frame"));
             #[cfg(not(target_os = "vita"))]
             let old = &self.old_rt;
-            r.copy_target(&mut enc, &self.scene_rt, old);
+            let previous = if self.scene_is_stage { &self.stage_rt } else { &self.scene_rt };
+            r.copy_target(&mut enc, previous, old);
             self.snapshot = false;
         }
         if let Some(q) = self.stage.noise_pass() {
@@ -6387,6 +6707,13 @@ impl Game {
         self.render_choice_glow(r, &mut enc);
         // Vita may overwrite scene with group scratch here. Preserve the
         // capture above -> all group readers -> stage-to-scene copy order.
+        #[cfg(target_os = "vita")]
+        if self.resource_command.is_some() || self.resource_pending {
+            // A pending STCH has not committed its layer. Present the previous
+            // complete stage rather than intermediate PGST/STCP dispatch state.
+            knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
+        } else { self.render_stage(r, &mut enc); }
+        #[cfg(not(target_os = "vita"))]
         self.render_stage(r, &mut enc);
         // Target 0 draws in bucket order (sprite +16, sub_D2378), each bucket in queue order: bucket 1 takes the
         // stage (sub_3BBA0, task 20), the FADE(40) effect (sub_2FC50, task 60) and the text pass's FCLN effect
@@ -6394,7 +6721,18 @@ impl Game {
         // 50) is bucket 9, so it lies over all three, and what it shows is target 0 as it was, effects included
         // (035 ARC02_1's crossfade under FADE(40, -250): Switch region means 0.31 from this order, 1.38 with the
         // effect over the mixed frame, whose overlay of the frame with itself darkened the middle of the fade)
-        r.copy_target(&mut enc, &self.stage_rt, &self.scene_rt);
+        // No scene writer: its copy would only be sampled once by the canvas blit.
+        // Keep stage read-only and remember its identity for a later FADS capture.
+        let direct_stage = cfg!(target_os = "vita")
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::DIRECT_STAGE)
+            && !self.ghost.active() && !(self.focus.active() && self.var("F963") != 1)
+            && self.trans.is_none();
+        self.scene_is_stage = direct_stage;
+        if direct_stage {
+            knife_perf::add(knife_perf::Metric::DirectStage, 0, 0);
+        } else {
+            r.copy_target(&mut enc, &self.stage_rt, &self.scene_rt);
+        }
         // sub_3C490 draws the FADE(40) effect over the composed frame, before the text
         if self.ghost.active() {
             let [src, out] = self.ghost_rt.get_or_insert_with(|| {
@@ -6430,7 +6768,8 @@ impl Game {
                 let old = &self.old_rt;
                 r.transition(&mut enc, &self.canvas, &old.tex, &self.scene_rt.tex, rule.as_deref(), p, self.stage.rule_soft);
             }
-            None => r.blit_target(&mut enc, &self.scene_rt, &self.canvas),
+            None => r.blit_target(&mut enc,
+                if direct_stage { &self.stage_rt } else { &self.scene_rt }, &self.canvas),
         }
         let witch = crate::assets::witch();
         let mut ui = Vec::new();
@@ -6443,6 +6782,9 @@ impl Game {
             ui.extend(self.story_movie.as_ref().and_then(|t| t.cover_quad(r)));
             ui.extend(self.ui_quads(r));
             if !ui.is_empty() {
+                #[cfg(target_os = "vita")]
+                self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui);
+                #[cfg(not(target_os = "vita"))]
                 r.draw(&mut enc, &self.canvas, None, &ui);
                 ui.clear();
             }
@@ -6545,6 +6887,9 @@ impl Game {
             r.draw(&mut enc, &rt, clear, &quads);
         }
         if !ui.is_empty() {
+            #[cfg(target_os = "vita")]
+            self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui);
+            #[cfg(not(target_os = "vita"))]
             r.draw(&mut enc, &self.canvas, None, &ui);
         }
         if let Some(f) = &mut self.freeze {
@@ -6988,14 +7333,38 @@ impl Game {
         if l.stec_mode == 1 {
             l.fill = Some(bake.fill(l.stec_color));
         }
+        if let Some(already) = self.rebake_batch.queue(li) {
+            knife_perf::add(knife_perf::Metric::BakeDeferred, 0, 1);
+            if already { knife_perf::add(knife_perf::Metric::BakeCoalesced, 0, 1); }
+            return;
+        }
         if bake != l.bake {
-            l.bake = bake;
-            if let Source::Image(_) = l.source
-                && let Some(img) = self.assets.image_graded(r, &l.name, bake)
-            {
-                l.source = Source::Image(img);
+            if let Source::Image(_) = l.source {
+                let probe = knife_perf::Scope::new(knife_perf::Metric::BakeRebuild);
+                if let Some(img) = self.assets.image_graded(r, &l.name, bake) {
+                    // Commit the matching pair together. A failed decode/load
+                    // retains the previous valid image and its truthful Bake;
+                    // a subsequent setter can safely retry the desired state.
+                    l.source = Source::Image(img);
+                    l.bake = bake;
+                    probe.finish_hot(&l.name, 0, 1);
+                } else {
+                    knife_perf::add(knife_perf::Metric::BakeFailed, 0, 1);
+                    probe.finish_hot(&l.name, 0, 0);
+                }
+            } else {
+                l.bake = bake;
             }
         }
+    }
+
+    fn flush_rebakes(&mut self, r: &Renderer) {
+        let dirty = self.rebake_batch.take();
+        if dirty.is_empty() { return; }
+        let count = dirty.len();
+        let probe = knife_perf::Scope::new(knife_perf::Metric::BakeFlush);
+        for li in dirty { self.rebake(r, i32::from(li)); }
+        probe.finish(0, count as u64);
     }
 
     /// A stage layer as a snapshot describes it (restores and save list previews).
@@ -7288,6 +7657,8 @@ impl Game {
     /// replay and the voice waits for the replayed message; otherwise (a load / scene point, sub_5D950) the
     /// voice plays at once.
     fn restore_with(&mut self, r: &Renderer, d: &crate::save::SaveData, rewind: bool) {
+        #[cfg(target_os = "vita")]
+        self.reset_resource_command();
         // sub_5BAF0 ends the engine tasks (sub_3F4A0 on slots 0..2) before the replay
         self.end_staff_task();
         // byte_146EC28 comes back from the entry; `@n` holds end
@@ -7480,6 +7851,8 @@ impl Game {
     }
 
     pub fn reset(&mut self) {
+        #[cfg(target_os = "vita")]
+        self.reset_resource_command();
         self.menu_lock = true;
         self.white = 0.0;
         self.resume_ms = 0.0;
@@ -7843,5 +8216,55 @@ fn message_end(text: &str) -> (String, bool) {
     match end {
         Some(i) => (text[..i].to_string(), false),
         None => (text.to_string(), true),
+    }
+}
+
+#[cfg(target_os = "vita")]
+impl Game {
+    /// All optional render/CPU pools share this pressure checkpoint. Active
+    /// frame owners stay pinned; native retirement waits only at real admission
+    /// pressure, never adds a per-frame Finish to ordinary rendering.
+    pub fn vita_cache_maintenance(&mut self, renderer: &Renderer, frame: u64) {
+        if frame % 120 != 0 { return; }
+        use knife_perf::{Metric, memory_budget};
+        let cpu_memory = knife_platform_vita::memory_available().ok();
+        // newlib's reserved heap and kernel free pages are separate reports.
+        // Dropping a heap owner helps malloc headroom, not necessarily kernel
+        // pages; kernel-only pressure must not repeatedly empty CPU pools.
+        let cpu_pressure = cpu_memory.as_ref().is_some_and(|m|
+            (m.heap_headroom as usize) < memory_budget::CPU_PRESSURE_HEADROOM);
+        let gpu_pressure = renderer.vita_cache_headroom().ok()
+            .is_some_and(|n| n < memory_budget::GPU_CACHE_SPARE_BYTES);
+        let mut released = 0usize;
+        if cpu_pressure {
+            let before=cpu_memory.as_ref().unwrap().heap_headroom as usize;
+            let need=memory_budget::CPU_TARGET_HEADROOM.saturating_sub(before);
+            knife_perf::add(Metric::CpuReclaimRequest,need as u64,before as u64);
+            let freed=self.assets.vita_trim_cpu_caches(need);
+            released+=freed;
+            let after=knife_platform_vita::memory_available().ok()
+                .map_or(before.saturating_add(freed),|m|m.heap_headroom as usize);
+            knife_perf::add(Metric::CpuReclaimFreed,freed as u64,
+                memory_budget::CPU_TARGET_HEADROOM.saturating_sub(after) as u64);
+        } else if let Some(memory)=cpu_memory.as_ref() {
+            self.assets.vita_warm_ui_sources(memory.heap_headroom as usize);
+        }
+        if gpu_pressure {
+            let before = self.text_cache.bytes() + self.group_cache.bytes() + self.stage_prefix.bytes();
+            self.text_cache.trim(0);
+            self.group_cache.trim(0);
+            let _ = renderer.vita_reclaim_idle();
+            // The native cap already keeps the external process/JPEG reserve.
+            // Retire only cold residency before sacrificing a useful prefix.
+            let admitted = renderer.vita_prepare_cache_allocation(&renderer.encoder(), &[], 0)
+                .unwrap_or(false);
+            if !admitted { self.stage_prefix.clear(); }
+            released += before.saturating_sub(self.text_cache.bytes() + self.group_cache.bytes() + self.stage_prefix.bytes());
+            let _ = renderer.vita_reclaim_idle();
+        }
+        if cpu_pressure || gpu_pressure {
+            knife_perf::add(Metric::CachePressureTrim, released as u64,
+                u64::from(cpu_pressure) | (u64::from(gpu_pressure) << 1));
+        }
     }
 }

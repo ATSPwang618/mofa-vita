@@ -7,6 +7,10 @@
 #endif
 #include KV_GXM_BACKEND_SOURCE
 
+static volatile unsigned int host_completion;
+volatile unsigned int *sceGxmGetNotificationRegion(void) { return &host_completion; }
+int sceGxmNotificationWait(const SceGxmNotification *n) { *n->address = n->value; return 0; }
+
 enum Fault {
     FAULT_NONE, FAULT_END_SCENE, FAULT_HEARTBEAT, FAULT_QUEUE_ADD,
     FAULT_QUEUE_FINISH, FAULT_SET_FRAME, FAULT_VBLANK
@@ -185,7 +189,7 @@ static void successful_submission(uint32_t frames) {
     EXPECT(kv_gxm_present(&g) == 0);
     EXPECT(g.closing == 0 && active(&g));
     EXPECT(g.scene_open == 0 && g.scanout_submitted == 1);
-    EXPECT(g.front == 1 && g.back == 0 && g.stats.frames == frames + 1);
+    EXPECT(g.front == 1 && g.back == 2 && g.stats.frames == frames + 1);
     EXPECT(g.stats.draws == 37 && g.initialized == 1);
     EXPECT(g.error[0] == 0 && g.display_error == 0 && queue_pending == 0);
     EXPECT(strcmp(trace, expected_traces[FAULT_NONE]) == 0);
@@ -207,3 +211,6 @@ int main(void) {
         failures ? "FAIL" : "PASS", cases, checks, failures);
     return failures ? 1 : 0;
 }
+
+/* Deterministic clock for legacy timing sites; no device timing claim. */
+SceUInt64 sceKernelGetProcessTimeWide(void) { static SceUInt64 t; return ++t; }

@@ -3,7 +3,7 @@
   "date": "2026-10-27",
   "scope": "Real game Vita AvPlayer/GXM/movie audio integration; no emulator run by this agent",
   "build": {
-    "command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=.work/vita-game-movie-target cargo +nightly-2026-05-28 build --offline --locked -Z build-std=std,panic_abort -p knife --bin knife --target armv7-sony-vita-newlibeabihf --release --features vita-gxm",
+    "command": "VITASDK=${VITASDK} CARGO_TARGET_DIR=.work/vita-game-movie-target cargo +nightly-2026-05-28 build --offline --locked -Z build-std=std,panic_abort -p knife --bin knife --target armv7-sony-vita-newlibeabihf --release --features vita-gxm",
     "result": "pass",
     "elf": ".work/vita-game-movie-target/armv7-sony-vita-newlibeabihf/release/knife.elf",
     "sha256": "56234c44685726460608fba89972a615663fc9e4296c033850530f5ed47bb288",
@@ -43,14 +43,14 @@
   "no_emulator": true,
   "no_push": true,
   "dev_build": {
-    "command": "KNIFE_VITA_DEV_DIAGNOSTICS=1 KNIFE_VITA_DEV_MAX_FRAMES=360 VITASDK=/opt/vitasdk CARGO_TARGET_DIR=.work/vita-game-movie-target cargo +nightly-2026-05-28 build --offline --locked -Z build-std=std,panic_abort -p knife --bin knife --target armv7-sony-vita-newlibeabihf --release --features vita-gxm",
+    "command": "KNIFE_VITA_DEV_DIAGNOSTICS=1 KNIFE_VITA_DEV_MAX_FRAMES=360 VITASDK=${VITASDK} CARGO_TARGET_DIR=.work/vita-game-movie-target cargo +nightly-2026-05-28 build --offline --locked -Z build-std=std,panic_abort -p knife --bin knife --target armv7-sony-vita-newlibeabihf --release --features vita-gxm",
     "result": "pass",
     "sha256": "08bd0db3bf44f3335ed1c5b989c08979a10b9ba89e0a540ca39f6347460657ca",
     "terminal_log": "ux0:data/knife-woh-dev/game-runtime.log",
     "finite_frames": 360
   },
   "native_syntax": {
-    "command": "arm-vita-eabi-gcc -std=gnu11 -I/opt/vitasdk/arm-vita-eabi/include -Ivita -fsyntax-only vita/gxm_backend.c",
+    "command": "arm-vita-eabi-gcc -std=gnu11 -I${VITASDK}/arm-vita-eabi/include -Ivita -fsyntax-only vita/gxm_backend.c",
     "result": "pass"
   }
 }

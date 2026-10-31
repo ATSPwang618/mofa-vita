@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Distro = 'pocket-ubuntu',
+    [string]$Distro = $env:KNIFE_WSL_DISTRO,
     [string]$Python = 'python'
 )
 $ErrorActionPreference = 'Stop'
@@ -10,9 +10,11 @@ $fixtures = Join-Path $buildRoot 'fixtures'
 
 & $Python (Join-Path $PSScriptRoot 'vita-image-fixtures.py') $fixtures
 if ($LASTEXITCODE -ne 0) { throw 'Original fixture generation failed' }
-$projectPosix = (& wsl.exe -d $Distro -- wslpath -u $projectRoot.Replace('\', '/')).Trim()
+$wslArgs = @()
+if ($Distro) { $wslArgs = @('-d', $Distro) }
+$projectPosix = (& wsl.exe @wslArgs -- wslpath -u $projectRoot.Replace('\', '/')).Trim()
 if ($LASTEXITCODE -ne 0 -or !$projectPosix.StartsWith('/')) { throw 'WSL path resolution failed' }
-& wsl.exe -d $Distro -- bash "$projectPosix/tools/test-vita-image-decode.sh"
+& wsl.exe @wslArgs -- bash "$projectPosix/tools/test-vita-image-decode.sh"
 if ($LASTEXITCODE -ne 0) { throw 'Native image verification failed; inspect doc/logs/vita/image-decode-*.log' }
 
 $trackedFiles = @(

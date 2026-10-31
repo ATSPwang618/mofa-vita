@@ -300,7 +300,7 @@ if (gameAssetsRootArgument !== undefined && (mode !== 'game' || !path.isAbsolute
 const graphical = ['gxm', 'effects', 'pipeline', 'text', 'game', 'movie', 'compressed', 'ui-color'].includes(mode);
 const assetRunTag = gameAssetsRootArgument ? `staged-${Date.now()}-${randomBytes(3).toString('hex')}` : undefined;
 const runName = graphical ? `${gameBacklogInputs ? 'game-backlog-inputs' : gameSaveInputs ? 'game-save-inputs' : gameCgInputs ? 'game-cg-inputs' : gameInputs ? 'game-inputs' : mode}${assetRunTag ? '-' + assetRunTag : ''}-${renderer.toLowerCase()}-${mapping}` : mode;
-const executable = process.env.KNIFE_VITA3K ?? 'D:/PSV/vita3k-mcp-app/Vita3K.exe';
+const executable = process.env.KNIFE_VITA3K ?? (() => { throw new Error('Set KNIFE_VITA3K to the emulator executable'); })();
 const bridgePath = path.join(path.dirname(executable), 'mcp/server/dist/bridge-client.js');
 const { BridgeClient } = await import(pathToFileURL(bridgePath).href);
 const work = path.join(root, '.work/vita/vita3k');
@@ -432,7 +432,7 @@ if (mode === 'movie') {
   }
 }
 // Reuse the existing firmware tree; all emulator writes stay in this DEV profile.
-const firmware = process.env.KNIFE_VITA3K_FIRMWARE ?? 'D:/PSV/vita-game/vs0';
+const firmware = process.env.KNIFE_VITA3K_FIRMWARE ?? (() => { throw new Error('Set KNIFE_VITA3K_FIRMWARE to your firmware directory'); })();
 const firmwareLink = path.join(pref, 'vs0');
 try { await fs.lstat(firmwareLink); }
 catch (error) {

@@ -39,6 +39,12 @@ mod witch;
 #[cfg(target_os = "vita")]
 mod vita_entry;
 #[cfg(target_os = "vita")]
+mod vita_audit;
+#[cfg(target_os = "vita")]
+mod vita_watchdog;
+#[cfg(any(target_os = "vita", test))]
+mod vita_stream_index;
+#[cfg(target_os = "vita")]
 mod vita_input;
 #[cfg(any(target_os = "vita", test))]
 mod vita_image_cache;

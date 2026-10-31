@@ -14,10 +14,15 @@ use std::{
     sync::Mutex,
 };
 
+use knife_perf::{Metric, Scope};
+
 use anyhow::{Context, Result, ensure};
 use flate2::bufread::{GzDecoder, ZlibDecoder};
 #[cfg(not(target_os = "vita"))]
 use memmap2::Mmap;
+
+#[path = "archive_cache.rs"]
+mod archive_cache;
 
 pub const SECTOR: u64 = 0x800;
 
@@ -71,16 +76,20 @@ impl Storage {
                 ))
             }
             Self::File(file) => {
+                let allocate = Scope::new(Metric::ArchiveBufferZero);
                 let mut bytes = Vec::new();
                 bytes
                     .try_reserve_exact(len)
                     .context("allocating bounded archive entry")?;
                 bytes.resize(len, 0);
+                allocate.finish(len as u64, 0);
                 // The seek and complete read form one operation. File::try_clone
                 // would share its seek position on several supported platforms.
+                let lock_wait = Scope::new(Metric::ArchiveLock);
                 let mut file = file
                     .lock()
                     .map_err(|_| anyhow::anyhow!("archive file lock poisoned"))?;
+                lock_wait.finish(0, 0);
                 let started = std::time::Instant::now();
                 file.seek(SeekFrom::Start(start))
                     .context("seeking archive entry")?;
@@ -102,10 +111,19 @@ pub struct ArchiveEntry {
     pub unpacked_sectors: u16,
 }
 
+/// Header-only admission plan. Compressed input scratch and retained decoded
+/// output have separate bounds; the caller must reserve the latter before read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArchiveReadPlan {
+    pub stored_bytes: usize,
+    pub decoded_bytes: usize,
+}
+
 pub struct Archive {
     pub name: String,
     mrg: Storage,
     mrg_len: u64,
+    cache_instance: u64,
     limits: ArchiveLimits,
     entries: Vec<ArchiveEntry>,
     by_name: HashMap<String, usize>,
@@ -115,6 +133,8 @@ pub struct Archive {
 impl Archive {
     /// Open `<dir>/<base>.hed`, `.nam` (optional) and `.mrg`.
     /// Vita always uses seek/read; desktop keeps its read-only mapping.
+    /// All three files are immutable inputs for this Archive's lifetime, for
+    /// both backends (the desktop mapping already requires that contract).
     pub fn open(dir: &Path, base: &str) -> Result<Self> {
         Self::open_with(
             dir,
@@ -195,6 +215,7 @@ impl Archive {
             name: base.to_string(),
             mrg,
             mrg_len,
+            cache_instance: archive_cache::instance(),
             limits,
             entries,
             by_name,
@@ -229,68 +250,95 @@ impl Archive {
             .with_context(|| format!("{} entry {index} ({})", self.name, e.name))
     }
 
-    fn raw_entry(&self, e: &ArchiveEntry, read_cap: Option<usize>) -> Result<Cow<'_, [u8]>> {
-        let available = self
-            .mrg_len
-            .checked_sub(e.offset)
-            .context("archive entry starts outside file")?;
-        let head = self.mrg.read_range(
-            e.offset,
-            available.min(super::nx::HEADER_LEN as u64) as usize,
-        )?;
-        let len = if let Some(header) = super::nx::header(&head)? {
-            if let Some(cap) = read_cap {
-                ensure!(header.unpacked_len <= cap as u64 && header.stored_len <= cap as u64,
-                    "archive read cap {cap} exceeded by stored/decoded NX entry");
-            }
-            ensure!(
-                header.unpacked_len <= self.limits.max_unpacked_bytes as u64,
-                "archive unpacked length {} exceeds limit {}",
-                header.unpacked_len,
-                self.limits.max_unpacked_bytes
-            );
-            header.stored_len
-        } else {
-            let len = u64::from(e.stored_sectors)
-                .checked_mul(SECTOR)
+    /// Reads only the small NX header, never a body or decompression allocation.
+    pub fn read_plan(&self, index: usize) -> Result<ArchiveReadPlan> {
+        let entry = self.entries.get(index).context("missing archive entry")?;
+        ensure!(!entry.name.eq_ignore_ascii_case("NOFILE.EXISTS"), "missing archive entry");
+        self.entry_plan(entry, None).map(|p| p.sizes)
+    }
+
+    /// Unique identity of this immutable open archive, safe across path reuse.
+    pub fn cache_identity(&self) -> u64 { self.cache_instance }
+
+    fn cache_key(&self, e: &ArchiveEntry) -> archive_cache::Key {
+        archive_cache::Key { instance: self.cache_instance, offset: e.offset,
+            stored: e.stored_sectors, unpacked: e.unpacked_sectors }
+    }
+
+    fn entry_plan(&self, e: &ArchiveEntry, read_cap: Option<(usize, usize)>) -> Result<archive_cache::Plan> {
+        let available = self.mrg_len.checked_sub(e.offset).context("archive entry starts outside file")?;
+        let key = self.cache_key(e);
+        let plan = if let Some(plan) = archive_cache::header(key) { plan } else {
+            let head = self.mrg.read_range(e.offset, available.min(super::nx::HEADER_LEN as u64) as usize)?;
+            let header = super::nx::header(&head)?;
+            let stored = header.map_or_else(|| u64::from(e.stored_sectors).checked_mul(SECTOR), |h| Some(h.stored_len))
                 .context("archive stored length overflow")?;
-            ensure!(
-                len <= self.limits.max_unpacked_bytes as u64,
-                "archive unpacked length {len} exceeds limit {}",
-                self.limits.max_unpacked_bytes
-            );
-            len
+            let decoded = header.map_or(stored, |h| h.unpacked_len);
+            archive_cache::Plan { sizes: ArchiveReadPlan {
+                stored_bytes: usize::try_from(stored).context("archive entry exceeds address space")?,
+                decoded_bytes: usize::try_from(decoded).context("decoded entry exceeds address space")?,
+            }, kind: header.map(|h| h.kind) }
         };
-        if let Some(cap) = read_cap {
-            ensure!(len <= cap as u64, "archive read cap {cap} exceeded by raw entry");
+        // Admission checks apply to cached and cold plans alike, before either
+        // body IO or output allocation; speculative caps must never be bypassed.
+        let ArchiveReadPlan { stored_bytes: stored, decoded_bytes: decoded } = plan.sizes;
+        ensure!(decoded <= self.limits.max_unpacked_bytes, "archive unpacked length {decoded} exceeds limit {}", self.limits.max_unpacked_bytes);
+        ensure!(stored <= self.limits.max_stored_bytes, "archive stored length {stored} exceeds limit {}", self.limits.max_stored_bytes);
+        if let Some((stored_cap, decoded_cap)) = read_cap {
+            ensure!(stored <= stored_cap && decoded <= decoded_cap, "archive read cap exceeded (stored/output)");
         }
-        ensure!(
-            len <= self.limits.max_stored_bytes as u64,
-            "archive stored length {len} exceeds limit {}",
-            self.limits.max_stored_bytes
-        );
-        let end = e
-            .offset
-            .checked_add(len)
-            .context("archive range overflow")?;
-        ensure!(
-            end <= self.mrg_len,
-            "archive entry ends outside file: {end} > {}",
-            self.mrg_len
-        );
-        let len = usize::try_from(len).context("archive entry exceeds address space")?;
-        self.mrg.read_range(e.offset, len)
+        let end = e.offset.checked_add(stored as u64).context("archive range overflow")?;
+        ensure!(end <= self.mrg_len, "archive entry ends outside file: {end} > {}", self.mrg_len);
+        archive_cache::store_header(key, plan);
+        Ok(plan)
+    }
+
+    fn raw_entry(&self, e: &ArchiveEntry, read_cap: Option<(usize, usize)>) -> Result<Cow<'_, [u8]>> {
+        let plan = self.entry_plan(e, read_cap)?;
+        let key = self.cache_key(e);
+        if let Some(bytes) = archive_cache::tiny(key, plan.sizes.stored_bytes) { return Ok(Cow::Owned(bytes)); }
+        let result = self.mrg.read_range(e.offset, plan.sizes.stored_bytes);
+        let raw = match result {
+            Ok(raw) => raw,
+            Err(error) => { archive_cache::invalidate(key); return Err(error); }
+        };
+        // A full body must agree with the planned header, including on first
+        // load. Archive mutation violates the open() contract; refuse mismatched
+        // metadata rather than decoding into a reservation sized for old data.
+        let header = match super::nx::header(&raw) {
+            Ok(header) => header,
+            Err(error) => { archive_cache::invalidate(key); return Err(error); }
+        };
+        let agrees = match (plan.kind, header) {
+            (None, None) => true,
+            (Some(kind), Some(h)) => h.kind == kind
+                && h.stored_len == plan.sizes.stored_bytes as u64
+                && h.unpacked_len == plan.sizes.decoded_bytes as u64,
+            _ => false,
+        };
+        if !agrees { archive_cache::invalidate(key); }
+        ensure!(agrees, "archive input changed after header planning");
+        // Only read()/range's successful full NX validation admits tiny bytes.
+        Ok(raw)
     }
 
     /// Entry contents with NX compression removed.
     pub fn read(&self, index: usize) -> Result<Vec<u8>> {
         let raw = self.raw(index)?.context("missing archive entry")?;
         if super::nx::kind(&raw).is_some() {
+            let audit = Scope::new(Metric::NxFull);
             let started = std::time::Instant::now();
             let out = super::nx::decompress_bounded(&raw, self.limits.max_unpacked_bytes);
             crate::io_metrics::record_inflate(started.elapsed().as_micros() as u64);
+            if out.is_ok() { archive_cache::store_tiny(self.cache_key(&self.entries[index]), &raw); }
+            else { archive_cache::invalidate(self.cache_key(&self.entries[index])); }
+            if knife_perf::enabled() {
+                let name = &self.entries[index].name;
+                audit.finish_hot(&format!("{}:{index}:{name}", self.name), out.as_ref().map_or(0, |v| v.len() as u64), raw.len() as u64);
+            }
             out
         } else {
+            archive_cache::store_tiny(self.cache_key(&self.entries[index]), &raw);
             Ok(raw.into_owned())
         }
     }
@@ -299,15 +347,28 @@ impl Archive {
     /// body or allocating a decompression output. Speculative image jobs use a
     /// tighter cap than archive/UI demand loads; the archive remains reusable.
     pub fn read_bounded(&self, index: usize, max_bytes: usize) -> Result<Vec<u8>> {
+        self.read_bounded_lengths(index, max_bytes, max_bytes)
+    }
+
+    /// Separate body/output caps, checked again against the current header before
+    /// allocating either. This preserves an atlas's exact decoded reservation.
+    pub fn read_bounded_lengths(&self, index: usize, stored_cap: usize, decoded_cap: usize) -> Result<Vec<u8>> {
         let e = self.entries.get(index).context("missing archive entry")?;
         ensure!(!e.name.eq_ignore_ascii_case("NOFILE.EXISTS"), "missing archive entry");
-        let raw = self.raw_entry(e, Some(max_bytes))?;
+        let raw = self.raw_entry(e, Some((stored_cap, decoded_cap)))?;
         if super::nx::kind(&raw).is_some() {
+            let audit = Scope::new(Metric::NxFull);
             let started = std::time::Instant::now();
-            let out = super::nx::decompress_bounded(&raw, max_bytes.min(self.limits.max_unpacked_bytes));
+            let out = super::nx::decompress_bounded(&raw, decoded_cap.min(self.limits.max_unpacked_bytes));
             crate::io_metrics::record_inflate(started.elapsed().as_micros() as u64);
+            if out.is_ok() { archive_cache::store_tiny(self.cache_key(e), &raw); }
+            else { archive_cache::invalidate(self.cache_key(e)); }
+            if knife_perf::enabled() {
+                audit.finish_hot(&format!("{}:{index}:{}", self.name, e.name), out.as_ref().map_or(0, |v| v.len() as u64), raw.len() as u64);
+            }
             out
         } else {
+            archive_cache::store_tiny(self.cache_key(&self.entries[index]), &raw);
             Ok(raw.into_owned())
         }
     }
@@ -319,18 +380,18 @@ impl Archive {
     pub fn read_uncompressed_range(&self, index: usize, offset: usize, len: usize) -> Result<Vec<u8>> {
         let e = self.entries.get(index).context("missing archive entry")?;
         ensure!(!e.name.eq_ignore_ascii_case("NOFILE.EXISTS"), "missing archive entry");
-        let available = self.mrg_len.checked_sub(e.offset).context("archive entry starts outside file")?;
-        let head = self.mrg.read_range(e.offset, available.min(super::nx::HEADER_LEN as u64) as usize)?;
+        let plan = self.entry_plan(e, None)?;
         let end = offset.checked_add(len).context("archive subrange overflow")?;
-        if let Some(header) = super::nx::header(&head)? {
-            ensure!(header.unpacked_len <= self.limits.max_unpacked_bytes as u64, "NX unpacked length exceeds archive limit");
-            ensure!(end as u64 <= header.unpacked_len, "NX subrange exceeds decoded entry");
+        if let Some(kind) = plan.kind {
+            ensure!(end <= plan.sizes.decoded_bytes, "NX subrange exceeds decoded entry");
             let raw = self.raw(index)?.context("missing archive entry")?;
-            let stored = usize::try_from(header.stored_len).context("NX stored length exceeds address space")?;
+            let stored = plan.sizes.stored_bytes;
             let body = raw.get(super::nx::HEADER_LEN..stored).context("truncated NX entry")?;
-            let expected = usize::try_from(header.unpacked_len).context("NX decoded length exceeds address space")?;
+            let expected = plan.sizes.decoded_bytes;
+            let audit = Scope::new(Metric::NxRange);
+            let started = std::time::Instant::now();
             let input = Cursor::new(body);
-            let (bytes, consumed) = match header.kind {
+            let decoded = (|| -> Result<(Vec<u8>, u64)> { Ok(match kind {
                 super::nx::NxKind::Gzip => {
                     let mut decoder = GzDecoder::new(input);
                     let bytes = collect_nx_range(&mut decoder, expected, offset, len)?;
@@ -341,13 +402,21 @@ impl Archive {
                     let bytes = collect_nx_range(&mut decoder, expected, offset, len)?;
                     (bytes, decoder.get_ref().position())
                 }
+            }) })();
+            crate::io_metrics::record_inflate(started.elapsed().as_micros() as u64);
+            let (bytes, consumed) = match decoded {
+                Ok(decoded) => decoded,
+                Err(error) => { archive_cache::invalidate(self.cache_key(e)); return Err(error); }
             };
+            if consumed != body.len() as u64 { archive_cache::invalidate(self.cache_key(e)); }
             ensure!(consumed == body.len() as u64, "NX compressed entry has trailing bytes");
+            archive_cache::store_tiny(self.cache_key(e), &raw);
+            if audit.active() {
+                audit.finish_hot(&format!("{}:{}:{}", self.name, index, e.name), expected as u64, len as u64);
+            }
             Ok(bytes)
         } else {
-            let stored = u64::from(e.stored_sectors).checked_mul(SECTOR).context("archive stored length overflow")?;
-            ensure!(stored <= self.limits.max_stored_bytes as u64 && stored <= self.limits.max_unpacked_bytes as u64, "archive raw entry exceeds limits");
-            ensure!(stored <= available && end as u64 <= stored, "archive subrange outside raw entry");
+            ensure!(end <= plan.sizes.stored_bytes, "archive subrange outside raw entry");
             let start = e.offset.checked_add(offset as u64).context("archive subrange offset overflow")?;
             Ok(self.mrg.read_range(start, len)?.into_owned())
         }
@@ -377,6 +446,7 @@ fn collect_nx_range(decoder: &mut impl Read, expected: usize, offset: usize, len
         decoded = to;
     }
     ensure!(decoded == expected && selected.len() == len, "NX decoded entry length mismatch");
+    knife_perf::add(Metric::RangeSelect, selected.len() as u64, 0);
     Ok(selected)
 }
 
@@ -424,6 +494,42 @@ mod range_tests {
         out
     }
     #[test]
+    fn tiny_io_reuse_keeps_validation_caps_and_never_reuses_another_archive() {
+        struct Flags(u32);
+        impl Drop for Flags { fn drop(&mut self) { knife_perf::optimizations::set(self.0); } }
+        let _flags = Flags(knife_perf::optimizations::mask());
+        knife_perf::optimizations::set(knife_perf::optimizations::RESOURCE_IO_CACHE);
+        let payload = wrapped(&[42u8;1000],false);
+        let fixture = Fixture::new(&payload); let archive = fixture.open();
+        let before = crate::io_metrics::snapshot();
+        assert_eq!(archive.read(0).unwrap(),vec![42;1000]);
+        let cold = crate::io_metrics::snapshot();
+        assert_eq!(cold.card_read_calls-before.card_read_calls,2);
+        assert_eq!(archive.read_uncompressed_range(0,20,7).unwrap(),[42;7]);
+        assert_eq!(archive.read_bounded(0,1000).unwrap(),vec![42;1000]);
+        let warm = crate::io_metrics::snapshot();
+        assert_eq!(warm.card_read_calls,cold.card_read_calls);
+        assert!(archive.read_bounded(0,999).is_err());
+        assert!(archive.read_uncompressed_range(0,999,2).is_err());
+        // A new Archive of the same path has a distinct identity. There is no
+        // stale pointer or entry-index alias after instances are dropped.
+        let other = fixture.open();
+        assert_eq!(other.read(0).unwrap(),vec![42;1000]);
+        assert_eq!(crate::io_metrics::snapshot().card_read_calls,warm.card_read_calls+2);
+        // Full headers can succeed while compressed CRC/output validation fails.
+        // Such input must never become a tiny-cache hit, even on repeat demand.
+        let mut corrupt = payload.clone(); let last=corrupt.len()-1;corrupt[last]^=0x80;
+        let broken=Fixture::new(&corrupt);let broken=broken.open();
+        let start=crate::io_metrics::snapshot().card_read_calls;
+        assert!(broken.read(0).is_err());assert!(broken.read(0).is_err());
+        assert_eq!(crate::io_metrics::snapshot().card_read_calls,start+4);
+        let truncated=Fixture::new(&payload[..16]);let truncated=truncated.open();
+        let start=crate::io_metrics::snapshot().card_read_calls;
+        assert!(truncated.read(0).is_err());assert!(truncated.read(0).is_err());
+        assert_eq!(crate::io_metrics::snapshot().card_read_calls,start+2);
+    }
+
+    #[test]
     fn per_read_cap_rejects_nx_before_reading_missing_body_and_keeps_archive_usable() {
         let mut payload = wrapped(&[42u8; 1000], false);
         let fixture = Fixture::new(&payload);
@@ -439,6 +545,25 @@ mod range_tests {
         let archive = fixture.open();
         assert!(archive.read_bounded(0, 1024).unwrap_err().to_string().contains("read cap"));
         assert_eq!(archive.read_bounded(0, 2048).unwrap(), vec![7u8; 2048]);
+    }
+
+    #[test]
+    fn planned_lengths_reserve_real_output_and_independent_input_budget() {
+        for gzip in [false, true] {
+            let payload=wrapped(&[42;1000],gzip);
+            let fixture=Fixture::new(&payload);let archive=fixture.open();
+            let plan=archive.read_plan(0).unwrap();
+            assert_eq!(plan,ArchiveReadPlan{stored_bytes:payload.len(),decoded_bytes:1000});
+            assert_eq!(archive.read_bounded_lengths(0,plan.stored_bytes,plan.decoded_bytes).unwrap(),vec![42;1000]);
+            assert!(archive.read_bounded_lengths(0,plan.stored_bytes-1,plan.decoded_bytes).is_err());
+            assert!(archive.read_bounded_lengths(0,plan.stored_bytes,plan.decoded_bytes-1).is_err());
+        }
+        // A body can be larger than the decoded output; its temporary read cap
+        // must not force reclaiming that same amount of retained output cache.
+        let payload=wrapped(b"x",false);let fixture=Fixture::new(&payload);let archive=fixture.open();
+        let plan=archive.read_plan(0).unwrap();assert!(plan.stored_bytes>plan.decoded_bytes);
+        assert_eq!(archive.read_bounded_lengths(0,plan.stored_bytes,1).unwrap(),b"x");
+        let fixture=Fixture::new(&payload[..16]);assert!(fixture.open().read_plan(0).is_err());
     }
 
     #[test]

@@ -1,128 +1,72 @@
 # mofa-vita
 
-《魔法使之夜》（Witch on the Holy Night）Switch 版引擎的 **PS Vita 移植**源码工程。
+《魔法使之夜》（Witch on the Holy Night）Switch 版引擎的 PS Vita 移植，基于 [AuroraWright/knife](https://github.com/AuroraWright/knife) 0.9.4。Vita 使用原生 GXM；桌面后端使用 WGPU。
 
-以 `knife` 0.9.4（上游 `AuroraWright/knife`，Switch 引擎的 Rust 重实现）为基线，
-为 Vita 实现了原生 **GXM 渲染后端**，替代桌面端 OpenGL；输出固定 960×540（上下各 2 px 黑边）。
-本仓库是**源码工程**：游戏资源、构建产物与存档都不入库。`dist/` 是本机用自备游戏数据生成的
-资产包与各档中间产物（已被 `.gitignore` 排除），只用于实机测试。
+本仓库提供引擎源码、构建工具、生成元数据、运行时编译器及所需原生依赖。游戏本体、字体、音视频和汉化数据由使用者自行准备，不入库。**编译 VPK 不需要游戏素材。**
 
-## 状态
+## 构建和安装
 
-| 项目 | 数值 |
-|---|---|
-| 画面 | 场景链 480×270、画布 720×405、扫描 960×544 |
-| 帧率（实机 444/222/222） | 对白 **22–45 FPS**、一般场景 17–25 FPS、重场景 **约 5 FPS**、全程平均 **19–21 FPS** |
-| 稳定性 | 启动/运行崩溃已修（堆、字体图集、音频解码、GXM 对象生命周期） |
-| 加载 | 纹理准备 670 ms/条 → **6 ms/条**（后台读盘 + 24 MiB 环形缓冲） |
-| 纹理 | 预烘焙 GXT（DXT1/DXT5）直通 GXM |
-
-重场景（逐帧动画，约占 5% 时间）卡在约 190 ms：39 个渲染 pass，每个 pass 约 2 ms 的
-`sceGxmFinish` 驱动往返，属于当前渲染结构的固有成本，详见 `doc/06-已知限制与已放弃方案.md`。
-
-## 目录
-
-```
-knife/                    引擎工作区（Rust）
-  knife/                  主程序：脚本 VM、舞台、UI、文本、输入
-  knife-render/           渲染抽象；src/vita.rs 为 Vita 后端
-  knife-platform-vita/    GXM FFI 与平台服务
-  knife-core/             归档、纹理、脚本等格式解析
-  knife-audio/            BFSAR/Opus 音频
-  vita/                   GXM 后端 C 源码与着色器（被编入静态库）
-  probes/                 后端探针程序
-tools/                    构建、打包、着色器编译脚本
-doc/                      技术文档（本文档的详细版）
-release/                  每次成功构建后自动发布的 VPK
-dist/                     本机资产包与中间产物（不入库，见 doc/08）
-实机开发测试工具/         VitaDeck 与设备端插件（不参与构建）
-```
-
-## 构建
-
-每次构建成功后，脚本会把 VPK **复制到项目根目录的 `release/`**：
-
-```
-release/knife-vita-game-540p.vpk
-```
-
-并在构建日志末尾打印文件大小与 SHA-256。中间产物（elf/velf/eboot/param.sfo/收据）留在
-`.work/vita/game-release-540p/`；`release/` 只放可直接安装的包。
-
-2026-10-29 已将更新的图标、LiveArea 背景、启动按钮及 `pic0.png` 重新打包。当前发布包
-`build_tag=mofa-livearea-20261029`，大小 **4,921,694 字节（约 4.69 MiB）**，SHA-256 为：
-
-```text
-c40dcc5922a0d7ae266cab528f2c42772f137698054574887fd4fd03bf81121b
-```
-
-图片源文件位于 `knife/vita/sce_sys/`；尺寸、模板引用、原图备份和历史包身份见
-[构建与工具链](doc/03-构建与工具链.md)。本次已验证构建和包内容，尚未验证新版 LiveArea 的实机显示。
-
-依赖：WSL2 Ubuntu + vitasdk（`VITASDK`）；着色器重编需 Windows 侧 `psp2cgc`。
+安装 Python **3.9 或更新版本**后，在项目根目录执行：
 
 ```bash
-# GXM 开发探针（不需要游戏数据）
-bash tools/build-vita.sh gxm dev
-
-# 540p 正式引擎包（游戏数据另行准备）
-KNIFE_VITA_VARIANT=native540 KNIFE_BUILD_TAG=<tag> bash tools/build-vita.sh game release
+python3 tools/build-vita.py --check
+python3 tools/build-vita.py game release
 ```
 
-着色器改动后必须重新生成头文件：
+`--check` 只检查环境，不安装或编译。正常构建会自动安装缺失的 Rust 工具链及 `rust-src`；也可先执行 `python3 tools/build-vita.py --setup`。Windows 可使用 `py -3` 代替 `python3`，工具会检测 WSL 并转换项目路径。通过 `VITASDK` 或 `--sdk` 指定 SDK，其他选项见 [构建与工具链](doc/03-构建与工具链.md)。
 
-```powershell
-.\tools\compile-vita-effects.ps1     # knife/vita/shaders/effects.cg -> generated/effects.h
-.\tools\compile-vita-shaders.ps1
+本机仍需能运行的 VitaSDK 核心工具链（GCC、newlib、平台 stubs 和打包工具），以及 CMake、Ninja、Git 和 Bash。png、jpeg、z、ogg、opus、opusfile、taihen 七个静态库及头文件随仓库放在 `knife/vita/vendor/dependencies/`，无需向 SDK 另行安装。shader 编译器模块与 SceShaccCgExt 静态库也保存在 `knife/vita/vendor/`，无需指定本机插件路径。
+
+Vita Rust 固定为 `nightly-2026-05-28`，无需额外安装桌面默认的 Rust 1.99.0。首次 Rust 安装和 Cargo 构建需要联网；已有完整工具链与缓存时可设置 `KNIFE_VITA_OFFLINE=1`。正式版默认 `KNIFE_VITA_QUIET=1`，不启用性能采集输出。
+
+构建成功后，安装包位于 **`release/knife-vita-game-540p.vpk`**，TITLE ID 为 `KNIF00540`。ELF、链接映射和构建收据保存在 `.work/vita/game-release-540p/`，构建日志在 `.work/logs/vita/`。
+
+1. 在支持安装自制应用的 PS Vita 上安装 VPK。
+2. 将配套完整 `assets/` 目录复制到 **`ux0:data/knife-woh-540p/assets/`**。
+3. 从 LiveArea 启动。当前 Vita 版本固定使用中文 ID2；存档位于 `ux0:data/knife-woh-540p/saves/`。
+
+## 素材与画面
+
+当前引擎匹配 **r7 native540 codec9** 素材包，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
+
+```text
+a66a1318a147a901c7f76e9868e04f0551131f1128bb8dc591c242402de79d41
 ```
 
-主机侧测试：`cargo test -p knife-render --offline`（68 项）。
-`cargo check` 在主机上会因 gstreamer 依赖失败，以 Vita 构建结果为准。
+素材需由使用者自备的 Switch 游戏数据及相应汉化资源转换得到。原始 NSP、未经转换的 romfs、旧 codec8 包和其他分辨率版本不能直接替代。VPK 不含游戏素材；已经安装匹配素材包时，无需因重新编译引擎而重复复制素材。
 
-## 运行（设备侧）
+场景、组 pixel/mask 和 UI 合成固定 **960×540**，最终居中输出到 960×544 屏幕，上下各留 2 像素。脚本保留 1920×1080 坐标，局部图片和图集使用各自尺寸。程序不读取 `scene-mode.txt`。主 newlib 堆上限为 256 MiB，各缓存按需使用；这不等于显存预算。
 
-1. 安装构建出的 VPK（TITLE ID `KNIF00540`）。
-2. 把游戏资源放到 `ux0:data/knife-woh-540p/assets/`——资源需用你自己的游戏数据转换，
-   见 [从原版数据制作资产](doc/08-从原版数据制作资产.md)（`tools/make-vita-assets.py`）。
-3. 数据根、存档根、日志根均为 `ux0:data/knife-woh-540p`。
+启动出现 `ASSETS REQUIRED`、`WRONG FILE SIZE` 或 `WRONG ASSET VERSION` 时，核对素材完整性与清单版本。更新素材还需同步引擎内嵌 profile、图集索引及音频文件索引，步骤见 [更新素材元数据](doc/03-构建与工具链.md#更新素材元数据)。
 
-渲染密度可通过 `ux0:data/knife-woh-540p/scene-mode.txt` 切换：
-不存在 = 480×270 场景 + 720×405 画布（默认）；`full` = 原生文字；`720` / `quarter` / `native` 为对照档。
+## 操作
 
-## 实机开发测试工具
-
-`实机开发测试工具/` 是从开发期沿用的设备侧工具集，**不参与构建**，装不装都能运行游戏：
-
-| 路径 | 用途 |
+| Vita 输入 | 剧情中的常用操作 |
 |---|---|
-| `VitaDeck/VitaDeck.exe` | PC 端 Vita 调试工具（截图、文件传输、插件注入） |
-| `VitaDeck.zip` | 同上的分发包（与原目录内容重复，占 52 MB） |
-| `实机开发测试插件/vitacompanion.suprx` | taiHEN 用户插件：配合 VitaDeck 做进程/内存操作 |
-| `实机开发测试插件/catlog.skprx` / `.suprx` | 日志转发到 PC（`catlog`） |
-| `实机开发测试插件/net_keepalive.skprx` | 保持网络连接，避免长时间挂机掉线 |
-| `实机开发测试插件/NoPowerLimits.skprx` / `nosleep.skprx` | 解除降频/休眠，测性能时避免频率波动 |
-| `实机开发测试插件/InfiniteNet.suprx` | 网络相关调试插件 |
-| `实机开发测试插件/config.txt` | taiHEN 配置示例，已包含上述插件的加载行 |
-| `实机开发测试插件/performance.log` | 一份实机性能日志样例，字段含义见 `doc/04` |
+| × | 确认、推进文字 |
+| ○ | 取消、返回；停止快进或切换消息窗口显示 |
+| □ | 回看日志 |
+| △ | 系统菜单 |
+| L / R | 自动播放 / 快进 |
+| START / SELECT | 快速保存 / 快速读取 |
+| 方向键、右摇杆方向 | 导航、选择 |
+| 左摇杆 | 列表滚动、画面移动等界面操作 |
+| 前触摸屏 | 点击、拖动 |
 
-**测性能请装 `NoPowerLimits` + `nosleep`**：否则系统可能在测量中途降频或休眠，日志里的帧时间会出现
-无法解释的台阶。装插件后需要重启，日志头里的 `arm_mhz` 才代表稳定状态。
+具体操作随菜单和演出状态变化，输入映射见 [vita_input.rs](knife/knife/src/vita_input.rs)。
 
-## 文档
+## 源码结构
 
-| 文档 | 内容 |
+| 路径 | 内容 |
 |---|---|
-| [架构总览](doc/01-架构总览.md) | 帧链、渲染目标、线程与资源加载 |
-| [GXM 后端实现](doc/02-GXM后端实现.md) | C 后端结构、pass 模型、着色器与顶点格式 |
-| [构建与工具链](doc/03-构建与工具链.md) | 构建脚本、LiveArea 图片、发布包哈希、着色器编译 |
-| [性能实测与优化史](doc/04-性能实测与优化史.md) | 全部实测数据、有效优化与量化结论 |
-| [资源与画质](doc/05-资源与画质.md) | GXT/DXT 管线、分辨率档位、文字清晰度 |
-| [已知限制与已放弃方案](doc/06-已知限制与已放弃方案.md) | 结构性瓶颈与不要重复尝试的路线 |
-| [上游同步与版本](doc/07-上游同步与版本.md) | 与上游 0.9.4→0.9.9 的差异与移植判断 |
-| **[从原版数据制作资产](doc/08-从原版数据制作资产.md)** | 从自备的 Switch 数据生成设备端 assets 的完整链路 |
-| [历史记录](doc/archive/) | 移植期的调查记录：GXM 移植计划、DXT 实施、三次崩溃取证、OpenGL 黑屏调查等 |
+| [knife/](knife/) | Rust 工作区：游戏、格式解析、渲染、音频与 Vita 平台层 |
+| [knife/vita/](knife/vita/) | GXM C 后端、Cg 源码、生成着色器和系统图片 |
+| [tools/](tools/) | 本地构建、打包与素材处理脚本 |
+| [构建与工具链](doc/03-构建与工具链.md) | 跨电脑构建、依赖与维护步骤 |
+| `release/`、`.work/`、`dist/` | 本机产物、缓存和自备素材，不入库 |
 
-## 授权
+历次逆向分析、实机性能基线与修复依据见[历史文档归档](doc/archive/README.md)。
 
-引擎部分沿用上游 `knife` 的许可（见 `knife/LICENSE`）。游戏数据、字体与图像资源版权归原权利方，
-不随本仓库分发。
+## 许可
+
+引擎沿用上游 [Mozilla Public License 2.0](knife/LICENSE)。第三方 SceShaccCgExt 的来源和 GPLv3 许可见 [NOTICE](knife/vita/vendor/shacccg-ext/NOTICE) 与 [LICENSE](knife/vita/vendor/shacccg-ext/LICENSE)，发布时须保留随包声明。游戏数据及汉化资源的权利归各自权利方。

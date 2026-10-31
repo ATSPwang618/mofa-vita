@@ -57,6 +57,7 @@ int32_t kv_image_decode(const uint8_t *encoded, uint32_t length, KvDecodedImage 
 /* A smaller per-job output cap, checked at the codec header before pixels are allocated. */
 int32_t kv_image_decode_bounded(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_rgba);
 /* Only this function releases pixels. It clears all fields; NULL/repeated calls are safe. */
+int32_t kv_image_decode_gray_bounded(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_bytes);
 void kv_image_free(KvDecodedImage *image);
 void kv_image_decode_stats(KvImageDecodeStats *out);
 

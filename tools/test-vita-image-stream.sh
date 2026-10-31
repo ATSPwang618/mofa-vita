@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-export PATH=/root/.cargo/bin:/usr/bin:/bin
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/root/.cache/knife-vita}
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/knife-vita}"
 build="$project/.work/vita/image-stream-tests"
 mkdir -p "$build" "$project/doc/logs/vita"
 cd "$project/knife"

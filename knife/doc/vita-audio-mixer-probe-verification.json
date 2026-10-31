@@ -4,7 +4,7 @@
   "binary": "vita-audio-mixer-probe",
   "workspace": "probes/vita-audio-mixer, independent [workspace] and Cargo.lock",
   "build": {
-    "command": "bash probes/vita-audio-mixer/build-arm.sh; VITASDK=/opt/vitasdk; CARGO_TARGET_DIR=/mnt/d/AI-CODEX/knife-audio-probe-target",
+    "command": "bash probes/vita-audio-mixer/build-arm.sh; VITASDK=${VITASDK}; CARGO_TARGET_DIR=${WORK_ROOT}/knife-audio-probe-target",
     "result": "PASS ELF32 ARM hard-float EABI",
     "elf_sha256": "7d6fb504ae70aaaf447bd0b18185ed171ea5e8ed3cbd4630dc01574527dd42be"
   },
@@ -18,9 +18,9 @@
   "tests": {
     "pre_fix": "Persistent QueueFull injection reproduced hanging Audio::drop; test FAILED after 200ms and completed only after releasing injection",
     "fix": "QueueFull retry services Batch, Shutdown, and Disconnected; fault test confirms at least one forced QueueFull before Drop",
-    "host_command": "CARGO_TARGET_DIR=/mnt/d/AI-CODEX/knife-audio-probe-target VITASDK=/opt/vitasdk cargo test --offline --locked -p knife-audio --lib -- --test-threads=1",
+    "host_command": "CARGO_TARGET_DIR=${WORK_ROOT}/knife-audio-probe-target VITASDK=${VITASDK} cargo test --offline --locked -p knife-audio --lib -- --test-threads=1",
     "host_result": "11 passed; includes persistent QueueFull shutdown test",
-    "fixture_command": "CARGO_TARGET_DIR=/mnt/d/AI-CODEX/knife-audio-probe-target VITASDK=/opt/vitasdk cargo test --offline --locked --manifest-path probes/vita-audio-mixer/Cargo.toml --lib -- --test-threads=1",
+    "fixture_command": "CARGO_TARGET_DIR=${WORK_ROOT}/knife-audio-probe-target VITASDK=${VITASDK} cargo test --offline --locked --manifest-path probes/vita-audio-mixer/Cargo.toml --lib -- --test-threads=1",
     "fixture_result": "1 passed: generated mono/stereo Ogg Opus 48 kHz, 4365 frames",
     "device_scenarios": [
       "PCM plus stream concurrency; stream EOF from frame 1200",

@@ -12,11 +12,15 @@ mkdir -p "$build/backend/shaders/generated" "$logs"
 
 # Keep one immutable input set for the red and green builds. Never roll back the
 # shared production source while another task is building or exercising it.
+for source in perf_audit.c perf_audit.h perf_counters.def; do
+    cp "$project/knife/vita/$source" "$build/backend/$source"
+done
 cp "$project/knife/vita/gxm_backend.c" "$build/backend/gxm_backend.c"
 cp "$project/knife/vita/gxm_backend.h" "$build/backend/gxm_backend.h"
 cp "$project/knife/vita/jpeg_hw.h" "$build/backend/jpeg_hw.h"
 cp "$project/knife/vita/image_decode.h" "$build/backend/image_decode.h"
 cp "$project/knife/vita/effects_backend.inc" "$build/backend/effects_backend.inc"
+cp "$project/knife/vita/gpu_lifetime.inc" "$build/backend/gpu_lifetime.inc"
 cp "$project/knife/vita/movie_gxm.inc" "$build/backend/movie_gxm.inc"
 cp "$project/knife/vita/shaders/generated/shaders.h" "$build/backend/shaders/generated/shaders.h"
 cp "$project/knife/vita/shaders/generated/effects.h" "$build/backend/shaders/generated/effects.h"
@@ -63,11 +67,16 @@ PY
     # -idirafter admits unmodified SDK declarations without replacing host libc
     # headers with the VitaSDK newlib headers. Do not enable SDK ARM ABI asserts
     # on this 64-bit host; the ARM ABI is outside this state-test's authority.
+    "$host_cc" -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined \
+        -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+        -c "$build/backend/perf_audit.c" -o "$build/perf_audit.o"
     for variant in red green; do
         backend="$build/backend/gxm_backend.c"
         if [[ $variant == red ]]; then backend="$build/backend/gxm_backend.red.c"; fi
-        command=("$host_cc" "${flags[@]}" "-DKV_GXM_BACKEND_SOURCE=\"$backend\""
-            -MD -MF "$build/$variant.d" "$build/gxm_present_test.c"
+        variant_flags=()
+        if [[ $variant == red ]]; then variant_flags=(-Wno-unused-function); fi
+        command=("$host_cc" "${flags[@]}" "${variant_flags[@]}" "-DKV_GXM_BACKEND_SOURCE=\"$backend\""
+            -MD -MF "$build/$variant.d" "$build/gxm_present_test.c" "$build/perf_audit.o"
             "-Wl,-Map,$build/$variant.map" -o "$build/present-$variant")
         printf '%q ' "${command[@]}" > "$build/$variant.command"
         printf '\n' >> "$build/$variant.command"

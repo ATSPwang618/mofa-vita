@@ -10,6 +10,7 @@ publish = false
 assets-540p = []
 
 [dependencies]
+knife-perf = { path = "../knife-perf" }
 knife-render-api = { path = "../knife-render-api" }
 crc32fast = "1.5.2"
 

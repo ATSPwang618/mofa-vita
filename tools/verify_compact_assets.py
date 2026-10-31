@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import mmap
+from tool_paths import tool_path
 from pathlib import Path
 import struct
 import subprocess
@@ -389,7 +390,7 @@ def main() -> None:
     parser.add_argument('--out', type=Path, default=OUTPUT)
     parser.add_argument('--decoded-audio', type=Path, default=ROOT / '.work/compact-audio-decoded.tsv')
     parser.add_argument('--image-source', type=Path)
-    parser.add_argument('--ffmpeg', type=Path, default=Path('C:/Program Files/ffmpeg/bin/ffmpeg.exe'))
+    parser.add_argument('--ffmpeg', type=Path, default=tool_path('ffmpeg', 'KNIFE_FFMPEG'))
     parser.add_argument('--jobs', type=int, default=3, choices=range(1, 9))
     args = parser.parse_args()
     started = time.monotonic()

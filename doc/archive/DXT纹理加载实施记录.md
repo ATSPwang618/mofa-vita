@@ -85,10 +85,10 @@ PowerShell 示例，`python`/`node` 须指向本机已验证运行时；SDK 工�
 python tools/vita-game-gxt.py --help
 python tools/stage-vita-gxt-cg.py --self-test
 node --test tools/vita-save-evidence.test.mjs tools/test-vita-game-evidence.mjs tools/vita-compressed-evidence.test.mjs tools/vita-ui-color-evidence.test.mjs tools/vita-game-stage.test.mjs
-wsl -d pocket-ubuntu -- env KNIFE_VITA_DEV_MAX_FRAMES=7200 bash /mnt/d/AI-CODEX/SWITCH-魔法使之夜/tools/build-vita.sh game
-$env:KNIFE_VITA3K = 'D:/AI-CODEX/SWITCH-魔法使之夜/.work/vita/emulator-memory-fixed/Vita3K.exe'
-$env:KNIFE_VITA3K_DEBUGGER = 'D:/AI-CODEX/SWITCH-魔法使之夜/.work/vita/debugger/vita3k-owned-debugger.exe'
-node tools/verify-vita.mjs --game-save-inputs --memory-mapping disabled --renderer Vulkan --game-assets-root 'D:/AI-CODEX/SWITCH-魔法使之夜/.work/vita/game-gxt-stage/menu-and-img1227-dxt1/assets'
+wsl -d ${WSL_DISTRO} -- env KNIFE_VITA_DEV_MAX_FRAMES=7200 bash ${PROJECT_ROOT}/tools/build-vita.sh game
+$env:KNIFE_VITA3K = '${PROJECT_ROOT}/.work/vita/emulator-memory-fixed/Vita3K.exe'
+$env:KNIFE_VITA3K_DEBUGGER = '${PROJECT_ROOT}/.work/vita/debugger/vita3k-owned-debugger.exe'
+node tools/verify-vita.mjs --game-save-inputs --memory-mapping disabled --renderer Vulkan --game-assets-root '${PROJECT_ROOT}/.work/vita/game-gxt-stage/menu-and-img1227-dxt1/assets'
 ```
 
 真实 stage 已存在时，转换/归档工具拒绝覆盖；重建资源使用新的目标目录。下一道门槛是在同一资源、脚本状态及时点下做 Windows/GXM 游戏帧对照，定位底色和模糊差异；独立覆盖 backlog、更多效果/切场景和多槽/重启读档。宿主堆破坏仍需定位最早写入，并保留正常 host exit 0 门槛。随后真机统计加载与帧时间 p50/p95/p99、MAIN/CDRAM 峰值、音频 underrun 和透明边缘画质，再决定 DXT 转换范围。最终交付继续直接调用 GXM。

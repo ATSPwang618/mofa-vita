@@ -763,11 +763,13 @@ impl SaveFile {
 
     /// The config language word (sub_2DE70 resolves it, `Assets::resolve_language`).
     pub fn language(&self) -> i16 {
+        if cfg!(all(target_os = "vita", feature = "assets-540p")) { return 2; }
         get_i16(&self.buf, lay().sys_config + language_at())
     }
 
     /// Set the config language word (the overseas config's language buttons, sub_2D910 state 10).
     pub fn set_language(&mut self, word: i16) {
+        let word = if cfg!(all(target_os = "vita", feature = "assets-540p")) { 2 } else { word };
         put_i16(&mut self.buf, lay().sys_config + language_at(), word);
     }
 

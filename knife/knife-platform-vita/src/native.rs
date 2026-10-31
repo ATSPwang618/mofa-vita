@@ -9,6 +9,7 @@ unsafe extern "C" {
     fn kv_read_range(path: *const std::ffi::c_char, request: *mut IoRequest) -> i32;
     fn kv_clock_us() -> u64;
     fn kv_runtime_memory(report: *mut RuntimeMemory);
+    fn kv_memory_available(report: *mut u32) -> i32;
     fn kv_join_worker(input: u32, result: *mut i32) -> i32;
     fn kv_probe_memory_round_trip(pool: u32, report: *mut MemoryRoundTrip) -> i32;
 }
@@ -41,6 +42,18 @@ pub fn runtime_memory() -> RuntimeMemory {
     // SAFETY: the C side writes exactly this repr(C) struct.
     unsafe { kv_runtime_memory(&mut report) };
     report
+}
+
+/// Heap headroom is an accounting estimate, not the largest contiguous block.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MemoryAvailable {
+    pub kernel_main: u32, pub kernel_cdram: u32, pub heap_used: u32, pub heap_headroom: u32,
+}
+pub fn memory_available() -> Result<MemoryAvailable, String> {
+    let mut values = [0u32; 4];
+    let rc = unsafe { kv_memory_available(values.as_mut_ptr()) };
+    sdk_ok(rc, "query process cache headroom")?;
+    Ok(MemoryAvailable { kernel_main: values[0], kernel_cdram: values[1], heap_used: values[2], heap_headroom: values[3] })
 }
 
 /// A C allocation never enters Rust's allocator. It cannot escape the owner.

@@ -17,9 +17,9 @@
   },
   "verification": [
     {
-      "command": "VITASDK=/opt/vitasdk CARGO_TARGET_DIR=/mnt/d/AI-CODEX/vita-game-entry-target cargo +nightly-2026-05-28 check --offline --locked -Z build-std=std,panic_abort -p knife --target armv7-sony-vita-newlibeabihf",
+      "command": "VITASDK=${VITASDK} CARGO_TARGET_DIR=${WORK_ROOT}/vita-game-entry-target cargo +nightly-2026-05-28 check --offline --locked -Z build-std=std,panic_abort -p knife --target armv7-sony-vita-newlibeabihf",
       "result": "BLOCKED: 31 errors all from knife/src/movie/gstreamer.rs unresolved gst/gst_app/gst_video; no independent errors in new Vita entry/input; no linked ELF or runtime validation",
-      "log": "D:/AI-CODEX/vita-game-entry-check.log"
+      "log": "${CAPTURE_ROOT}/vita-game-entry-check.log"
     },
     {
       "command": "cargo +nightly-2026-05-28 test --offline --locked -p knife-core --lib",

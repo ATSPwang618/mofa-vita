@@ -1,5 +1,6 @@
 """Validate an engine-only package and its explicit default memory mode."""
 import struct
+import hashlib
 import sys
 import os
 import zipfile
@@ -47,8 +48,14 @@ def check(path, title_id="KNIF00002", release=False):
             parts = PurePosixPath(name).parts
             if not parts or name.startswith("/") or ".." in parts or "\\" in name:
                 raise ValueError(f"unsafe package path: {name}")
-            if name not in ("eboot.bin", "LICENSE") and not name.startswith("sce_sys/"):
+            if name not in ("eboot.bin", "LICENSE", "sce_module/libshacccg.suprx", "sce_module/SceShaccCgExt-NOTICE.txt") and not name.startswith(("sce_sys/", "licenses/native-dependencies/")):
                 raise ValueError(f"unexpected non-engine payload: {name}")
+        if "sce_module/libshacccg.suprx" in names:
+            compiler = package.read("sce_module/libshacccg.suprx")
+            if len(compiler) != 1776523 or hashlib.sha256(compiler).hexdigest() != "0c58b5d3e1cc47d9837b8c59ab6f3c299bfe7adf55a83f547d553f9fbb776552":
+                raise ValueError("shader compiler identity mismatch")
+        if release and "sce_module/libshacccg.suprx" not in names:
+            raise ValueError("release package is missing its startup shader compiler")
         if package.read("eboot.bin")[:4] != b"SCE\0":
             raise ValueError("eboot is not a SELF")
         sfo = parse_sfo(package.read("sce_sys/param.sfo"))

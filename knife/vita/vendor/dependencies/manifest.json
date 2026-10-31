@@ -1,0 +1,141 @@
+{
+  "schema": "knife-vita-target-dependencies-v1",
+  "target": "armv7-sony-vita-newlibeabihf",
+  "abi": "ARMv7 VFP hard-float; 32-bit; small enums; Vita newlib 4.1",
+  "sdk_channel": "2026.08",
+  "sdk_core": "2026.08.1-1",
+  "compiler": "GCC 15.2.0; no LTO objects",
+  "provenance": "licenses/provenance.json",
+  "files": [
+    {
+      "path": "lib/libjpeg.a",
+      "bytes": 578218,
+      "sha256": "74f61be24c6cdc7a840df277df6f25b19496d6e225a04663b16fc7bc31fe0b23"
+    },
+    {
+      "path": "lib/libogg.a",
+      "bytes": 26170,
+      "sha256": "5f80ddba19df7e7d9bc9257fdf1f737bdc4e59f709a625c56413883654a1f45f"
+    },
+    {
+      "path": "lib/libopus.a",
+      "bytes": 599824,
+      "sha256": "e70dfa228ab99600b46c35f62d941f121f80f8aa460a3240d39e27ce9ceda61d"
+    },
+    {
+      "path": "lib/libopusfile.a",
+      "bytes": 36320,
+      "sha256": "d202e0d9283c7890b08b06a874d2516ecab3ba3d99bf2db42da29ec22603638f"
+    },
+    {
+      "path": "lib/libpng.a",
+      "bytes": 274804,
+      "sha256": "f8d1c6f12ae6468c12c6c81fb90f17419c517ed3bb3754c20a2dc806bd507f74"
+    },
+    {
+      "path": "lib/libtaihen_stub.a",
+      "bytes": 17868,
+      "sha256": "c499972c901d64a7cb247263142e17441a32ff2d20193340b62c404053147d57"
+    },
+    {
+      "path": "lib/libz.a",
+      "bytes": 92398,
+      "sha256": "ec823d1db2c1e01572396ae6843b181ee60c9f20ca4992e571ee16771231e97f"
+    },
+    {
+      "path": "include/jconfig.h",
+      "bytes": 2068,
+      "sha256": "87a9ca5914c3ccdd5ac23f338cdb44e0e7826d98fa33c8fd123cbdeb3788ca0d"
+    },
+    {
+      "path": "include/jerror.h",
+      "bytes": 16163,
+      "sha256": "b4e8697b3d2e06071f23a3f32c50f62f782cdee03f7b82e4595eed5e33d67288"
+    },
+    {
+      "path": "include/jmorecfg.h",
+      "bytes": 14622,
+      "sha256": "b86b4abf452d39b737cb45503591e04e9ca38c5fd0e90d429387d0464005a28b"
+    },
+    {
+      "path": "include/jpeglib.h",
+      "bytes": 55794,
+      "sha256": "dc3e8220f34b7e9f9e48620f5cb8dc070834feb3214bb12bbad78478ebb29e60"
+    },
+    {
+      "path": "include/ogg/config_types.h",
+      "bytes": 538,
+      "sha256": "bd424c5670e21bf37fcd039d4e39a9f8f19aa5af7ee720810a07092da6557e60"
+    },
+    {
+      "path": "include/ogg/ogg.h",
+      "bytes": 8373,
+      "sha256": "aad86109c1fdb377738675a63e0b19859e06ada25ae5c59c290ca7263d1dc4ca"
+    },
+    {
+      "path": "include/ogg/os_types.h",
+      "bytes": 4781,
+      "sha256": "3bbab6a5d31e3c25c6080252b042afb87028e3ffff100e3e0285648b250b70f4"
+    },
+    {
+      "path": "include/opus/opus.h",
+      "bytes": 59505,
+      "sha256": "036f6a6e83a20e943505743e113e90d6278cbe8240f7d5bb90b3f86261e783e3"
+    },
+    {
+      "path": "include/opus/opus_defines.h",
+      "bytes": 38558,
+      "sha256": "bbd4d4e3ba99f6982b1c8d8f5541814ad77d8e8babf3cc788cf23d517b2ca9d6"
+    },
+    {
+      "path": "include/opus/opus_multistream.h",
+      "bytes": 38267,
+      "sha256": "fd99c4594b4b57e406e9cab45a777895dd1b4c8de067088aa54ed7ae100b13f0"
+    },
+    {
+      "path": "include/opus/opus_projection.h",
+      "bytes": 32998,
+      "sha256": "11b3427e9ca342308a93adc9a081e2479685e5b7811a3a53540609f1bbc488ad"
+    },
+    {
+      "path": "include/opus/opus_types.h",
+      "bytes": 5157,
+      "sha256": "19cb301ea1eedbcbdbb5049363de061893bf11c20e505a657b69ce6ffa5b11fa"
+    },
+    {
+      "path": "include/opus/opusfile.h",
+      "bytes": 116107,
+      "sha256": "fec33e1edcf905af91ed9f7bb8e5860235cc11ba5551fc2e28fc22ca951520d5"
+    },
+    {
+      "path": "include/png.h",
+      "bytes": 148525,
+      "sha256": "81501c268ec5c3dc79efc6ac9fddb63b22a25e4931360ddd7b29b1744d6cb6b8"
+    },
+    {
+      "path": "include/pngconf.h",
+      "bytes": 22673,
+      "sha256": "ba8620bbc7612b656cf547eab806ea90bf16b6c0b97fc99e9d39568dc926b802"
+    },
+    {
+      "path": "include/pnglibconf.h",
+      "bytes": 8081,
+      "sha256": "d5739f717ab07a4ce5481a4742110013ec5b901765b4541c68755c1405006a6a"
+    },
+    {
+      "path": "include/taihen.h",
+      "bytes": 20633,
+      "sha256": "d8e6d351bc6a567a06d75503be20d10dba96933ad0b9662ecb8000b579a9282d"
+    },
+    {
+      "path": "include/zconf.h",
+      "bytes": 16921,
+      "sha256": "0718a11beb3295b345fb29a63b44b654b282d82c4cd0513f6225587f2b29b8bb"
+    },
+    {
+      "path": "include/zlib.h",
+      "bytes": 103848,
+      "sha256": "818667d6ab6a37fe7469cb06a7f0cb2c2cb2f2c948a03e5accf1a4a74bf3020a"
+    }
+  ]
+}

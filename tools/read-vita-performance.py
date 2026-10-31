@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from vita_audit_log import MAX_CAPTURE, normalize_console, analyze_audit, analyze_frame_classes, checked_frame_classes
 
 MAX_LOG = 256 * 1024
 COUNTERS = (
@@ -30,17 +31,26 @@ COUNTERS = (
     "gpu_display_finish_us", "gpu_display_finish_calls",
     "gpu_target_create_us", "gpu_target_create_calls",
     "deferred_items", "deferred_item_us", "deferred_upload_us", "deferred_bake_us",
+    "exec_us", "present_submit_us", "submitted_frames", "quads", "quads_small", "quads_mid", "quads_large",
+    "begin_target_us", "begin_target_calls", "clear_us", "draw_cpu_us", "draw_gxm_us", "draw_calls", "probe_snapshot_us",
 )
 REQUIRED = ("elapsed_ms", "window_ms", "frames", "work_us", "wall_us", "update_us", "render_us",
             "max_work_us", "p95_work_upper_us", "over_16ms", "over_33ms")
 
 
-def analyze(data: bytes, environment: str) -> dict:
-    if len(data) > MAX_LOG:
+def analyze(data: bytes, environment: str, console: bool = False) -> dict:
+    original = data
+    transport_warnings = []
+    if console:
+        if len(data) > MAX_CAPTURE: raise ValueError("Console capture exceeds 16 MiB bound")
+        data, transport_warnings = normalize_console(data)
+    if not console and len(data) > MAX_LOG:
         raise ValueError("performance.log exceeds the documented 256 KiB limit")
     if environment not in {"hardware", "emulator", "unspecified"}:
         raise ValueError("Unknown measurement environment")
-    warnings, samples, header = [], [], None
+    warnings, samples, header = list(transport_warnings), [], None
+    audit_records, panics, compact_windows, shader_capabilities, compact_stream = [], [], [], [], []
+    class_records, runtime_states, resource_events = [], [], []
     limit_reached = False
     lines = data.splitlines()
     for index, line in enumerate(lines):
@@ -55,8 +65,8 @@ def analyze(data: bytes, environment: str) -> dict:
             raise ValueError(f"Expected object at line {index + 1}")
         kind = row.get("kind")
         if kind == "header":
-            if index or header is not None or row.get("schema") not in (1, 2):
-                raise ValueError("Expected exactly one schema 1/2 header at the beginning")
+            if index or header is not None or row.get("schema") not in (1, 2, 3):
+                raise ValueError("Expected exactly one schema 1/2/3 header at the beginning")
             header = row
         elif kind == "sample":
             if header is None or limit_reached:
@@ -74,6 +84,60 @@ def analyze(data: bytes, environment: str) -> dict:
                 if key in COUNTERS and (type(value) is not int or value < 0):
                     raise ValueError(f"Invalid cumulative counter {key}")
             samples.append(row)
+        elif kind == "compact_stream":
+            if header is None or type(row.get("enabled")) is not int or row["enabled"] not in (0, 1):
+                raise ValueError("Invalid compact stream capability")
+            compact_stream.append(row)
+        elif kind == "shader_capabilities":
+            if header is None or any(type(row.get(k)) is not int or row[k] not in (0, 1)
+                                     for k in ("group15", "ps_fetch17")):
+                raise ValueError("Invalid shader capabilities")
+            for capability in ("ps_fetch19", "ps_group19", "ps_fetch11", "ps_fetch13", "plain_sprite22", "plain_ps19_23", "ps_fetch2_25"):
+                if capability in row and (type(row[capability]) is not int or row[capability] not in (0, 1)):
+                    raise ValueError("Invalid optional PS shader capability")
+            shader_capabilities.append(row)
+        elif kind == "frame_classes":
+            if header is None or header.get("schema") != 3:
+                raise ValueError("Frame classes outside schema 3")
+            checked_frame_classes(row)
+            class_records.append(row)
+        elif kind == "runtime_state":
+            if header is None or header.get("schema") != 3 or row.get("schema") != 1:
+                raise ValueError("Runtime state outside schema 3")
+            if (any(type(row.get(key)) is not int or not 0 <= row[key] <= (1 << 64) - 1 for key in
+                    ("elapsed_ms", "frame", "no_progress_ms", "scene", "pc", "requested_scene",
+                     "command_scene", "command_pc", "native_detail", "buttons", "last_pressed",
+                     "press_edges", "last_press_frame", "page_chars", "page_revealed"))
+                    or type(row.get("input_status")) is not int
+                    or not -(1 << 31) <= row["input_status"] < (1 << 31)
+                    or any(type(row.get(key)) is not bool for key in
+                           ("stalled", "paused", "menu_lock", "ended", "page_waiting", "page_visible"))
+                    or row["stalled"] != (row["no_progress_ms"] >= 2000)
+                    or any(not isinstance(row.get(key), str) or len(row[key]) > 32
+                           for key in ("phase", "native_phase", "wait", "command"))
+                    or row.get("observation") != "atomic-best-effort"):
+                raise ValueError("Invalid runtime watchdog state")
+            runtime_states.append(row)
+        elif kind == "resource_event":
+            if (header is None or header.get("schema") != 3 or row.get("schema") != 1
+                    or any(type(row.get(key)) is not int or row[key] < 0 for key in ("scene", "pc"))
+                    or row.get("status") not in ("pending", "ready", "failed")
+                    or not isinstance(row.get("detail"), str) or len(row["detail"]) > 768):
+                raise ValueError("Invalid resource event")
+            resource_events.append(row)
+        elif kind == "frame_window":
+            if header is None or header.get("schema") != 3:
+                raise ValueError("Compact frame window outside schema 3")
+            if any(type(row.get(key)) is not int or row[key] < 0 for key in REQUIRED + ("frame",)):
+                raise ValueError("Invalid compact frame window")
+            if not row["frames"] or not row["window_ms"] or not 0 <= row["over_33ms"] <= row["over_16ms"] <= row["frames"]:
+                raise ValueError("Invalid compact frame counts")
+            compact_windows.append(row)
+        elif kind in {"audit", "audit_bank", "audit_hotspot"}:
+            if header is None or header.get("schema") != 3: raise ValueError("Audit outside schema 3 header")
+            audit_records.append(row)
+        elif kind == "panic":
+            panics.append(row)
         elif kind == "limit":
             if not header or limit_reached or index != len(lines) - 1:
                 raise ValueError("Misplaced log limit record")
@@ -82,6 +146,13 @@ def analyze(data: bytes, environment: str) -> dict:
             raise ValueError(f"Unknown record kind at line {index + 1}")
     if header is None:
         raise ValueError("Missing performance header")
+    existing_frames = {row.get("frame") for row in samples}
+    for row in compact_windows:
+        if row["frame"] not in existing_frames:
+            warnings.append(f"Frame {row['frame']} uses its complete compact timing record; legacy counters for that window are unknown")
+            samples.append(dict(row, kind="sample"))
+            existing_frames.add(row["frame"])
+    samples.sort(key=lambda row: row["elapsed_ms"])
     if not samples:
         warnings.append("No complete five-second measurement window")
     total = lambda name: sum(row[name] for row in samples)
@@ -114,11 +185,21 @@ def analyze(data: bytes, environment: str) -> dict:
         warnings.append("Audio starvation observed; inspect its window/scene and mix latency on hardware")
     if final.get("audio_clipped_samples", 0):
         warnings.append("Mixer clipping observed; compare voice/music/effect levels with the audible event")
+    audit = analyze_audit(audit_records) if audit_records else None
+    if audit: warnings.extend(audit["warnings"])
+    classes = analyze_frame_classes(class_records)
+    warnings.extend(classes["warnings"])
+    if header.get("frame_classes_schema") == 1 and not class_records:
+        warnings.append("No complete frame_classes record; per-class timing is unavailable")
     return {
+        "copy_audit": audit, "panics": panics, "shader_capabilities": shader_capabilities, "compact_stream": compact_stream,
+        "frame_classes": classes, "runtime_states": runtime_states,
+        "runtime_stalls": [row for row in runtime_states if row["stalled"]],
+        "resource_events": resource_events,
         "schema": "knife-vita-performance-summary-v1", "environment": environment,
         "environment_authority": "caller-declared; not inferred from frame times",
         "scope": "Observed log windows only; no full-game, visual correctness or hardware-speed certification",
-        "log_bytes": len(data), "log_sha256": hashlib.sha256(data).hexdigest(),
+        "log_bytes": len(original), "log_sha256": hashlib.sha256(original).hexdigest(),
         "header": header, "windows": len(samples), "frames": frames,
         # Derived only from the fields above; a zero means the site never ran.
         "stages": {
@@ -177,10 +258,11 @@ def main():
     parser.add_argument("log", type=Path)
     parser.add_argument("--environment", choices=("hardware", "emulator", "unspecified"), default="unspecified")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--console", action="store_true", help="decode sceClibPrintf prefixes/fragments; no device log file is required")
     args = parser.parse_args()
     # Bound reads even for a mistakenly selected large file.
     with args.log.open("rb") as stream:
-        result = analyze(stream.read(MAX_LOG + 1), args.environment)
+        result = analyze(stream.read((MAX_CAPTURE if args.console else MAX_LOG) + 1), args.environment, console=args.console)
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.out:
         args.out.write_text(text, encoding="utf-8")

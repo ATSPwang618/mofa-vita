@@ -1,0 +1,400 @@
+{
+  "schema": "mofa-artemis-render-audit-v1",
+  "date": "2026-10-30",
+  "repository_head": "955bb5e3e09ee476abb53c242183febb3c9e3382",
+  "hazuki_head": "deaa8402a1e5ee0d40b1f9fe0144c107c3f7b6e3",
+  "inputs": {
+    "so": {
+      "path": "${REFERENCE_PORT_ROOT}/platform/android/app/src/main/jniLibs/armeabi-v7a/libartemis.so",
+      "bytes": 8360900,
+      "sha256": "6089b5e0c4933925d56d6ccb78ab2be37533eeac8d7aa033f4b6d4cc51d70f2d"
+    },
+    "native_self": {
+      "path": "${REVERSE_INPUT_ROOT}/artemis/eboot.bin",
+      "bytes": 1891447,
+      "sha256": "d85b2b608e856b46843e03531d27ad1e08737b3dc9878cdb946d4ef962db905a"
+    },
+    "native_self_elf": {
+      "bytes": 4780744,
+      "sha256": "82dd8e3f2d70a3597c73840607e8d9c2930af90de7bc5a3cba45ca9c1b1a36c2"
+    },
+    "mai_elf": {
+      "path": "${REVERSE_INPUT_ROOT}/reference-title/mai_eboot.bin.elf",
+      "bytes": 4778472,
+      "sha256": "4c0ce60e2594ecbf99cd0dca208ac2c9f98b5d0aada1b400ac64d2ae82b061b8"
+    }
+  },
+  "source_files": [
+    {
+      "path": "knife/vita/gxm_backend.c",
+      "bytes": 34531,
+      "sha256": "febcd8ab2f030c63442c75986628965f155d58de108a1287c8a6f1c05eb5213c"
+    },
+    {
+      "path": "knife/vita/effects_backend.inc",
+      "bytes": 30966,
+      "sha256": "e3839253f5b4dddcc433b839ecefe9e0e4ec25a60a4a7ee2da78d789ff14bfed"
+    },
+    {
+      "path": "knife/vita/shaders/effects.cg",
+      "bytes": 17667,
+      "sha256": "7b1c9e77ce45276e8aa25066cbb6993708d54efaeb1748a1b3b358b4dfeafb7b"
+    },
+    {
+      "path": "knife/knife-render/src/vita.rs",
+      "bytes": 118116,
+      "sha256": "5e4f912ad479a037db20be32f4a415d93fd90005537f28f073734b9be095038c"
+    },
+    {
+      "path": "knife/knife/src/game.rs",
+      "bytes": 399356,
+      "sha256": "ec017b49629d5bf1ce5caa74c8fc7197ed48f6482f1925bc4fd110b7ab8f6046"
+    },
+    {
+      "path": "knife/knife/src/assets.rs",
+      "bytes": 86125,
+      "sha256": "ac86e593a1cc9507dc1c5d3d6ee75ac5b7b1888a1207101fa628f0936ff8f7bc"
+    },
+    {
+      "path": "knife/knife/src/stage.rs",
+      "bytes": 90678,
+      "sha256": "f191920dae945180750ce9da46d071ddbe12a109c97563855dffb6d48a6c0fbd"
+    },
+    {
+      "path": "knife/knife-core/src/format/archive.rs",
+      "bytes": 21572,
+      "sha256": "fd6846b2d061e473f3722077b9cbd06938e8e840f6673ae78b098b3301095d8a"
+    },
+    {
+      "path": "knife/knife/src/vita_entry.rs",
+      "bytes": 24139,
+      "sha256": "e42f55a4835b6b4b081008c3936fed24cecc99c409ed3cc211dfa4ef418e305a"
+    }
+  ],
+  "native_code_equivalence": [
+    {
+      "name": "MJA_Read",
+      "start": "0x81015f60",
+      "end": "0x8101621c",
+      "bytes": 700,
+      "byte_identical": true,
+      "mai_sha256": "182e4632037b0c171f34e7156a9f7a87e2e953312767250c9154c01b69d0c6ae",
+      "self_sha256": "182e4632037b0c171f34e7156a9f7a87e2e953312767250c9154c01b69d0c6ae"
+    },
+    {
+      "name": "MJA_Init_Display",
+      "start": "0x8101621c",
+      "end": "0x81016d94",
+      "bytes": 2936,
+      "byte_identical": true,
+      "mai_sha256": "22b76cfaa48c7d0c92c61b5a9360981305dbf689dfb82afcb55451f3d9578cea",
+      "self_sha256": "22b76cfaa48c7d0c92c61b5a9360981305dbf689dfb82afcb55451f3d9578cea"
+    },
+    {
+      "name": "CGpuRenderer_Init_Begin_End_SetTarget",
+      "start": "0x81031568",
+      "end": "0x81031fc8",
+      "bytes": 2656,
+      "byte_identical": true,
+      "mai_sha256": "a444ef08182f6d37fb3c8385c2377ef8cbc2e17b3d0c870e9c4b94eaa9c397f0",
+      "self_sha256": "a444ef08182f6d37fb3c8385c2377ef8cbc2e17b3d0c870e9c4b94eaa9c397f0"
+    },
+    {
+      "name": "CGpuLayer_DisplayInner",
+      "start": "0x8102f718",
+      "end": "0x8102fe38",
+      "bytes": 1824,
+      "byte_identical": true,
+      "mai_sha256": "84872d0ed8bac70f42d116f3ccadd2bcea5504ca73e61edd0d5de02105585394",
+      "self_sha256": "84872d0ed8bac70f42d116f3ccadd2bcea5504ca73e61edd0d5de02105585394"
+    },
+    {
+      "name": "CGpuSurface_Init",
+      "start": "0x810328d8",
+      "end": "0x81032bc0",
+      "bytes": 744,
+      "byte_identical": true,
+      "mai_sha256": "92e1448fac896e41d1251aae7225b9ca90201fb9dfe7bdedbf0eb2cb1b621104",
+      "self_sha256": "92e1448fac896e41d1251aae7225b9ca90201fb9dfe7bdedbf0eb2cb1b621104"
+    },
+    {
+      "name": "CJpg_memory",
+      "start": "0x8100eb74",
+      "end": "0x8100ef44",
+      "bytes": 976,
+      "byte_identical": true,
+      "mai_sha256": "61f7303bf0a545ade06d31f979c37d665a94aa3f079830fe67e0d361b9ce9dc9",
+      "self_sha256": "61f7303bf0a545ade06d31f979c37d665a94aa3f079830fe67e0d361b9ce9dc9"
+    }
+  ],
+  "selected_targets": {
+    "so": [
+      {
+        "address": "0056eaf0",
+        "label": "CMja_Init"
+      },
+      {
+        "address": "0056f140",
+        "label": "CMja_Read"
+      },
+      {
+        "address": "0056f3d8",
+        "label": "CMja_Display"
+      },
+      {
+        "address": "0056f894",
+        "label": "CMja_IsPlaying"
+      },
+      {
+        "address": "005d63ec",
+        "label": "CGpuRenderer_BeginRender"
+      },
+      {
+        "address": "005d64fc",
+        "label": "CGpuRenderer_EndRender"
+      },
+      {
+        "address": "005d6534",
+        "label": "CGpuRenderer_Clear"
+      },
+      {
+        "address": "005d655c",
+        "label": "CGpuRenderer_SetTarget"
+      },
+      {
+        "address": "005d95dc",
+        "label": "CGpuSurface_Init"
+      },
+      {
+        "address": "005d9804",
+        "label": "CGpuSurface_EnableCopy"
+      },
+      {
+        "address": "005d9934",
+        "label": "CGpuSurface_Allocate"
+      },
+      {
+        "address": "0074d354",
+        "label": "MOGLTexture_UpdateTexture"
+      },
+      {
+        "address": "005d4f2c",
+        "label": "CGpuLayer_DisplayInner"
+      },
+      {
+        "address": "0055f080",
+        "label": "CJpg_Load_memory"
+      },
+      {
+        "address": "00564234",
+        "label": "CLayerSet_ApplyUpdated"
+      },
+      {
+        "address": "00564650",
+        "label": "CLayerSet_DisplayChildren"
+      }
+    ],
+    "native": [
+      {
+        "address": "8101621c",
+        "label": "CMja_Init_vtable_slot2"
+      },
+      {
+        "address": "81016ab4",
+        "label": "CMja_Display_vtable_slot3"
+      },
+      {
+        "address": "8122c418",
+        "label": "CMja_IsPlaying_vtable_slot4"
+      },
+      {
+        "address": "81031568",
+        "label": "CGpuRenderer_Init_vtable_slot2"
+      },
+      {
+        "address": "81031cb8",
+        "label": "CGpuRenderer_Begin_vtable_slot3"
+      },
+      {
+        "address": "81031d64",
+        "label": "CGpuRenderer_End_vtable_slot4"
+      },
+      {
+        "address": "81031e9c",
+        "label": "CGpuRenderer_Clear_vtable_slot5"
+      },
+      {
+        "address": "81031ef4",
+        "label": "CGpuRenderer_SetTarget_vtable_slot9"
+      },
+      {
+        "address": "810328d8",
+        "label": "CGpuSurface_Init_vtable_slot2"
+      },
+      {
+        "address": "81032bc0",
+        "label": "CGpuSurface_ScanLine"
+      },
+      {
+        "address": "8102f680",
+        "label": "CGpuLayer_destructor"
+      },
+      {
+        "address": "81015f60",
+        "label": "CMja_Read"
+      },
+      {
+        "address": "8102f718",
+        "label": "CGpuLayer_DisplayInner"
+      },
+      {
+        "address": "81031fc8",
+        "label": "CGpuMemoryPool_Free"
+      },
+      {
+        "address": "81031234",
+        "label": "CGpuMemoryPool_Allocate"
+      },
+      {
+        "address": "8100eb74",
+        "label": "CJpg_Load_memory"
+      }
+    ]
+  },
+  "native_gxp": {
+    "package": {
+      "path": "${REFERENCE_PORT_ROOT}/platform/vita/resources/native_blend/programs.bin",
+      "bytes": 101840,
+      "sha256": "6f9d1337f80b1cdca3a4b27c65b6367cc5d3a43a89710bbdc2b02e546f7c423a"
+    },
+    "programs": 193,
+    "matched_complete_programs_in_original_self": 193,
+    "fragment_programs_with_flags_0x001828c1": 192,
+    "cached_disassemblies_with_byte_verified_destination_read": [
+      {
+        "index": 17,
+        "sha256": "095036cc2ea4d0e512051ef4ea241caab4efdd92b1f07897d0c15fd76c79dbaa",
+        "destination_reads": [
+          "40c1019c6fc58000: VPCKF32U8 i2.xyz o0.xyz [scale]"
+        ],
+        "instruction_encoding_verified": true
+      },
+      {
+        "index": 9,
+        "sha256": "686aaf12e24965e5615381abced572b40fc5f0fbd52295b4865ba4320b28a737",
+        "destination_reads": [
+          "40c1019c6fc58000: VPCKF32U8 i2.xyz o0.xyz [scale]"
+        ],
+        "instruction_encoding_verified": true
+      },
+      {
+        "index": 4,
+        "sha256": "78bd7d4bba454afc1e75f01a95eb88fe6cb0f4687c4e1fe02205282f0a472d84",
+        "destination_reads": [
+          "40c1019c6fa58000: VPCKF32U8 i1.xyz o0.xyz [scale]"
+        ],
+        "instruction_encoding_verified": true
+      },
+      {
+        "index": 97,
+        "sha256": "8f5482b91da58e60f1f8e39725aa5074ec81157d8eadba3756f6d5a519fe5ec2",
+        "destination_reads": [
+          "40c101bc6f9d8000: VPCKF32U8 i0.xyzw o0.xyzw [scale]"
+        ],
+        "instruction_encoding_verified": true
+      },
+      {
+        "index": 1,
+        "sha256": "c54b505badb0301d1b0e48956641eb6c00e1b8cb29a68955746e0aaffae3fb9e",
+        "destination_reads": [
+          "40c1019c6fa58000: VPCKF32U8 i1.xyz o0.xyz [scale]"
+        ],
+        "instruction_encoding_verified": true
+      }
+    ]
+  },
+  "checks": {
+    "selected_so_exports_decompiled": 16,
+    "selected_native_exports_decompiled": 16,
+    "positive_export_hash_guard": true,
+    "mismatched_export_hash_rejected": true,
+    "encrypted_self_segment_rejected": true,
+    "truncated_self_rejected": true
+  },
+  "tools": [
+    {
+      "path": "tools/render-audit/README.md",
+      "bytes": 3610,
+      "sha256": "de5068fc54a5bfc6bda76a8fec2d03a8a76e555e91009fde114ab6db8e106ce7"
+    },
+    {
+      "path": "tools/render-audit/RenderAuditExport.java",
+      "bytes": 4579,
+      "sha256": "59f25e66f297429e5251fcddf928daa7f87b52ad7a93d6783cf0ee80e0499909"
+    },
+    {
+      "path": "tools/render-audit/collect.py",
+      "bytes": 10472,
+      "sha256": "ae5b0057fcde5118fd006504c00e43c5c3631500cb393ed87787c50275df65da"
+    },
+    {
+      "path": "tools/render-audit/native-4c0ce60e.targets",
+      "bytes": 622,
+      "sha256": "a5a6f0684a16b42a1e9e99a5755f026048eaf46d1389b1c272e5ee70f53b56e9"
+    },
+    {
+      "path": "tools/render-audit/so-6089b5e0.targets",
+      "bytes": 532,
+      "sha256": "04a953b3ed97911b3c176696ecb1e22250c535f8bb92fcc904147d36e81bb528"
+    }
+  ],
+  "retained_evidence": [
+    {
+      "path": ".work/render-audit/reference-inputs.json",
+      "bytes": 112210,
+      "sha256": "9ef3aaca8c5b34e2118fbc02097f2507044e7ad3267812c64a566544fd857e56"
+    },
+    {
+      "path": ".work/render-audit/inputs.json",
+      "bytes": 62200,
+      "sha256": "6a5b5cd664006ed7f0837b59ae45ccfece3ee7d9e63fe8a4c898b7b7e89a40c5"
+    },
+    {
+      "path": ".work/render-audit/native-equivalence.json",
+      "bytes": 1886,
+      "sha256": "010d3f6fb9eddd43d7718bc295bb3185c16d03aaf6427c492bc5f7e77f690742"
+    },
+    {
+      "path": ".work/render-audit/native-gxp-comparison.json",
+      "bytes": 49383,
+      "sha256": "5773040f50993bdb896b5f3206e03d2341a4acd159c3e486796c8d44b3d19544"
+    },
+    {
+      "path": ".work/render-audit/so-verified-ghidra.log",
+      "bytes": 15065,
+      "sha256": "9d79400bf91f948beb9e5299891b428017761594acc7d579362b0730c305f5b1"
+    },
+    {
+      "path": ".work/render-audit/native-verified-ghidra.log",
+      "bytes": 8991,
+      "sha256": "169ced4fd370bfd46b8615dee2ab260b8a549697510d62b27b00ba4a36852611"
+    },
+    {
+      "path": ".work/render-audit/so-export-check.log",
+      "bytes": 4408,
+      "sha256": "04afb0fc2e63f9538e00b6347147da809f131cb4e30d298bf515c0f3dae50e19"
+    },
+    {
+      "path": ".work/render-audit/negative-hash-check.log",
+      "bytes": 5512,
+      "sha256": "3ece2ae6cc30d1f8f84cd965ce89eda8a693b77c41e665ad542216470f9475cd"
+    }
+  ],
+  "limits": [
+    "Static analysis only; no new Vita runtime measurement or speedup result.",
+    "Whole-program Ghidra analysis reached its timeout; selected entries were exported separately.",
+    "Indirect and relocated runtime call relationships are incomplete.",
+    "Correctness counterexamples do not prove reachability in a specific game script.",
+    "No game rendering implementation was changed."
+  ]
+}

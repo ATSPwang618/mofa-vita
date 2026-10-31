@@ -16,14 +16,15 @@ OUTPUT = ROOT / 'knife/knife-platform-vita/src/asset_profile_540p.rs'
 MARKER = 'vita-540p-assets.json'
 
 
-def generate(assets: Path = ASSETS):
+def generate(assets: Path = ASSETS, base_assets=None):
     marker = (assets / MARKER).read_bytes()
     manifest = json.loads(marker)
     assert manifest['schema'] == 'knife-540p-assets-v1'
-    assert manifest['method'] == 'native-540p-preserve-logical-v1'
+    assert manifest['method'] == 'native-540p-encoded-unorm-v2'
+    assert manifest['color_contract'] == 'encoded-unorm8-v1'
     assert manifest['render'] == [960, 540] and manifest['display'] == [960, 540]
     assert manifest['languages'] == ['en', 'zc']
-    assert set(manifest['codecs']) <= {1, 2, 7, 8}, manifest['codecs']
+    assert set(manifest['codecs']) <= {1, 2, 7, 9} and 8 not in manifest['codecs'], manifest['codecs']
     assert manifest['verification']['files_hashed']
     files = {r['path']: r for r in manifest['files']}
     # Native GXM uses embedded GXP shaders; BNSh stays outside the runtime contract.
@@ -38,12 +39,16 @@ def generate(assets: Path = ASSETS):
         pure = PurePosixPath(name)
         assert not pure.is_absolute() and '..' not in pure.parts and ':' not in name and '\\' not in name
         p = assets / name
+        if not p.is_file() and base_assets is not None: p = base_assets / name
         size = p.stat().st_size
         if name != MARKER:
             expected = files[name]
             assert size == expected['bytes'], name
             with p.open('rb') as f:
-                assert hashlib.file_digest(f, 'sha256').hexdigest() == expected['sha256'], name
+                digest = hashlib.sha256()
+                for block in iter(lambda: f.read(1024 * 1024), b''):
+                    digest.update(block)
+                assert digest.hexdigest() == expected['sha256'], name
         if name == MARKER or size <= 1024 * 1024:
             data = p.read_bytes()
             content = f'ContentCheck::Full(0x{zlib.crc32(data):08x})'
@@ -67,10 +72,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--assets', type=Path, default=ASSETS)
+    parser.add_argument('--base-assets', type=Path)
     args = parser.parse_args()
-    generated = generate(args.assets)
+    generated = generate(args.assets, args.base_assets)
     if args.check:
         assert OUTPUT.read_text(encoding='utf-8') == generated, 'Embedded 540p asset profile is stale'
     else:
-        OUTPUT.write_text(generated, encoding='utf-8', newline='\n')
+        with OUTPUT.open('w', encoding='utf-8', newline='\n') as output:
+            output.write(generated)
     print(generated.splitlines()[2])

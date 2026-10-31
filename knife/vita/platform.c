@@ -1,5 +1,6 @@
 #include "platform.h"
 #include <stdlib.h>
+#include <malloc.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
@@ -12,14 +13,10 @@
    the definitions in earlier builds (the ELF listed _newlib_heap_size_user as a
    weak undefined symbol). "used" keeps them in the image.
 
-   The heap is 96 MiB, which fits the 365 MiB MAIN budget granted by
-   ATTRIBUTE2=0x0C: eboot ~8 MiB, code+rodata ~6 MiB, GXM MAIN mappings 16 MiB,
-   stacks ~4 MiB, SceJpeg/SceAvPlayer pools a few MiB. GXM CDRAM (61 MiB) is a
-   separate pool and is unaffected. */
-/* 192 MiB: the font atlases, audio decodes and per-frame scratch together pushed
-   the 96 MiB heap into allocator asserts on hardware (abort with no panic text).
-   ATTRIBUTE2=0x0C grants 365 MiB MAIN, so this still leaves >150 MiB headroom. */
-__attribute__((used)) unsigned int _newlib_heap_size_user = 192 * 1024 * 1024;
+   ATTRIBUTE2=0x0C grants 365 MiB MAIN. The 256 MiB heap accommodates the bounded
+   64 MiB source-owner and 32 MiB graded-result caches, fonts and decode scratch;
+   native mappings/stacks/codec services remain outside it. CDRAM is separate. */
+__attribute__((used)) unsigned int _newlib_heap_size_user = 256 * 1024 * 1024;
 __attribute__((used)) unsigned int sceLibcHeapSize = 4 * 1024 * 1024;
 /* Not const: a const initializer is inlined and the symbol disappears, which
    leaves the loader using its own default stack. */
@@ -106,6 +103,20 @@ void kv_runtime_memory(KvRuntimeMemory *out) {
     out->libc_heap_bytes = sceLibcHeapSize;
     out->main_stack_bytes = sceUserMainThreadStackSize;
     out->main_priority = (uint32_t)sceUserMainThreadPriority;
+}
+
+int32_t kv_memory_available(uint32_t out[4]) {
+    if (!out) return -1;
+    SceKernelFreeMemorySizeInfo info = { .size = sizeof(info) };
+    const int result = sceKernelGetFreeMemorySize(&info);
+    if (result < 0 || info.size_user < 0 || info.size_cdram < 0) return result < 0 ? result : -1;
+    const struct mallinfo heap = mallinfo();
+    const uint32_t used = heap.uordblks > 0 ? (uint32_t)heap.uordblks : 0;
+    out[0] = (uint32_t)info.size_user;
+    out[1] = (uint32_t)info.size_cdram;
+    out[2] = used;
+    out[3] = used < _newlib_heap_size_user ? _newlib_heap_size_user - used : 0;
+    return 0;
 }
 
 static int worker(SceSize size, void *data) {

@@ -11,7 +11,7 @@ mkdir -p "$build" "$logs"
     pkg-config --modversion libpng libjpeg
     cc -std=c11 -Wall -Wextra -Werror -g -O1 \
         -fsanitize=address,undefined -fno-omit-frame-pointer \
-        -I"$project/knife/vita" "$project/knife/vita/image_decode.c" "$project/knife/vita/jpeg_hw.c" \
+        -I"$project/knife/vita" "$project/knife/vita/image_decode.c" "$project/knife/vita/jpeg_hw.c" "$project/knife/vita/perf_audit.c" \
         "$project/knife/vita/tests/image_decode_test.c" \
         $(pkg-config --cflags --libs libpng libjpeg) \
         -o "$build/test-image-decode"
@@ -20,7 +20,7 @@ mkdir -p "$build" "$logs"
     cc -std=c11 -Wall -Wextra -Werror -g -O1 \
         -fsanitize=address,undefined -fno-omit-frame-pointer \
         -Wl,--wrap=malloc,--wrap=calloc,--wrap=memalign,--wrap=free \
-        -I"$project/knife/vita" "$project/knife/vita/image_decode.c" "$project/knife/vita/jpeg_hw.c" \
+        -I"$project/knife/vita" "$project/knife/vita/image_decode.c" "$project/knife/vita/jpeg_hw.c" "$project/knife/vita/perf_audit.c" \
         "$project/knife/vita/tests/image_decode_allocation_test.c" \
         $(pkg-config --cflags --libs libpng libjpeg) \
         -o "$build/test-image-allocation"
@@ -28,7 +28,7 @@ mkdir -p "$build" "$logs"
         "$build/test-image-allocation" "$build/fixtures"
     cc -std=c11 -Wall -Wextra -Werror -g -O1 -DKV_JPEG_HW_MOCK=1 \
         -fsanitize=address,undefined -fno-omit-frame-pointer \
-        -I"$project/knife/vita" "$project/knife/vita/image_decode.c" "$project/knife/vita/jpeg_hw.c" \
+        -I"$project/knife/vita" "$project/knife/vita/image_decode.c" "$project/knife/vita/jpeg_hw.c" "$project/knife/vita/perf_audit.c" \
         "$project/knife/vita/tests/jpeg_hw_test.c" \
         $(pkg-config --cflags --libs libpng libjpeg) -o "$build/test-jpeg-hw"
     ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
@@ -46,6 +46,8 @@ mkdir -p "$build" "$logs"
         -I"$project/knife/vita" -c "$project/knife/vita/jpeg_hw.c" -o "$build/jpeg_hw.o"
     /opt/vitasdk/bin/arm-vita-eabi-readelf -h -A "$build/image_decode.o"
     /opt/vitasdk/bin/arm-vita-eabi-nm -u "$build/image_decode.o"
+    /opt/vitasdk/bin/arm-vita-eabi-gcc -std=c11 -Wall -Wextra -Werror -O2 \
+        -I"$project/knife/vita" -c "$project/knife/vita/perf_audit.c" -o "$build/perf_audit.o"
     # Force the complete object through the actual VitaSDK static libraries.
     cat > "$build/link-probe.c" <<'PROBE'
 #include "image_decode.h"
@@ -57,8 +59,8 @@ int main(void) {
 }
 PROBE
     /opt/vitasdk/bin/arm-vita-eabi-gcc -std=c11 -Wall -Wextra -Werror -O2 \
-        -I"$project/knife/vita" "$build/link-probe.c" "$build/image_decode.o" "$build/jpeg_hw.o" \
-        -lpng -ljpeg -lz -lm -lSceJpeg_stub -lSceSysmem_stub -Wl,-Map,"$build/link-probe.map" \
+        -I"$project/knife/vita" "$build/link-probe.c" "$build/image_decode.o" "$build/jpeg_hw.o" "$build/perf_audit.o" \
+        -lpng -ljpeg -lz -lm -lSceJpeg_stub -lSceSysmem_stub -lSceProcessmgr_stub -lSceLibKernel_stub -Wl,-Map,"$build/link-probe.map" \
         -o "$build/link-probe.elf"
     /opt/vitasdk/bin/arm-vita-eabi-readelf -h "$build/link-probe.elf"
     grep 'PNG_LIBPNG_VER_STRING' /opt/vitasdk/arm-vita-eabi/include/png.h

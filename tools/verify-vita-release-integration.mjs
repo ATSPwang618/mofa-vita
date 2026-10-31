@@ -42,7 +42,7 @@ receipt.performance_enabled = measure;
 await fs.mkdir(path.join(pref, 'ux0/data/knife-woh'), { recursive: true });
 if (measure) await fs.writeFile(path.join(pref, 'ux0/data/knife-woh/perf-enable.txt'), '1\n', { flag: 'wx' });
 await fs.symlink(assets, path.join(pref, 'ux0/data/knife-woh/assets'), 'junction');
-await fs.symlink(process.env.KNIFE_VITA3K_FIRMWARE ?? 'D:/PSV/vita-game/vs0', path.join(pref, 'vs0'), 'junction');
+await fs.symlink(process.env.KNIFE_VITA3K_FIRMWARE ?? (() => { throw new Error('Set KNIFE_VITA3K_FIRMWARE to your firmware directory'); })(), path.join(pref, 'vs0'), 'junction');
 if (lang === 'zc') {
   // Use only our isolated generated DEV fixture; never a personal save.
   const source = path.join(root, '.work/vita/vita3k/pref-staged-1793140745791-9ceb68/ux0/data/knife-woh-dev/saves/witch/savedata000');

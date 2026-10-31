@@ -1,4 +1,5 @@
 #include "image_decode.h"
+#include "perf_audit.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -130,12 +131,44 @@ static void test_prefixes(const char *root, const char *name) {
     free(data);
 }
 
+static void test_gray_direct(const char *root, const char *name) {
+    uint32_t length;
+    uint8_t *data = load(root, name, &length);
+    KvDecodedImage rgba = {0}, gray = {0};
+    assert(kv_image_decode(data, length, &rgba) == KV_IMAGE_OK);
+    uint32_t pixels = rgba.width * rgba.height;
+    assert(kv_image_decode_gray_bounded(data, length, &gray, pixels - 1) == KV_IMAGE_BUDGET);
+    empty(&gray);
+    assert(kv_image_decode_gray_bounded(data, length, &gray, pixels) == KV_IMAGE_OK);
+    assert(gray.width == rgba.width && gray.height == rgba.height);
+    assert(gray.stride == gray.width && gray.length == pixels);
+    for (uint32_t i = 0; i < pixels; ++i) assert(gray.pixels[i] == rgba.pixels[i * 4]);
+    kv_image_free(&rgba); kv_image_free(&gray); free(data);
+}
+
 int main(int argc, char **argv) {
     assert(argc == 2);
     const char *root = argv[1];
     printf("libpng header=%s runtime=%s; libjpeg ABI=%d turbo=%s\n",
            PNG_LIBPNG_VER_STRING, png_get_libpng_ver(NULL), JPEG_LIB_VERSION,
            STRINGIFY(LIBJPEG_TURBO_VERSION));
+    {
+        uint32_t audit_length;
+        uint8_t *audit_input = load(root, "rgba.png", &audit_length);
+        KvDecodedImage audit_image = {0};
+        KvPerfSample before[KV_PERF_COUNT], after[KV_PERF_COUNT];
+        kv_perf_set_enabled(1);
+        assert(kv_perf_snapshot(before, KV_PERF_COUNT) == 0);
+        assert(kv_image_decode(audit_input, audit_length, &audit_image) == KV_IMAGE_OK);
+        assert(kv_perf_snapshot(after, KV_PERF_COUNT) == 0);
+        assert(after[KV_PERF_PNG_DECODE].calls == before[KV_PERF_PNG_DECODE].calls + 1);
+        assert(after[KV_PERF_PNG_DECODE].bytes - before[KV_PERF_PNG_DECODE].bytes == 24);
+        assert(after[KV_PERF_DECODE_ZERO].bytes - before[KV_PERF_DECODE_ZERO].bytes == 24);
+        assert(after[KV_PERF_PNG_INPUT_COPY].bytes > before[KV_PERF_PNG_INPUT_COPY].bytes);
+        kv_image_free(&audit_image); free(audit_input);
+        kv_perf_set_enabled(0);
+        puts("PASS enabled decoder audit: one successful 3x2 RGBA PNG, 24 output/zero bytes, input callback bytes");
+    }
     test_rgba(root, "rgba.png");
     test_rgba(root, "interlaced.png");
     const uint8_t palette[] = {255, 0, 0, 0, 0, 255, 0, 91,
@@ -145,6 +178,16 @@ int main(int argc, char **argv) {
     test_transform(root, "palette.png", 2, 2, palette);
     test_transform(root, "gray-alpha.png", 2, 1, ga);
     test_transform(root, "gray16.png", 2, 1, gray16);
+    test_gray_direct(root, "gray-alpha.png");
+    test_gray_direct(root, "gray16.png");
+    {
+        uint32_t length;
+        uint8_t *data = load(root, "rgba.png", &length);
+        KvDecodedImage gray = {0};
+        assert(kv_image_decode_gray_bounded(data, length, &gray, 64) == KV_IMAGE_UNSUPPORTED);
+        empty(&gray); free(data);
+    }
+    puts("PASS direct R8 grayscale: exact prior RGBA red samples, alpha stripping, 16-bit truncation, byte cap and color rejection");
     test_jpeg(root, "rgb.jpg");
     test_jpeg(root, "progressive.jpg");
     test_solid_jpeg(root, "canvas.jpg", 960, 540);

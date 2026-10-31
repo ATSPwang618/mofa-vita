@@ -10,3 +10,6 @@ pub use desktop::*;
 mod vita;
 #[cfg(target_os = "vita")]
 pub use vita::*;
+
+mod byte_view;
+pub use byte_view::{ByteView, PixelOwner, PixelView};

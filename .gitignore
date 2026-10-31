@@ -27,3 +27,15 @@ __pycache__/
 eboot.bin
 # generated shader/probe logs
 doc/*.log
+# Local IDE state and investigation output (not engine/build inputs)
+.idea/
+.DS_Store
+/doc/logs/
+/doc/performance/
+/doc/*-evidence.json
+/doc/vita-*-host-tests.json
+/tools/render-audit/
+/tools/vita-shader-compiler/
+/tools/vita_audit_log.py
+# Required startup shader compiler, packaged with the engine.
+!/knife/vita/vendor/shacccg/libshacccg.suprx

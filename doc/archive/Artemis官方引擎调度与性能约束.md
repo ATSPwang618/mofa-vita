@@ -8,7 +8,7 @@
 
 | 项目 | 身份 |
 | --- | --- |
-| 官方参考 | `D:/PSV/原版game收集/PSVITA-artemis重构版项目/官方游戏/PCSG01127/eboot.bin` |
+| 官方参考 | `${REVERSE_INPUT_ROOT}/PCSG01127/eboot.bin` |
 | eboot 字节数 / SHA-256 | 1,860,737 B / `35cb34d6bd18dc05dd8f4d4778bf3eb79b9fc52c5c076becaf7782794a8c0545` |
 | 提取 ELF 字节数 / SHA-256 | 4,678,424 B / `874b88b3c5c67ef34ef3a7d4f45181fc931e183437695ac9f750bb1f0ba96b58` |
 | 变换 | 保留 ELF/PHDR；提取原已明文的段并按标志解压 zlib，无密钥或解密步骤 |

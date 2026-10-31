@@ -220,6 +220,7 @@ fn context(step: Step, path: &Path, error: io::Error) -> io::Error {
 }
 
 fn fence(ops: &mut impl Operations, files: &Files<'_>, step: Step) -> io::Result<()> {
+    let _sync = knife_perf::Scope::new(knife_perf::Metric::SaveSync);
     ops.before(step)
         .and_then(|()| ops.sync_names(files.directory()))
         .map_err(|error| context(step, files.main, error))
@@ -367,6 +368,7 @@ fn read_complete(path: &Path, expected: usize) -> io::Result<Vec<u8>> {
 }
 
 fn verify_temporary(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let _verify = knife_perf::Scope::new(knife_perf::Metric::SaveVerify);
     let mut file = File::open(path)?;
     if file.metadata()?.len() != bytes.len() as u64 {
         return Err(invalid_data("temporary save length changed"));
@@ -465,11 +467,13 @@ fn store_with(
         .open(&files.temporary)?;
     let ready = (|| {
         ops.before(Step::WriteTemporary)?;
-        ops.write_all(&mut temporary, bytes)?;
+        { let _write = knife_perf::Scope::new(knife_perf::Metric::SaveWrite);
+            ops.write_all(&mut temporary, bytes)?; }
         ops.before(Step::FlushTemporary)?;
         temporary.flush()?;
         ops.before(Step::SyncTemporary)?;
-        temporary.sync_all()?;
+        { let _sync = knife_perf::Scope::new(knife_perf::Metric::SaveSync);
+            temporary.sync_all()?; }
         Ok::<(), io::Error>(())
     })();
     drop(temporary);
@@ -510,6 +514,7 @@ fn store_with(
 
 /// Store exactly one original-format save. Every sync/rename failure is returned.
 pub fn store(path: &Path, bytes: &[u8], expected: usize) -> io::Result<()> {
+    let _store = knife_perf::Scope::new(knife_perf::Metric::SaveStore);
     store_with(path, bytes, expected, &mut NativeOperations)
 }
 

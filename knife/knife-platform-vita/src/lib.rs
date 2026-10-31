@@ -9,6 +9,9 @@ pub mod movie_view;
 pub mod image_worker;
 pub mod frame_timing;
 pub mod perf_switch;
+pub mod console_codec;
+#[cfg(target_os = "vita")]
+pub mod audit;
 
 #[cfg(target_os = "vita")]
 mod native;

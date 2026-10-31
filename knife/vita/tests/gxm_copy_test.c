@@ -5,7 +5,14 @@
 #define KV_GXM_BACKEND_SOURCE "../gxm_backend.c"
 #endif
 #include KV_GXM_BACKEND_SOURCE
+int sceGxmTextureValidate(const SceGxmTexture *t) { (void)t; return 0; }
+int sceGxmTextureSetData(SceGxmTexture *t, const void *data) { (void)t; (void)data; return 0; }
 
+static volatile unsigned int host_completion[BATCH_SLOTS];
+volatile unsigned int *sceGxmGetNotificationRegion(void) { return host_completion; }
+int sceGxmNotificationWait(const SceGxmNotification *n) { *n->address = n->value; return 0; }
+
+static unsigned audited_finishes;
 static unsigned checks, failures, cases, begins, ends, draws, transfers;
 static unsigned creates, sync_creates, destroys, sync_destroys, surface_inits, gammas;
 static int injected_stage, injected_status;
@@ -18,6 +25,7 @@ static int context_token, target_token, sync_token, vertex_token;
 typedef struct TestProgram {
     SceGxmOutputRegisterFormat format;
     int blended, released;
+    SceGxmBlendInfo blend_info;
 } TestProgram;
 static TestProgram programs[512];
 static unsigned programs_created, programs_released;
@@ -43,6 +51,7 @@ static void expect(int condition, const char *expression, int line) {
 static int result(int stage) { return injected_stage == stage ? injected_status : 0; }
 SceUID sceKernelGetThreadId(void) { return 7; }
 void sceGxmFinish(SceGxmContext *context) {
+    ++audited_finishes;
     EXPECT(context == owner->context); last_finish=++call_order;
 }
 int sceGxmTransferFinish(void) { last_transfer_finish=++call_order; return result(8); }
@@ -74,8 +83,7 @@ int sceGxmColorSurfaceInit(SceGxmColorSurface *surface, SceGxmColorFormat format
     EXPECT(surface == &destination_texture->surface && format == SCE_GXM_COLOR_FORMAT_A8B8G8R8);
     EXPECT(type == SCE_GXM_COLOR_SURFACE_LINEAR && scale == SCE_GXM_COLOR_SURFACE_SCALE_NONE);
     surface_registers = registers;
-    EXPECT(registers == (destination_texture->srgb ?
-        SCE_GXM_OUTPUT_REGISTER_SIZE_64BIT : SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT));
+    EXPECT(registers == SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT);
     EXPECT(width == destination_texture->width && height == destination_texture->height);
     EXPECT(stride == destination_texture->pitch && data == destination_texture->pixels.base);
     return result(3);
@@ -130,8 +138,7 @@ void sceGxmSetFragmentProgram(SceGxmContext *context, const SceGxmFragmentProgra
     TestProgram *program = program_info(p);
     EXPECT(context == owner->context && program && !program->released);
     if (program) {
-        EXPECT(program->format == (destination_texture->srgb ?
-            SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4 : SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4));
+        EXPECT(program->format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
         EXPECT(!program->blended); /* Copy preserves all four channels. */
     }
 }
@@ -144,13 +151,13 @@ int sceGxmShaderPatcherCreateFragmentProgram(SceGxmShaderPatcher *patcher,
     EXPECT(ms == SCE_GXM_MULTISAMPLE_NONE && out);
     EXPECT(vertex == (const SceGxmProgram *)(const void *)(owner->effects ?
         knife_effects_vs_main_gxp : knife_quad_v_gxp));
-    EXPECT(format == (destination_texture->srgb ?
-        SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4 : SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4));
+    EXPECT(format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
     if (result(10)) return result(10);
     EXPECT(programs_created < sizeof(programs) / sizeof(programs[0]));
     if (programs_created >= sizeof(programs) / sizeof(programs[0])) return -99;
     TestProgram *p = &programs[programs_created++];
     *p = (TestProgram){ .format=format, .blended=blend != NULL };
+    if (blend) p->blend_info = *blend;
     *out = (SceGxmFragmentProgram *)(void *)p;
     return 0;
 }
@@ -168,6 +175,12 @@ int sceGxmShaderPatcherReleaseVertexProgram(SceGxmShaderPatcher *p, SceGxmVertex
 }
 int sceGxmShaderPatcherUnregisterProgram(SceGxmShaderPatcher *p, SceGxmShaderPatcherId id) {
     (void)p; (void)id; return 0;
+}
+int sceGxmShaderPatcherRegisterProgram(SceGxmShaderPatcher *p, const SceGxmProgram *program,
+    SceGxmShaderPatcherId *id) {
+    EXPECT(p == owner->effects->patcher && program && id);
+    *id = (SceGxmShaderPatcherId)(void *)program;
+    return 0;
 }
 int sceGxmShaderPatcherDestroy(SceGxmShaderPatcher *p) { (void)p; return 0; }
 SceUID sceKernelAllocMemBlock(const char *name, SceKernelMemBlockType type,
@@ -296,7 +309,7 @@ static void run(unsigned width, unsigned height, int rt, int srgb, int existing,
             EXPECT(creates == (existing ? 0U : 1U));
             EXPECT(sync_creates == 0);
             EXPECT(surface_inits == (existing ? 0U : 1U));
-            EXPECT(gammas == (existing || !srgb ? 0U : 1U));
+            EXPECT(gammas == 0);
             EXPECT(g.stats.draws == 1);
         }
         if (stage >= 1 && stage <= 4) {
@@ -327,16 +340,15 @@ static void output_programs(void) {
                 EXPECT(quad_program(&g,alpha,&p) == 0);
                 TestProgram *info=program_info(p);
                 EXPECT(info && info->blended == (int)alpha);
-                if (info) EXPECT(info->format == (target.srgb ?
-                    SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4 : SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4));
+                if (info) EXPECT(info->format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
             }
         }
     }
-    EXPECT(programs_created == 4);
+    EXPECT(programs_created == 2);
     /* Failure must propagate without caching an invalid program. */
-    g.srgb_alpha_program=NULL; target.srgb=1; g.current_target=&target;
+    g.alpha_program=NULL; target.srgb=1; g.current_target=&target;
     injected_stage=10; SceGxmFragmentProgram *p=NULL;
-    EXPECT(quad_program(&g,1,&p) == -73 && !g.srgb_alpha_program && !p);
+    EXPECT(quad_program(&g,1,&p) == -73 && !g.alpha_program && !p);
     injected_stage=0;
     EXPECT(quad_program(&g,1,&p) == 0 && p);
     printf("%s quad output variants and destination switches\n",failures==before?"PASS":"FAIL");
@@ -344,23 +356,103 @@ static void output_programs(void) {
     g.effects=calloc(1,sizeof(*g.effects));
     EXPECT(g.effects != NULL);
     if (!g.effects) return;
+    for (unsigned shader=0;shader<EFFECT_SHADERS;++shader)
+        if (legacy_effect_source(shader)) g.effects->ids[shader]=(SceGxmShaderPatcherId)(void *)&target;
     programs_created=programs_released=0;
     ++cases;
     for (unsigned pass=0;pass<2;++pass) {
         for (unsigned mode=0;mode<2;++mode) {
             target.srgb=mode; g.current_target=mode ? &target : NULL;
             for (unsigned shader=0;shader<EFFECT_SHADERS;++shader) {
+                if (!legacy_effect_source(shader)) continue;
                 for (unsigned blend=0;blend<EFFECT_BLENDS;++blend) {
                     EXPECT(effects_program(&g,shader,blend) == 0);
-                    TestProgram *info=program_info(g.effects->fragment[shader][blend][mode]);
+                    TestProgram *info=program_info(g.effects->fragment[shader][blend][0]);
                     EXPECT(info && info->blended == (blend != 5));
-                    if (info) EXPECT(info->format == (mode ?
-                        SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4 : SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4));
+                    if (info) EXPECT(info->format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
+                    if (info && (blend == 0 || blend == 6 || blend == 9)) {
+                        EXPECT(info->blend_info.colorSrc == SCE_GXM_BLEND_FACTOR_ONE);
+                        EXPECT(info->blend_info.colorDst == SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+                        EXPECT(info->blend_info.alphaSrc == (blend == 0 ?
+                            SCE_GXM_BLEND_FACTOR_ZERO : SCE_GXM_BLEND_FACTOR_ONE));
+                        EXPECT(info->blend_info.alphaDst == (blend == 9 ?
+                            SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : SCE_GXM_BLEND_FACTOR_ONE));
+                    }
                 }
             }
         }
     }
-    EXPECT(programs_created == 2 * EFFECT_SHADERS * EFFECT_BLENDS);
+    EXPECT(programs_created == 17 * EFFECT_BLENDS);
+    ++cases;
+    EXPECT(effects_text_cache_initialize(&g) == KV_STATE && !(g.shader_capabilities & (1U << 24)));
+    /* Model startup with an available, registered runtime 11 and no optional
+       bit 11. Merely seeing a runtime pointer is insufficient if registration
+       selected a fallback, and the old bundled Alter must remain ineligible. */
+    static const unsigned int runtime_alter_token[4] = {0};
+    const SceGxmProgram *runtime_alter = (const SceGxmProgram *)(const void *)runtime_alter_token;
+    EXPECT(!(g.shader_capabilities & (1U << 11)));
+    EXPECT(effects_text_cache_initialize_program(&g, legacy_effect_source(11)) == KV_STATE);
+    EXPECT(effects_text_cache_initialize_program(&g, runtime_alter) == KV_STATE);
+    EXPECT(!(g.shader_capabilities & (1U << 24)));
+    EXPECT(sceGxmShaderPatcherReleaseFragmentProgram(g.effects->patcher,
+        g.effects->fragment[11][0][0]) == 0);
+    g.effects->fragment[11][0][0] = NULL;
+    g.effects->source[11] = runtime_alter;
+    EXPECT(effects_text_cache_initialize_program(&g, NULL) == KV_STATE);
+    EXPECT(effects_text_cache_initialize_program(&g, runtime_alter) == 0
+        && (g.shader_capabilities & (1U << 24)) && !(g.shader_capabilities & (1U << 11)));
+    /* Simulate cache-only patch failure: ordinary text and the encoded source
+       capability survive; a later successful initialization can enable it. */
+    EXPECT(sceGxmShaderPatcherReleaseFragmentProgram(g.effects->patcher,
+        g.effects->fragment[4][9][0]) == 0);
+    g.effects->fragment[4][9][0] = NULL;
+    injected_stage = 10; injected_status = -73;
+    EXPECT(effects_text_cache_initialize_program(&g, runtime_alter) == -73);
+    EXPECT(!(g.shader_capabilities & (1U << 24)) && !(g.shader_capabilities & (1U << 11)));
+    EXPECT(g.effects->fragment[4][0][0] != NULL && !g.closing);
+    injected_stage = 0;
+    EXPECT(effects_text_cache_initialize_program(&g, runtime_alter) == 0
+        && (g.shader_capabilities & (1U << 24)) && !(g.shader_capabilities & (1U << 11)));
+    ++cases;
+    /* New Darken entry has no legacy blob. Its prepatch failure disables only
+       ID25; generic17 remains available for renderer-selected fallback. */
+    EXPECT(effect_fetch_shader(25) && effect_ps_shader(25));
+    EXPECT(!legacy_effect_source(25) && !legacy_effect_source(24));
+    g.effects->source[25] = runtime_alter;
+    g.effects->ids[25] = (SceGxmShaderPatcherId)(void *)&target;
+    g.shader_capabilities |= (1U << 25) | (1U << 17);
+    g.thread = 7;
+    EXPECT(kv_gxm_shader_available(&g, 25) == 1 && kv_gxm_shader_available(&g, 24) == 1);
+    injected_stage = 10; injected_status = -73;
+    EXPECT(effects_program_mode(&g, 25, 5, 0) == -73 && !g.effects->fragment[25][5][0]);
+    EXPECT(disable_optional_shader(&g, 25) == 0);
+    EXPECT(!(g.shader_capabilities & (1U << 25)) && (g.shader_capabilities & (1U << 17)));
+    EXPECT((g.shader_capabilities & (1U << 24)) && !g.closing);
+    injected_stage = 0;
+    g.effects->source[25] = runtime_alter;
+    g.effects->ids[25] = (SceGxmShaderPatcherId)(void *)&target;
+    EXPECT(effects_program_mode(&g, 25, 5, 0) == 0);
+    TestProgram *darken = program_info(g.effects->fragment[25][5][0]);
+    EXPECT(darken && !darken->blended && darken->format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
+    KvEffectVertex darken_vertices[6] = {0};
+    float darken_params[8] = {2, 0, 960, 540, -1, 0, 0, 0};
+    EXPECT(effect_inputs(darken_vertices, 6, 25, 5, darken_params) == 0);
+    EXPECT(effect_inputs(darken_vertices, 6, 24, 5, darken_params) == KV_BAD_ARGUMENT);
+    EXPECT(effect_inputs(darken_vertices, 6, 25, 0, darken_params) == KV_BAD_ARGUMENT);
+    for (unsigned p = 0; p < 8; ++p) {
+        if (p == 2 || p == 3 || p == 5) continue;
+        const float old = darken_params[p];
+        darken_params[p] = p == 0 ? 19 : p == 4 ? 0 : 1;
+        EXPECT(effect_inputs(darken_vertices, 6, 25, 5, darken_params) == KV_BAD_ARGUMENT);
+        darken_params[p] = old;
+    }
+    for (unsigned row = 0; row < 5; ++row) for (unsigned column = 0; column < 4; ++column) {
+        float *value = row < 2 ? &darken_vertices[0].haze[row][column]
+            : &darken_vertices[0].soft[row - 2][column];
+        *value = 0.1f;
+        EXPECT(effect_inputs(darken_vertices, 6, 25, 5, darken_params) == KV_BAD_ARGUMENT);
+        *value = 0;
+    }
     EXPECT(effects_destroy(&g) == 0 && !g.effects);
     EXPECT(programs_released == programs_created);
     printf("%s all effects output variants, cache reuse and release\n",failures==before?"PASS":"FAIL");
@@ -372,6 +464,10 @@ static void startup_target(int srgb, int fail_gamma) {
     creates=destroys=sync_creates=sync_destroys=surface_inits=gammas=memory_frees=0;
     ++cases; const unsigned before=failures;
     int rc=kv_gxm_texture_create_ex(&g,NULL,480,270,0,0,srgb,1,1,&target);
+    if (srgb) {
+        EXPECT(rc == KV_BAD_ARGUMENT && target == NULL && creates == 0 && gammas == 0);
+        creating_texture=0; printf("PASS native target rejects gamma request\n"); return;
+    }
     EXPECT(rc == (fail_gamma ? (int)SCE_GXM_ERROR_INVALID_VALUE : 0));
     EXPECT(creates == 1 && sync_creates == 0 && surface_inits == 1);
     EXPECT(gammas == (srgb ? 1U : 0U));
@@ -463,16 +559,36 @@ static void seal_invalid(void) {
     printf("%s attachment release rejects active, foreign and unsupported textures\n",failures==before?"PASS":"FAIL");
 }
 int main(void) {
+    kv_perf_set_enabled(1);
     offscreen_sync_pressure();
     run(480,270,1,1,0,0);
     run(960,540,1,1,0,0); run(960,540,1,1,1,0);
     run(3,17,1,0,0,0); run(1,1,1,0,0,0); run(2048,2048,1,1,0,0);
     run(960,540,0,0,0,0); run(3,17,2,0,0,0);
     run(480,270,3,1,0,0); run(3,17,3,0,1,0);
-    for (int stage=1;stage<=7;++stage) if (stage != 2) run(960,540,1,1,0,stage);
+    for (int stage=1;stage<=7;++stage) if (stage != 2 && stage != 4) run(960,540,1,1,0,stage);
     output_programs();
     startup_target(1,0); startup_target(0,0); startup_target(1,1);
     seal_baked_texture(0); seal_baked_texture(8); seal_baked_texture(9); seal_invalid();
+    KvPerfSample audit[KV_PERF_COUNT];
+    EXPECT(kv_perf_snapshot(audit, KV_PERF_COUNT) == 0);
+    uint64_t finish_calls = 0;
+    for (unsigned i = KV_PERF_FINISH_TARGET; i <= KV_PERF_FINISH_MOVIE; ++i) finish_calls += audit[i].calls;
+    EXPECT(finish_calls == audited_finishes);
+    EXPECT(audit[KV_PERF_COPY_QUAD].calls > 0 && audit[KV_PERF_COPY_TRANSFER].calls > 0);
+    EXPECT(audit[KV_PERF_COPY_QUAD].bytes > 0 && audit[KV_PERF_COPY_TRANSFER].bytes > 0);
     printf("RESULT %s: %u cases, %u checks, %u failures\n",failures?"FAIL":"PASS",cases,checks,failures);
     return failures ? 1 : 0;
 }
+
+/* Deterministic clock for legacy timing sites; no device timing claim. */
+SceUInt64 sceKernelGetProcessTimeWide(void) { static SceUInt64 t; return ++t; }
+
+/* This SDK double reports no live default uniforms. Real shader ABI is ARM/GPU tested separately. */
+const SceGxmProgramParameter *sceGxmProgramFindParameterByName(const SceGxmProgram *p, const char *name) {
+    (void)p; (void)name; return NULL;
+}
+SceGxmParameterCategory sceGxmProgramParameterGetCategory(const SceGxmProgramParameter *p) {
+    (void)p; return SCE_GXM_PARAMETER_CATEGORY_UNIFORM;
+}
+unsigned int sceGxmProgramParameterGetComponentCount(const SceGxmProgramParameter *p) { (void)p; return 0; }

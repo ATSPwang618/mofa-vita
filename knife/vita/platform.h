@@ -28,6 +28,7 @@ uint64_t kv_clock_us(void);
 typedef struct KvRuntimeMemory {
     uint32_t newlib_heap_bytes, libc_heap_bytes, main_stack_bytes, main_priority;
 } KvRuntimeMemory;
+int32_t kv_memory_available(uint32_t out[4]);
 void kv_runtime_memory(KvRuntimeMemory *out);
 void kv_set_performance_clock(int *arm, int *bus, int *gpu, int *xbar);
 void kv_clock_mhz(uint32_t *arm, uint32_t *bus, uint32_t *gpu);

@@ -2,16 +2,27 @@ param(
     [switch]$PrepareAssets,
     [switch]$DebugTools,
     [string]$SourceAssets,
-    [string]$Ffmpeg = 'C:/Program Files/ffmpeg/bin/ffmpeg.exe',
-    [string]$Distro = 'pocket-ubuntu',
+    [string]$Ffmpeg = '',
+    [string]$Distro = '',
     [ValidateRange(1, 16)][int]$Jobs = 6
 )
 
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
+$wslArgs = @()
+if ($Distro) { $wslArgs += @('-d', $Distro) }
 Push-Location -LiteralPath $taskRoot
 try {
     if ($PrepareAssets) {
+        if (-not $Ffmpeg) {
+            $command = Get-Command ffmpeg -CommandType Application -ErrorAction SilentlyContinue
+            if (-not $command) { throw 'ffmpeg was not found. Add it to PATH or pass -Ffmpeg with its executable path.' }
+            $Ffmpeg = $command.Source
+        } elseif (-not (Test-Path -LiteralPath $Ffmpeg -PathType Leaf)) {
+            $command = Get-Command $Ffmpeg -CommandType Application -ErrorAction SilentlyContinue
+            if (-not $command) { throw "ffmpeg was not found: $Ffmpeg" }
+            $Ffmpeg = $command.Source
+        }
         if (-not $SourceAssets) {
             $SourceAssets = Join-Path $taskRoot 'dist/Witch-on-the-Holy-Night-Chengkong-540p-x64/assets'
         }
@@ -19,12 +30,12 @@ try {
             throw 'Original conversion inputs were removed from the final 540p project. Use -SourceAssets with a separately prepared input directory to regenerate assets. To rebuild only the EXE, omit -PrepareAssets. To verify retained files, run python tools/verify_current_compact.py.'
         }
     }
-    $buildArgs = @('-d', $Distro, '--', 'bash', './tools/build-compact.sh')
+    $buildArgs = $wslArgs + @('--', 'bash', './tools/build-compact.sh')
     if ($DebugTools) { $buildArgs += '--debug-tools' }
-    & wsl @buildArgs
+    & wsl.exe @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Compact Windows engine build failed' }
     if ($PrepareAssets) {
-        & wsl -d $Distro -- bash ./tools/build-compact.sh --kdu
+        & wsl.exe @wslArgs -- bash ./tools/build-compact.sh --kdu
         if ($LASTEXITCODE -ne 0) { throw 'Compact texture / audio tool build failed' }
         $assetArgs = @('-u', 'tools/create_compact.py', '--jobs', $Jobs, '--ffmpeg', $Ffmpeg)
         if ($SourceAssets) { $assetArgs += @('--source', $SourceAssets) }

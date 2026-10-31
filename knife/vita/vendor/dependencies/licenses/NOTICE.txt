@@ -1,0 +1,18 @@
+Third-party static dependencies for the Vita target
+
+This software is based in part on the work of the Independent JPEG Group.
+
+The following files are unmodified upstream license/notices for the exact
+library versions identified in provenance.json:
+
+libpng 1.6.58: libpng/LICENSE
+libjpeg-turbo 3.2.0: libjpeg-turbo/LICENSE.md and libjpeg-turbo/README.ijg
+zlib 1.3.2: zlib/LICENSE
+Opus 1.6.1: opus/COPYING and opus/LICENSE_PLEASE_READ.txt
+opusfile 0.12: opusfile/COPYING
+libogg 1.3.6: libogg/COPYING
+taiHEN 0.11 user import stub: taihen/LICENSE
+
+Retain the complete license directory with redistributed archives and linked
+application packages. These notices cover the listed libraries and do not
+replace the separate license/notices for SceShaccCgExt or other modules.

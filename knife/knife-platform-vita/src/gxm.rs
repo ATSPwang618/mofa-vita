@@ -5,6 +5,7 @@ use std::{ffi::{c_char, c_void, CStr}, marker::PhantomData, ptr::NonNull, rc::Rc
 
 unsafe extern "C" {
     fn kv_gxm_create(out: *mut *mut c_void, error: *mut c_char, capacity: u32) -> i32;
+    fn kv_gxm_shader_available(g: *mut c_void, shader: u32) -> i32;
     fn kv_gxm_texture_create(g: *mut c_void, rgba: *const u8, width: u32, height: u32,
         stride: u32, out: *mut *mut c_void) -> i32;
     fn kv_gxm_texture_destroy(g: *mut c_void, texture: *mut c_void) -> i32;
@@ -27,6 +28,11 @@ unsafe extern "C" {
     fn kv_gxm_copy_texture(g: *mut c_void, source: *const c_void, destination: *mut c_void) -> i32;
     fn kv_gxm_present_canvas(g: *mut c_void, canvas: *const c_void) -> i32;
     fn kv_gxm_texture_read(g: *mut c_void, texture: *const c_void, data: *mut u8, capacity: u32) -> i32;
+    fn kv_gxm_begin_batch(g: *mut c_void, basic_quads: u32, effect_vertices: u32) -> i32;
+    fn kv_gxm_scene_plan(g: *mut c_void, target: *mut c_void,
+        reads: *const *const c_void, count: u32, kind: u32) -> i32;
+    fn kv_gxm_texture_charge(payload_bytes: u32, out: *mut u32) -> i32;
+    fn kv_gxm_reclaim(g: *mut c_void, wait: u32) -> i32;
     fn kv_gxm_begin(g: *mut c_void, clear: *const f32) -> i32;
     fn kv_gxm_draw_quad(g: *mut c_void, texture: *const c_void, rect: *const f32,
         uv: *const f32, color: *const f32, alpha: u32) -> i32;
@@ -107,11 +113,23 @@ pub enum EffectShader {
     Present = 12, PresentSrgb = 13, Ps = 14, GroupComposite = 15,
     /// Sprite multiplied by a layer group's mask surface (tex2), replacing the composite pass.
     SpriteMask = 16,
+    /// Destination COLOR input is checked on the compiled Vita runtime program.
+    PsFetch = 17,
+    /// Specialized op19 target-color entry, admitted independently from generic fetch.
+    PsFetch19 = 18,
+    /// Fullscreen group op19, with the native no-haze/no-soft/no-rule contract.
+    PsGroup19 = 19,
+    /// Plain Sprite only; no haze, soft clip, rule, group, Fill or forced alpha.
+    PsFetch11 = 20, PsFetch13 = 21,
+    PlainSprite = 22, PsPlain19 = 23,
+    PsFetch2 = 25,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum EffectBlend { Alpha = 0, Add = 1, Sub = 2, Multiply = 3, Screen = 4,
-    Opaque = 5, Over = 6, Footprint = 7, MaskAlpha = 8 }
+    Opaque = 5, Over = 6, Footprint = 7, MaskAlpha = 8,
+    /// Transparent text-cache coverage; existing game Over keeps additive alpha.
+    CoverageOver = 9 }
 #[derive(Clone, Copy)]
 struct TextureRecord { pointer: NonNull<c_void>, width: u32, height: u32, storage: TextureStorage }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -121,6 +139,7 @@ pub struct Gxm {
     pointer: Option<NonNull<c_void>>,
     closing: bool,
     textures: Vec<Option<TextureRecord>>,
+    scene_reads: Vec<*const c_void>,
     owner: Rc<()>,
     // The creating thread owns all GXM operations, including Drop.
     _thread_bound: PhantomData<Rc<()>>,
@@ -139,13 +158,13 @@ impl Gxm {
             if let Some(pointer) = NonNull::new(pointer) {
                 // C retained a partial owner. Keep an explicit cleanup guard and
                 // retry its teardown; it must never become a renderable owner.
-                let _cleanup = Self { pointer: Some(pointer), closing: true, textures: Vec::new(),
+                let _cleanup = Self { pointer: Some(pointer), closing: true, textures: Vec::new(), scene_reads: Vec::new(),
                     owner: Rc::new(()), _thread_bound: PhantomData };
             }
             return Err(message);
         }
         let pointer = NonNull::new(pointer).ok_or("GXM returned a null owner")?;
-        Ok(Self { pointer: Some(pointer), closing: false, textures: Vec::new(), owner: Rc::new(()), _thread_bound: PhantomData })
+        Ok(Self { pointer: Some(pointer), closing: false, textures: Vec::new(), scene_reads: Vec::new(), owner: Rc::new(()), _thread_bound: PhantomData })
     }
     fn raw(&self) -> Result<*mut c_void, String> {
         if self.closing { return Err("GXM owner is closing; only cleanup may be retried".into()); }
@@ -226,6 +245,44 @@ impl Gxm {
         let status = unsafe { kv_gxm_texture_destroy(raw, texture.as_ptr()) };
         if status < 0 { self.closing = true; }
         self.check(status)
+    }
+    /// Read the optional shader capability admitted completely during startup.
+    pub fn shader_available(&self, shader: u32) -> Result<bool, String> {
+        let status = unsafe { kv_gxm_shader_available(self.raw()?, shader) };
+        self.check(status)?;
+        Ok(status != 0)
+    }
+    /// Describe actual sampled resources before a scene begins; native checks
+    /// RAW/WAR/WAW and consumes this reusable pointer array synchronously.
+    pub fn plan_scene(&mut self, target: Option<&TextureId>, reads: &[TextureId], kind: u32) -> Result<(), String> {
+        if reads.len() > 262144 { return Err("scene read plan exceeds native limit".into()); }
+        let target = target.map(|id| self.texture(id)).transpose()?.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+        self.scene_reads.clear();
+        for id in reads {
+            let pointer = self.texture(id)?.as_ptr() as *const c_void;
+            self.scene_reads.push(pointer);
+        }
+        let count = self.scene_reads.len() as u32;
+        self.check(unsafe { kv_gxm_scene_plan(self.raw()?, target, self.scene_reads.as_ptr(), count, kind) })
+    }
+    /// Preflight one command batch before its first scene/copy. Native slots
+    /// retain mapped storage and texture owners through actual GPU completion.
+    pub fn begin_batch(&mut self, basic_quads: usize, effect_vertices: usize) -> Result<(), String> {
+        let basic = u32::try_from(basic_quads).map_err(|_| "basic vertex count exceeds native bound")?;
+        let effect = u32::try_from(effect_vertices).map_err(|_| "effect vertex count exceeds native bound")?;
+        self.check(unsafe { kv_gxm_begin_batch(self.raw()?, basic, effect) })
+    }
+    /// Logical slice charge. Physical page slack and pending retirement remain
+    /// covered by the independent native CDRAM admission query.
+    pub fn texture_charge(payload_bytes: u32) -> Result<u32, String> {
+        let mut charge = 0;
+        let status = unsafe { kv_gxm_texture_charge(payload_bytes, &mut charge) };
+        if status < 0 { Err("invalid native texture charge".into()) } else { Ok(charge) }
+    }
+    /// Poll retired native texture owners, optionally waiting under explicit
+    /// memory pressure. Ordinary frame submission only polls at batch begin.
+    pub fn reclaim_retired(&mut self, wait: bool) -> Result<(), String> {
+        self.check(unsafe { kv_gxm_reclaim(self.raw()?, u32::from(wait)) })
     }
     pub fn begin(&mut self, clear: [f32; 4]) -> Result<(), String> {
         // SAFETY: fixed four-float input lives through the synchronous call.

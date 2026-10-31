@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run in pocket-ubuntu: bash tools/build-windows.sh [--debug-tools|--kdu]
+# Run in Linux/WSL: bash tools/build-windows.sh [--debug-tools|--kdu]
 set -euo pipefail
 
 TASK_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"

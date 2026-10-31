@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import json
 import pathlib
+import os
 import re
 import subprocess
 
@@ -11,7 +12,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 REPO = ROOT / "knife"
 LOGS = ROOT / "doc/logs/vita"
-ELF = pathlib.Path("/root/.cache/knife-vita-movie-agent/armv7-sony-vita-newlibeabihf/vita/vita-movie-probe.elf")
+CACHE = pathlib.Path(os.environ.get("CARGO_TARGET_DIR") or str(pathlib.Path(os.environ.get("XDG_CACHE_HOME") or pathlib.Path.home() / ".cache") / "knife-vita-movie-agent")).expanduser()
+ELF = CACHE / "armv7-sony-vita-newlibeabihf/vita/vita-movie-probe.elf"
+OFFLINE = " --offline" if os.environ.get("KNIFE_VITA_OFFLINE") == "1" else ""
 SHARED_LOCK_BEFORE = "472a8049c030f86ef6a087d1efcfe36e1f46d433783efc751ae6780b7f830e49"
 
 
@@ -84,7 +87,7 @@ receipt = {
             "commit_created": False, "remote_write_performed": False},
     "host_tests": {
         "command": "bash knife/probes/vita-movie/test-host.sh",
-        "cargo_command": "cargo +1.99.0 test --offline --manifest-path knife/probes/vita-movie/Cargo.toml",
+        "cargo_command": f"cargo +1.99.0 test{OFFLINE} --manifest-path knife/probes/vita-movie/Cargo.toml",
         "passed": 8, "failed": 0, "ignored": 0, "actual_cargo_exit": actual_exit(host),
         "fixtures": "small synthetic observation records only, never decoded-video substitutes",
         "negative_controls": ["empty observation", "premature/missing EOF", "missing/short/silent/invalid PCM",
@@ -94,13 +97,13 @@ receipt = {
                     "test": "empty_native_observation_cannot_pass", "log": identity(red)}},
     "arm_final_link": {
         "command": "bash knife/probes/vita-movie/build-arm.sh",
-        "cargo_command": "cargo +nightly-2026-05-28 build -Z build-std=std,panic_abort --locked --offline --manifest-path knife/probes/vita-movie/Cargo.toml --profile vita --target armv7-sony-vita-newlibeabihf --bin vita-movie-probe",
+        "cargo_command": f"cargo +nightly-2026-05-28 build -Z build-std=std,panic_abort --locked{OFFLINE} --manifest-path knife/probes/vita-movie/Cargo.toml --profile vita --target armv7-sony-vita-newlibeabihf --bin vita-movie-probe",
         "actual_cargo_exit": actual_exit(arm), "elf": elf,
         "architecture": "ELF32 little-endian ARMv7-A, Thumb-2, VFPv3 hard-float EABI5",
         "strong_undefined_symbols": strong_undefined,
         "weak_runtime_undefined_symbols": [line.strip() for line in undefined.read_text().splitlines() if line.strip()],
         "warnings": ["two existing unused GXM DEV swap-target diagnostic items"],
-        "independent_target_dir": "/root/.cache/knife-vita-movie-agent"},
+        "independent_target_dir": str(CACHE)},
     "runtime_contract": {
         "title_id": "KNIF00011", "binary": "vita-movie-probe",
         "input_root": "ux0:data/knife-woh/assets",

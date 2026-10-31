@@ -572,11 +572,16 @@ pub struct Ui {
 
 /// The shared system fonts as one atlas (sub_CAA50's set): the first font, the rest filling in its missing glyphs.
 pub(crate) fn shared_font_atlas(r: &Renderer, assets: &crate::assets::Assets) -> Option<FontAtlas> {
+    let _init = knife_perf::Scope::new(knife_perf::Metric::UiFontInit);
     // Read and decode one font at a time: holding all three Chinese system fonts plus
     // the atlas copy exhausted the heap and aborted inside the allocator.
     let mut atlas = None;
     for path in assets.shared_font_paths() {
-        let Some(data) = assets.shared_font(&path) else { continue };
+        let data = {
+            let _read = knife_perf::Scope::new(knife_perf::Metric::FontRead);
+            assets.shared_font(&path)
+        };
+        let Some(data) = data else { continue };
         match &mut atlas {
             None => {
                 atlas = FontAtlas::new(r, data)
@@ -1213,6 +1218,10 @@ impl Ui {
                 }
                 Err(e) => tracing::warn!("ui textures {atlas}: {e:#}"),
             }
+        }
+        #[cfg(target_os = "vita")]
+        if let Err(error) = game.assets.warm_initial_ui_payloads() {
+            tracing::warn!("warming initial UI payloads: {error:#}");
         }
         tex
     }
@@ -2137,17 +2146,28 @@ impl Ui {
     /// sub_CAA50 builds from the shared fonts sub_C9F3C fetches). Switch (save list "SCENE プロローグ", flags
     /// 0x183040): the 0x80000 / 0x200000 font index (+55436) does not change it. The shared fonts are the
     /// language's (`Assets::shared_font_names`); falls back to the UI font (TsukuGo) when the assets dir has none.
+    #[cfg(target_os = "vita")]
+    pub fn warm_runtime_font(&mut self, game: &Game, r: &Renderer) {
+        // Fixed Chinese language: prepare the system font before interactive
+        // frames instead of doing file IO/CFF parsing in the first help draw.
+        if self.font_sys.is_none() { self.font_sys = Self::sys_font(game, r); }
+    }
+
     fn sys_font(game: &Game, r: &Renderer) -> Option<FontAtlas> {
         Self::ui_font(game, r, "2").or_else(|| shared_font_atlas(r, &game.assets))
     }
 
     /// A font of the language's folders (`Assets::font_path`).
     fn ui_font(game: &Game, r: &Renderer, suffix: &str) -> Option<FontAtlas> {
+        let _init = knife_perf::Scope::new(knife_perf::Metric::UiFontInit);
         let path = game.assets.font_path(suffix).or_else(|| {
             tracing::warn!("no font in {}{suffix}", game.assets.language_folder());
             None
         })?;
-        let data = std::fs::read(&path).map_err(|e| tracing::warn!("{}: {e}", path.display())).ok()?;
+        let data = {
+            let _read = knife_perf::Scope::new(knife_perf::Metric::FontRead);
+            std::fs::read(&path).map_err(|e| tracing::warn!("{}: {e}", path.display())).ok()?
+        };
         FontAtlas::new(r, data).map_err(|e| tracing::warn!("{}: {e:#}", path.display())).ok()
     }
 

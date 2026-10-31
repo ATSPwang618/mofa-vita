@@ -1,5 +1,6 @@
 //! Game data access: archives, exe tables, scripts, sound archive and a GPU texture cache.
 
+use knife_perf::{Metric, Scope, Gauge};
 use crate::grade::Bake;
 #[cfg(target_os = "vita")]
 use std::{cell::RefCell, rc::Rc};
@@ -23,6 +24,22 @@ use knife_core::{
     vm::parse::Scene,
 };
 use knife_render::{Renderer, TexRef, Upload};
+#[cfg(target_os = "vita")]
+use knife_render::ByteView;
+#[cfg(target_os = "vita")]
+#[path = "atlas_cache.rs"]
+mod atlas_cache;
+#[cfg(target_os = "vita")]
+#[path = "vita_atlas_index.rs"]
+mod atlas_index;
+#[cfg(target_os = "vita")]
+#[path = "graded_cache.rs"]
+mod graded_cache;
+#[cfg(target_os="vita")]
+#[path="image_needed.rs"]
+mod image_needed;
+#[cfg(target_os="vita")]
+pub use image_needed::ImageNeeded;
 
 /// Image name prefix that loads the save-list thumbnail copy of an image (`Assets::thumb_name`).
 pub const THUMB: &str = "THUMB:";
@@ -56,21 +73,37 @@ pub enum Pixels {
     Bntx(bntx::Texture, bool),
     /// RGBA8; `Some(srgb)`: still to go through pre_alter, sampled through an sRGB view when `srgb`
     Rgba(u32, u32, Vec<u8>, Option<bool>),
-    /// RGBA8 baked on the CPU (`Bake::apply`), sRGB-encoded like the altered texture it stands for
+    /// RGBA8 CPU grade; native encoded UNORM on Vita, legacy sRGB storage on desktop
     Baked(u32, u32, Vec<u8>),
+    #[cfg(target_os = "vita")]
+    SharedBaked(u32, u32, knife_render::PixelView, u64),
+    /// Exclusive C allocation, moved from worker to renderer with its C destructor.
+    #[cfg(target_os = "vita")]
+    Native { width: u32, height: u32, owner: knife_platform_vita::image::DecodedImage,
+        range: std::ops::Range<usize>, srgb: Option<bool>, baked: bool },
     /// Reduced physical pixels, with the original image dimensions used by scripts and layout.
     Scaled(Box<Pixels>, [u32; 2]),
     /// Reuse the worker's first decode, but let hidden CG layers release GPU
     /// residency. Retain an exact archive entry locator, never a second RGBA copy.
     #[cfg(target_os = "vita")]
     Reloadable(Box<Pixels>, ImageReload),
-    /// Already Alter-baked Vita GXT; encoded bytes move through the worker
-    /// channel, then are dropped after registering a bounded archive reload.
+    /// Native encoded UNORM Vita GXT (asset codec9). The worker payload moves to first-use
+    /// preparation, with a bounded locator retained for a later GPU eviction.
     #[cfg(target_os = "vita")]
-    GxtAlter {
-        encoded: Vec<u8>, archive: Arc<Archive>, index: usize,
+    GxtNative {
+        encoded: ByteView, source: ByteView, archive: Arc<Archive>, index: usize, first_use:bool,
         logical: [u32; 2], physical: [u32; 2],
     },
+}
+
+#[cfg(target_os = "vita")]
+struct NativeSlice {
+    owner: knife_platform_vita::image::DecodedImage,
+    range: std::ops::Range<usize>,
+}
+#[cfg(target_os = "vita")]
+impl AsRef<[u8]> for NativeSlice {
+    fn as_ref(&self) -> &[u8] { &self.owner.pixels()[self.range.clone()] }
 }
 
 #[cfg(target_os = "vita")]
@@ -80,6 +113,7 @@ pub struct ImageReload {
     encoded_len: usize,
     grade: Bake,
     strip: Option<(usize, usize)>,
+    initial: Option<ByteView>,
 }
 
 #[cfg(target_os = "vita")]
@@ -90,14 +124,17 @@ impl Pixels {
         let (width, height, bpp, altered, bytes) = match self {
             Self::Scaled(pixels, _) => return pixels.vita_upload_layout(),
             Self::Reloadable(pixels, _) => return pixels.vita_upload_layout(),
-            Self::GxtAlter { .. } => anyhow::bail!("GXT block upload uses deferred allocation"),
-            Self::Bntx(texture, altered) => (
+            Self::GxtNative { .. } => anyhow::bail!("GXT block upload uses deferred allocation"),
+            Self::Bntx(texture, _) => (
                 texture.width, texture.height,
-                if !altered && texture.format == TexFormat::R8Unorm { 1 } else { 4 },
-                *altered, None,
+                if texture.format == TexFormat::R8Unorm { 1 } else { 4 },
+                false, None,
             ),
-            Self::Rgba(w, h, px, srgb) => (*w, *h, 4, srgb.is_some(), Some(px.len())),
+            Self::Rgba(w, h, px, _) => (*w, *h, 4, false, Some(px.len())),
             Self::Baked(w, h, px) => (*w, *h, 4, false, Some(px.len())),
+            Self::SharedBaked(w, h, px, _) => (*w, *h, 4, false, Some(px.len())),
+            Self::Native { width, height, owner, range, .. } =>
+                (*width, *height, owner.bytes_per_pixel(), false, Some(range.len())),
         };
         anyhow::ensure!(width > 0 && height > 0 && width <= 2048 && height <= 2048,
             "image upload dimensions are outside 1..=2048");
@@ -111,6 +148,8 @@ impl Pixels {
 
 /// An image `Assets::decode_async` read on a worker thread.
 pub struct Decoded {
+    #[cfg(target_os="vita")]
+    demanded:bool,
     key: String,
     name: String,
     strip: Option<(usize, usize)>,
@@ -119,6 +158,8 @@ pub struct Decoded {
 
 #[cfg(target_os = "vita")]
 struct ImageJob {
+    initial:Option<(ByteView,Arc<Archive>,usize)>,
+    demanded:bool,
     key: String,
     name: String,
     grade: Bake,
@@ -177,46 +218,102 @@ impl ByteStage {
     /// Queue a read unless it is already staged or in flight.
     pub fn request(self: &Arc<Self>, key: u64, archive: Arc<Archive>, index: usize,
         offset: usize, len: usize) {
+        knife_perf::add(Metric::StageRequest, len as u64, 0);
         {
             let entries = self.entries.lock().unwrap();
             if entries.iter().any(|(k, _)| *k == key) {
+                knife_perf::add(Metric::StageSkipReady, len as u64, 0);
                 return;
             }
         }
         {
             let mut in_flight = self.in_flight.lock().unwrap();
             if !in_flight.insert(key) {
+                knife_perf::add(Metric::StageSkipFlight, len as u64, 0);
                 return;
             }
         }
+        knife_perf::gauge_add(Gauge::StageInflight, 1);
+        knife_perf::gauge_add(Gauge::StageRequestedBytes, len as u64);
         let stage = Arc::clone(self);
         let spawned = std::thread::Builder::new().name("byte stage".into()).spawn(move || {
+            knife_perf::add(Metric::StageStart, len as u64, 0);
             let read = archive.read_uncompressed_range(index, offset, len).ok();
             if let Some(bytes) = read {
+                let copy = Scope::new(Metric::StageVecArc);
                 let arc: Arc<[u8]> = Arc::from(bytes);
+                copy.finish(arc.len() as u64, 0);
+                knife_perf::add(Metric::StageComplete, arc.len() as u64, 0);
                 let size = arc.len();
                 let mut entries = stage.entries.lock().unwrap();
                 entries.push_back((key, arc));
                 let mut total = stage.bytes.fetch_add(size, std::sync::atomic::Ordering::Relaxed) + size;
                 while total > Self::CAP {
                     let Some((_, old)) = entries.pop_front() else { break };
+                    knife_perf::add(Metric::StageEvict, old.len() as u64, 0);
                     total -= old.len();
                     stage.bytes.fetch_sub(old.len(), std::sync::atomic::Ordering::Relaxed);
                 }
+                knife_perf::gauge_set(Gauge::StageReadyBytes, total as u64);
+            } else {
+                knife_perf::add(Metric::StageFailed, len as u64, 0);
             }
             stage.in_flight.lock().unwrap().remove(&key);
+            knife_perf::gauge_sub(Gauge::StageInflight, 1);
+            knife_perf::gauge_sub(Gauge::StageRequestedBytes, len as u64);
         });
         if spawned.is_err() {
+            knife_perf::add(Metric::StageSpawnFailed, len as u64, 0);
+            knife_perf::gauge_sub(Gauge::StageInflight, 1);
+            knife_perf::gauge_sub(Gauge::StageRequestedBytes, len as u64);
             self.in_flight.lock().unwrap().remove(&key);
+        }
+    }
+
+    pub fn trim_lru(&self, need:usize) -> usize {
+        if need==0 {return 0;}
+        let Ok(mut entries)=self.entries.try_lock()else{return 0};let mut reclaimed=0;let mut i=0;
+        while i<entries.len() && reclaimed<need {
+            if Arc::strong_count(&entries[i].1)==1 {
+                let (_,old)=entries.remove(i).unwrap();reclaimed+=old.len();
+                self.bytes.fetch_sub(old.len(),std::sync::atomic::Ordering::Relaxed);
+            }else{i+=1;}
+        }
+        reclaimed
+    }
+
+    /// Legacy owned-byte reload: join its one existing background request.
+    /// A deadline never clears in_flight or spawns a duplicate card read.
+    pub fn load_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<Arc<[u8]>> {
+        self.request(key,archive,index,offset,len);
+        let started=std::time::Instant::now();
+        loop {
+            if let Some(bytes)=self.take(key){return Ok(bytes);}
+            let active=self.in_flight.lock().map_err(|_|anyhow::anyhow!("byte-stage lock poisoned"))?.contains(&key);
+            if !active {
+                if let Some(bytes)=self.take(key){return Ok(bytes);}
+                anyhow::bail!("byte-stage read failed key={key:016x} entry={index}");
+            }
+            anyhow::ensure!(started.elapsed()<std::time::Duration::from_secs(10),
+                "byte-stage wait deadline (10s) key={key:016x} entry={index}; active read retained");
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 
     /// Take staged bytes, if the worker finished them.
     pub fn take(&self, key: u64) -> Option<Arc<[u8]>> {
         let mut entries = self.entries.lock().ok()?;
-        let index = entries.iter().position(|(k, _)| *k == key)?;
+        let Some(index) = entries.iter().position(|(k, _)| *k == key) else {
+            knife_perf::add(Metric::StageMiss, 0, 0);
+            if knife_perf::enabled() && self.in_flight.lock().ok().is_some_and(|keys| keys.contains(&key)) {
+                knife_perf::add(Metric::StageMissFlight, 0, 0);
+            }
+            return None;
+        };
         let (_, bytes) = entries.remove(index)?;
-        self.bytes.fetch_sub(bytes.len(), std::sync::atomic::Ordering::Relaxed);
+        let left = self.bytes.fetch_sub(bytes.len(), std::sync::atomic::Ordering::Relaxed) - bytes.len();
+        knife_perf::gauge_set(Gauge::StageReadyBytes, left as u64);
+        knife_perf::add(Metric::StageHit, bytes.len() as u64, 0);
         Some(bytes)
     }
 }
@@ -238,6 +335,8 @@ fn byte_stage_key(archive: &str, index: usize, offset: usize, len: usize) -> u64
 
 pub struct Assets {
     pub romfs: PathBuf,
+    #[cfg(target_os = "vita")]
+    stream_resolver: crate::vita_stream_index::StreamResolver,
     /// Japanese or overseas data (`detect_build`)
     pub build: Build,
     /// The game language (sub_2DE70: config word +0x12 when it is below `languages`, else the system language):
@@ -249,6 +348,10 @@ pub struct Assets {
     script_text: Vec<u8>,
     #[cfg(target_os = "vita")]
     pub byte_stage: Arc<ByteStage>,
+    #[cfg(target_os = "vita")]
+    atlas_cache: Arc<atlas_cache::AtlasCache>,
+    #[cfg(target_os = "vita")]
+    cpu_cache_pressure: std::cell::Cell<bool>,
     pub allpac: Arc<Archive>,
     /// The second image archive (archive id 10): empty in the Japanese data; the overseas one holds the save
     /// list pictures IMG6000..6026 and 140 other images allpac lacks, with their thumbnails
@@ -269,6 +372,10 @@ pub struct Assets {
     image_cache: crate::vita_image_cache::ImageCachePolicy,
     #[cfg(target_os = "vita")]
     image_worker: Option<knife_platform_vita::image_worker::BoundedWorker<ImageJob, Option<Decoded>>>,
+    #[cfg(target_os="vita")]
+    image_context:u64,
+    #[cfg(target_os="vita")]
+    image_needed:Option<image_needed::NeededRequest>,
     #[cfg(target_os = "vita")]
     image_skipped: std::collections::HashSet<String>,
     #[cfg(target_os = "vita")]
@@ -405,6 +512,9 @@ impl Assets {
         if language_profile.is_some() { anyhow::ensure!(languages == 2, "language profile/resource count mismatch"); }
         let mut a = Self {
             romfs: romfs.to_path_buf(),
+            #[cfg(target_os = "vita")]
+            stream_resolver: crate::vita_stream_index::StreamResolver::new(romfs,
+                crate::vita_stream_index::EMBEDDED, knife_platform_vita::audit::ASSET_MANIFEST),
             build,
             language: usize::MAX,
             languages,
@@ -413,6 +523,10 @@ impl Assets {
             script_text,
             #[cfg(target_os = "vita")]
         byte_stage: Arc::new(ByteStage::default()),
+        #[cfg(target_os = "vita")]
+        atlas_cache: Arc::new(atlas_cache::AtlasCache::default()),
+        #[cfg(target_os = "vita")]
+        cpu_cache_pressure: std::cell::Cell::new(false),
         allpac: Arc::new(Archive::open(romfs, &w("allpac"))?),
             allpacml: Archive::open(romfs, &w("allpacml")).ok().map(Arc::new),
             allpachd: Archive::open(romfs, hd).ok().map(Arc::new),
@@ -429,6 +543,10 @@ impl Assets {
             image_cache: Default::default(),
             #[cfg(target_os = "vita")]
             image_worker: None,
+            #[cfg(target_os="vita")]
+            image_context:1,
+            #[cfg(target_os="vita")]
+            image_needed:None,
             #[cfg(target_os = "vita")]
             image_skipped: Default::default(),
             #[cfg(target_os = "vita")]
@@ -450,8 +568,20 @@ impl Assets {
         #[cfg(target_os = "vita")]
         {
             let archives = a.image_archives();
+            let source_cache = a.atlas_cache.clone();
             a.image_worker = match knife_platform_vita::image_worker::BoundedWorker::new(8, 2,
                 move |job: ImageJob| {
+                    if let Some((data,archive,index))=job.initial {
+                        knife_platform_vita::image_worker::resource_state::image_location(archive.cache_identity(),index);
+                        let pixels=Self::decode_shared_data_pixels(data,archive,index,&job.name,job.grade,job.strip,
+                            if job.demanded {None}else{Some(PREFETCH_RGBA_CAP)});
+                        return Some(Decoded {demanded:job.demanded,key:job.key,name:job.name,strip:job.strip,pixels});
+                    }
+                    if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
+                        let pixels = Self::decode_source(&source_cache,&archives,&job.name,job.grade,job.strip,
+                            Some((PREFETCH_ENCODED_CAP,PREFETCH_RGBA_CAP)),true);
+                        return Some(Decoded {demanded:job.demanded,key:job.key,name:job.name,strip:job.strip,pixels});
+                    }
                     let (data, archive, index) = Self::image_data_limit(&archives, &job.name,
                         Some(PREFETCH_ENCODED_CAP))?;
                     // Non-compact / oversized atlases remain demand-loaded.
@@ -460,7 +590,8 @@ impl Assets {
                     // decoded-pixel allowance must not exclude it: 960x540 would be
                     // 2,073,600 B of nonexistent RGBA and every native image would
                     // silently fall back to the demand path.
-                    let bakes_rgba = image.encoding != compact::Encoding::GxtAlterSrgb;
+                    let bakes_rgba = image.encoding != compact::Encoding::GxtNativeUnorm
+                        || job.grade.cpu() || job.grade.raw || job.strip.is_some();
                     if bakes_rgba
                         && u64::from(image.size[0]) * u64::from(image.size[1]) * 4 > PREFETCH_RGBA_CAP as u64
                     {
@@ -468,7 +599,7 @@ impl Assets {
                     }
                     let pixels = Self::decode_data_pixels(data, archive, index,
                         &job.name, job.grade, job.strip, Some(PREFETCH_RGBA_CAP));
-                    Some(Decoded { key: job.key, name: job.name, strip: job.strip, pixels })
+                    Some(Decoded { demanded:job.demanded, key: job.key, name: job.name, strip: job.strip, pixels })
                 }) {
                 Ok(worker) => Some(worker),
                 Err(e) => { tracing::warn!("bounded image worker unavailable: {e}"); None }
@@ -492,6 +623,9 @@ impl Assets {
 
     /// sub_2DE70: the game language for a config word (negative or past the data's languages: the system's).
     pub fn resolve_language(&self, word: i16) -> usize {
+        // This Vita distribution fixes the original Chinese ID (2); compact
+        // profile mapping still selects physical language slot1, never ID1.
+        if cfg!(all(target_os = "vita", feature = "assets-540p")) { return 2; }
         if let Some(profile) = &self.language_profile {
             return profile.resolve(word, system_language(self.build));
         }
@@ -512,6 +646,7 @@ impl Assets {
     }
 
     pub fn next_language(&self, word: i16, forward: bool) -> i16 {
+        if cfg!(all(target_os = "vita", feature = "assets-540p")) { return 2; }
         if let Some(profile) = &self.language_profile {
             return profile.cycle(self.resolve_language(word), forward);
         }
@@ -543,12 +678,14 @@ impl Assets {
         }
         self.text = ScriptText::parse(&self.script_text, self.language_slot(language))?;
         self.language = language;
+        #[cfg(target_os="vita")]
+        self.reset_image_needed_context();
         #[cfg(target_os = "vita")]
         {
             self.ui_atlases.get_mut().clear();
             self.image_skipped.clear();
             if let Some(worker) = &self.image_worker {
-                worker.retain_window(language as u64, &[]);
+                worker.retain_window(self.image_context, &[]);
             }
         }
         crate::text::set_language(language);
@@ -655,11 +792,16 @@ impl Assets {
     pub fn image_hd(&mut self, r: &Renderer, name: &str) -> Option<Arc<Image>> {
         let (name, grade, key) = Self::image_key(name, Bake::NONE);
         let key = format!("HD {key}");
-        if let Some(i) = self.images.get(&key) {
+        if let Some(i) = self.images.get(&key).and_then(Option::as_ref) {
             #[cfg(target_os = "vita")]
             self.image_cache.touch(&key);
-            return i.clone();
+            return Some(i.clone());
         }
+        #[cfg(target_os = "vita")]
+        let pixels = if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
+            Self::decode_source(&self.atlas_cache,&self.hd_archives(),&name,grade,self.strip(&name),None,false)
+        } else { Self::decode_pixels(&self.hd_archives(),&name,grade,self.strip(&name)) };
+        #[cfg(not(target_os = "vita"))]
         let pixels = Self::decode_pixels(&self.hd_archives(), &name, grade, self.strip(&name));
         self.finish_image_sized(r, key, &name, pixels, true)
     }
@@ -668,6 +810,21 @@ impl Assets {
     /// lets Vita reopen one KIMG after a deferred GPU cache eviction.
     fn image_data(archives: &[Arc<Archive>], name: &str) -> Option<(Vec<u8>, Arc<Archive>, usize)> {
         Self::image_data_limit(archives, name, None)
+    }
+
+    /// Resolve only the original priority/thumbnail mapping, without file IO.
+    /// A cached lower-priority archive must never bypass a preferred source.
+    fn primary_image_locator(archives: &[Arc<Archive>], name: &str) -> Option<(Arc<Archive>, usize)> {
+        if let Some(stem) = name.strip_prefix(THUMB) {
+            let ml = archives.iter().find(|a| a.name.ends_with("allpacml"));
+            let (a, base, thumbs) = [(archives.first(), "BG_TOP", "THUMSTAND_TOP"), (ml, "BGML_TOP", "THUMSTANDML_TOP")]
+                .into_iter()
+                .find_map(|(a, base, thumbs)| a.filter(|a| a.find_stem(stem).is_some()).map(|a| (a, base, thumbs)))?;
+            let i = a.find_stem(stem)?.checked_sub(a.find_stem(base)? + 1)? + a.find_stem(thumbs)? + 1;
+            Some((a.clone(), i))
+        } else {
+            archives.iter().find_map(|a| a.find_stem(name).map(|i| (a.clone(), i)))
+        }
     }
 
     fn image_data_limit(archives: &[Arc<Archive>], name: &str, cap: Option<usize>) -> Option<(Vec<u8>, Arc<Archive>, usize)> {
@@ -679,13 +836,9 @@ impl Assets {
             // sub_895A0: the layer's allpac entry - (bg_top.mzp + 1) + (thumstand_top.mzp + 1), a copy of the
             // art at 1/6 size (a 4x4 transparent DUMMY.NXZ for the `_aa_bb` variants and IMG7000 / IMG7001);
             // an allpacml image (archive 10 / 12) its entry - (bgml_top + 1) + (thumstandml_top + 1) there
-            let ml = archives.iter().find(|a| a.name.ends_with("allpacml"));
-            let (a, base, thumbs) = [(archives.first(), "BG_TOP", "THUMSTAND_TOP"), (ml, "BGML_TOP", "THUMSTANDML_TOP")]
-                .into_iter()
-                .find_map(|(a, base, thumbs)| a.filter(|a| a.find_stem(stem).is_some()).map(|a| (a, base, thumbs)))?;
-            let i = a.find_stem(stem)?.checked_sub(a.find_stem(base)? + 1)? + a.find_stem(thumbs)? + 1;
-            return read(a, i).inspect_err(|e| tracing::warn!("reading thumbnail {stem}: {e}"))
-                .ok().map(|bytes| (bytes, Arc::clone(a), i));
+            let (a, i) = Self::primary_image_locator(archives, name)?;
+            return read(&a, i).inspect_err(|e| tracing::warn!("reading thumbnail {stem}: {e}"))
+                .ok().map(|bytes| (bytes, a, i));
         }
         for a in archives {
             if let Some(i) = a.find_stem(name) {
@@ -715,15 +868,19 @@ impl Assets {
     /// exe keys its texture cache (sub_AAA40) the same way, by image and the pre_alter parameters.
     pub fn image_graded(&mut self, r: &Renderer, name: &str, bake: Bake) -> Option<Arc<Image>> {
         let (name, grade, key) = Self::image_key(name, bake);
-        if let Some(i) = self.images.get(&key) {
+        if let Some(i) = self.images.get(&key).and_then(Option::as_ref) {
             #[cfg(target_os = "vita")]
             self.image_cache.touch(&key);
-            return i.clone();
+            return Some(i.clone());
         }
         #[cfg(target_os = "vita")]
         let prefetched = {
             let start = std::time::Instant::now();
-            let result = self.image_worker.as_ref().and_then(|worker| worker.take_for(&key)).flatten();
+            let result=match self.image_worker.as_ref().map(|worker|worker.take_for(&key)) {
+                Some(Ok(result))=>result.flatten(),
+                Some(Err(error))=>{tracing::error!(name=%name,"bounded legacy image wait: {error}");return None;},
+                None=>None,
+            };
             self.image_perf.demand_wait_us += start.elapsed().as_micros() as u64;
             result.filter(|decoded| decoded.strip == self.strip(&name))
         };
@@ -734,6 +891,11 @@ impl Assets {
         }
         #[cfg(target_os = "vita")]
         let start = std::time::Instant::now();
+        #[cfg(target_os = "vita")]
+        let pixels = if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
+            Self::decode_source(&self.atlas_cache,&self.image_archives(),&name,grade,self.strip(&name),None,false)
+        } else { Self::decode_pixels(&self.image_archives(),&name,grade,self.strip(&name)) };
+        #[cfg(not(target_os = "vita"))]
         let pixels = Self::decode_pixels(&self.image_archives(), &name, grade, self.strip(&name));
         #[cfg(target_os = "vita")]
         {
@@ -753,7 +915,7 @@ impl Assets {
 
     /// Whether `image_graded(name, bake)` would return without loading anything.
     pub fn image_cached(&self, name: &str, bake: Bake) -> bool {
-        self.images.contains_key(&Self::image_key(name, bake).2)
+        self.images.get(&Self::image_key(name, bake).2).is_some_and(Option::is_some)
     }
 
     /// Read and decode an image for `image_graded` on a worker thread; the result arrives on `done`, for
@@ -775,8 +937,47 @@ impl Assets {
     /// Upload and cache an image `decode_async` read.
     pub fn finish_decoded(&mut self, r: &Renderer, d: Decoded) {
         // a language change while it decoded makes a language-strip image stale
-        if !self.images.contains_key(&d.key) && d.strip == self.strip(&d.name) {
+        if !self.images.get(&d.key).is_some_and(Option::is_some) && d.strip == self.strip(&d.name) {
             self.finish_image(r, d.key, &d.name, d.pixels);
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_trim_cpu_caches(&self, need:usize) -> usize {
+        if need==0 {return 0;}
+        // Do not immediately refill optional CPU owners just dropped under
+        // pressure. Maintenance clears this latch only above the high water.
+        self.cpu_cache_pressure.set(true);
+        let mut released=self.byte_stage.trim_lru(need);
+        released+=self.atlas_cache.trim_lru(need.saturating_sub(released),false);
+        released+=graded_cache::trim_lru(need.saturating_sub(released));
+        released+=crate::grade::trim_cache(need.saturating_sub(released));
+        // UI is a soft priority, not a pin: an extreme shortage can still
+        // reclaim it after ordinary LRU owners in every CPU pool.
+        released+=self.atlas_cache.trim_lru(need.saturating_sub(released),true);
+        self.atlas_cache.record_hot_retained();
+        released
+    }
+
+    /// Rewarm only the current-language story UI, on the existing source worker.
+    /// No header/card read, wait, clone of payload, or eviction happens here.
+    /// A 2 MiB scratch margin and the 48 MiB recovery target stay untouched.
+    #[cfg(target_os = "vita")]
+    pub fn vita_warm_ui_sources(&self, heap_headroom:usize) {
+        use knife_perf::memory_budget::{CPU_TARGET_HEADROOM,MIB};
+        let floor=CPU_TARGET_HEADROOM+2*MIB;
+        if heap_headroom<floor {return;}
+        self.cpu_cache_pressure.set(false);
+        if !knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {return;}
+        let mut available=heap_headroom-floor;
+        for name in [self.ui_atlas("DISP_PARTS"),"NOISE_PARTS".into()] {
+            let Some(index)=self.allui.find_stem(&name) else {continue;};
+            let Some(atlas)=atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST,index,
+                &self.allui.entries()[index]) else {continue;};
+            if atlas.decoded_bytes<=available {
+                let queued=self.atlas_cache.prewarm_if_room(self.allui.clone(),index,atlas.decoded_bytes);
+                available=available.saturating_sub(queued);
+            }
         }
     }
 
@@ -788,7 +989,19 @@ impl Assets {
             .map(|(name, bake)| Self::image_key(name, *bake).2).collect();
         self.image_skipped.retain(|key| keys.contains(key));
         if let Some(worker) = &self.image_worker {
-            worker.retain_window(self.language as u64, &keys);
+            if !worker.retain_window(self.image_context, &keys) {return;}
+        }
+        if !self.cpu_cache_pressure.get()
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
+            let archives = self.image_archives();
+            for (name,bake) in wanted.iter().take(32) {
+                if self.image_cached(name,*bake)
+                    && let Some((archive,index)) = Self::primary_image_locator(&archives,&Self::image_key(name,*bake).0) {
+                    self.atlas_cache.request(archive,index);
+                }
+            }
+            // DISP/NOISE warming is admission-checked at maintenance instead
+            // of refilling an evicted UI page on every lookahead frame.
         }
         let ready = self.image_worker.as_ref().and_then(|worker| worker.try_take());
         let mut uploaded = false;
@@ -814,7 +1027,7 @@ impl Assets {
                 if self.image_cached(name, *bake) { continue; }
                 let (name, grade, key) = Self::image_key(name, *bake);
                 let strip = self.strip(&name);
-                if !worker.request(key.clone(), ImageJob { key, name, grade, strip }) { break; }
+                if !worker.request(key.clone(), ImageJob { initial:None,demanded:false,key,name,grade,strip }) { break; }
             }
         }
     }
@@ -833,20 +1046,19 @@ impl Assets {
             Ok(pixels) => pixels,
             Err(e) => {
                 tracing::warn!("image {name}: {e:#}");
-                self.images.insert(key, None);
                 return None;
             }
         };
         // Count which route the image actually took: a pre-baked GXT never decodes
         // or bakes, everything else does both.
         #[cfg(target_os = "vita")]
-        if matches!(pixels, Pixels::GxtAlter { .. }) {
+        if matches!(pixels, Pixels::GxtNative { .. }) {
             self.image_perf.gxt_images += 1;
         } else {
             self.image_perf.decoded_images += 1;
         }
         #[cfg(target_os = "vita")]
-        if !matches!(pixels, Pixels::GxtAlter { .. }) {
+        if !matches!(pixels, Pixels::GxtNative { .. }) {
             let (width, height, bpp, altered) = match pixels.vita_upload_layout() {
                 Ok(layout) => layout,
                 Err(e) => {
@@ -872,6 +1084,10 @@ impl Assets {
         }
         #[cfg(target_os = "vita")]
         let upload_start = std::time::Instant::now();
+        #[cfg(target_os = "vita")]
+        let upload_audit = if knife_perf::enabled() {
+            pixels.vita_upload_layout().ok().map(|layout| (Scope::new(Metric::ImageFirstUpload), layout))
+        } else { None };
         let img = match self.upload_pixels(r, name, pixels) {
             Ok(mut i) => {
                 if hd {
@@ -882,8 +1098,6 @@ impl Assets {
             }
             Err(e) => {
                 tracing::warn!("image GPU upload {name}: {e:#}");
-                #[cfg(not(target_os = "vita"))]
-                self.images.insert(key, None);
                 return None;
             }
         };
@@ -894,6 +1108,11 @@ impl Assets {
             self.image_perf.upload_us += us;
             self.image_perf.max_upload_us = self.image_perf.max_upload_us.max(us);
             self.image_cache.touch(&key);
+        }
+        #[cfg(target_os = "vita")]
+        if let Some((audit, (w, h, bpp, altered))) = upload_audit {
+            audit.finish_hot(&format!("{name} {w}x{h} bpp={bpp} alter={altered}"),
+                u64::from(w) * u64::from(h) * u64::from(bpp), 0);
         }
         self.images.insert(key, img.clone());
         img
@@ -958,6 +1177,13 @@ impl Assets {
     /// The CPU side of an image load (no renderer needed): archive read, BNTX parse or image decode, grade, and
     /// the language strip.
     fn decode_pixels(archives: &[Arc<Archive>], name: &str, grade: Bake, strip: Option<(usize, usize)>) -> Result<Pixels> {
+        #[cfg(target_os = "vita")]
+        if let Some((archive, index)) = Self::primary_image_locator(archives, name)
+            && let Some(hit) = graded_cache::lookup_source(&archive, index, name, grade, strip) {
+            let source = ImageReload { archive: hit.archive.clone(), index: hit.index,
+                encoded_len: hit.encoded_len, grade, strip, initial:None };
+            return Ok(Pixels::Reloadable(Box::new(hit.into_pixels()), source));
+        }
         let (data, archive, index) = Self::image_data(archives, name).context("not found")?;
         Self::decode_data_pixels(data, archive, index, name, grade, strip, None)
     }
@@ -965,36 +1191,73 @@ impl Assets {
     fn decode_data_pixels(data: Vec<u8>, archive: Arc<Archive>, index: usize, name: &str,
         grade: Bake, strip: Option<(usize, usize)>, rgba_cap: Option<usize>) -> Result<Pixels> {
         #[cfg(target_os = "vita")]
-        let mut data = data;
-        #[cfg(target_os = "vita")]
-        let compact = compact::is_compact(&data).then(|| compact::parse(&data)).transpose()?;
-        #[cfg(target_os = "vita")]
-        if let Some(image) = compact.as_ref()
-            && image.encoding == compact::Encoding::GxtAlterSrgb
-        {
-            gxt_alter_route(true, grade.cpu(), strip.is_some(), grade.raw)
-                .map_err(|why| anyhow::anyhow!("{name}: prebaked GXT cannot perform {why}; use original image resource"))?;
-            // `compact::parse` accepts sector padding, but the deferred loader
-            // must return precisely the KIMG envelope, without archive tail.
-            let len = compact::HEADER_SIZE.checked_add(image.payload.len())
-                .context("GXT KIMG envelope length overflow")?;
-            anyhow::ensure!(len <= data.len(), "truncated GXT KIMG envelope");
-            let logical = image.logical;
-            let physical = image.size;
-            data.truncate(len); // move one archive Vec through the worker; never clone GXT blocks
-            return Ok(Pixels::GxtAlter {
-                logical, physical, encoded: data, archive, index,
-            });
+        return Self::decode_shared_data_pixels(ByteView::owned(data), archive, index, name, grade, strip, rgba_cap);
+        #[cfg(not(target_os = "vita"))]
+        { let _ = (archive, index, name); Self::decode_image_pixels_limit(&data, grade, strip, rgba_cap) }
+    }
+
+    #[cfg(target_os = "vita")]
+    fn decode_source(cache: &atlas_cache::AtlasCache, archives: &[Arc<Archive>], name: &str,
+        grade: Bake, strip: Option<(usize, usize)>, cap: Option<(usize,usize)>, worker_progress:bool) -> Result<Pixels> {
+        let (archive, index) = Self::primary_image_locator(archives, name).context("not found")?;
+        if let Some(hit) = graded_cache::lookup_source(&archive,index,name,grade,strip) {
+            let source = ImageReload { archive:hit.archive.clone(),index:hit.index,encoded_len:hit.encoded_len,grade,strip,initial:None };
+            return Ok(Pixels::Reloadable(Box::new(hit.into_pixels()),source));
         }
-        #[cfg(not(target_os = "vita"))]
-        let _ = (archive, index);
-        let pixels = Self::decode_image_pixels_limit(&data, grade, strip, rgba_cap)?;
-        #[cfg(target_os = "vita")]
-        return Ok(Pixels::Reloadable(Box::new(pixels), ImageReload {
-            archive, index, encoded_len: data.len(), grade, strip,
-        }));
-        #[cfg(not(target_os = "vita"))]
-        Ok(pixels)
+        if let Some((encoded, _)) = cap {
+            let plan = archive.read_plan(index)?;
+            anyhow::ensure!(plan.decoded_bytes <= encoded, "prefetch encoded budget");
+        }
+        if worker_progress {
+            knife_platform_vita::image_worker::resource_state::image_location(archive.cache_identity(),index);
+            knife_platform_vita::image_worker::resource_state::image_phase(knife_platform_vita::image_worker::resource_state::Phase::DemandSource);
+        }
+        let data = cache.whole(archive.clone(),index)?;
+        if worker_progress {knife_platform_vita::image_worker::resource_state::image_phase(knife_platform_vita::image_worker::resource_state::Phase::Decode);}
+        Self::decode_shared_data_pixels(data,archive,index,name,grade,strip,cap.map(|v|v.1))
+    }
+
+    #[cfg(target_os = "vita")]
+    fn decode_shared_data_pixels(data: ByteView, archive: Arc<Archive>, index: usize, name: &str,
+        grade: Bake, strip: Option<(usize, usize)>, rgba_cap: Option<usize>) -> Result<Pixels> {
+        let compact = compact::is_compact(&data).then(||compact::parse(&data)).transpose()?;
+        anyhow::ensure!(!compact.as_ref().is_some_and(|i|i.encoding == compact::Encoding::GxtAlterSrgb),
+            "legacy pre-Alter codec8 requires the native-colour asset migration (codec9)");
+        if let Some(image) = compact.as_ref()
+            && gxt_native_route(image.encoding == compact::Encoding::GxtNativeUnorm,grade.cpu(),strip.is_some(),grade.raw) {
+            let len = compact::HEADER_SIZE.checked_add(image.payload.len()).context("GXT KIMG envelope length overflow")?;
+            let (logical,physical) = (image.logical,image.size);
+            let encoded = data.range(0,len).context("truncated GXT KIMG envelope")?;
+            return Ok(Pixels::GxtNative {logical,physical,encoded,source:data,archive,index,first_use:false});
+        }
+        let pixels = Self::decode_cached_pixels(&data,&archive,index,name,grade,strip,rgba_cap)?;
+        let encoded_len = data.len();
+        Ok(Pixels::Reloadable(Box::new(pixels),ImageReload {archive,index,encoded_len,grade,strip,initial:Some(data)}))
+    }
+
+    #[cfg(target_os = "vita")]
+    fn graded_source(data: &[u8]) -> Option<(bool, usize)> {
+        if compact::is_compact(data) {
+            let image = compact::parse(data).ok()?;
+            if !matches!(image.encoding, compact::Encoding::Png | compact::Encoding::PngUnorm | compact::Encoding::Jpeg | compact::Encoding::GxtNativeUnorm) { return None; }
+            let bytes = (image.size[0] as usize).checked_mul(image.size[1] as usize)?.checked_mul(4)?;
+            Some((image.is_srgb(), bytes))
+        } else if matches!(image::guess_format(data).ok(), Some(image::ImageFormat::Png | image::ImageFormat::Jpeg)) {
+            // Raw input's native decoder has a strict 960x1080 cap; reserve its
+            // worst owner size before decode rather than guess PNG/JPEG dimensions.
+            Some((true, 4 * 960 * 1080))
+        } else { None }
+    }
+
+    #[cfg(target_os = "vita")]
+    fn decode_cached_pixels(data: &[u8], archive: &Arc<Archive>, index: usize, name: &str,
+        grade: Bake, strip: Option<(usize, usize)>, rgba_cap: Option<usize>) -> Result<Pixels> {
+        if grade.cpu() && knife_perf::optimizations::enabled(knife_perf::optimizations::GRADE_CACHE)
+            && let Some((srgb, need)) = Self::graded_source(data) {
+            return graded_cache::build(archive.clone(), index, name, grade, strip, srgb, need, data.len(),
+                || Self::decode_image_pixels_limit(data, grade, strip, rgba_cap));
+        }
+        Self::decode_image_pixels_limit(data, grade, strip, rgba_cap)
     }
 
     /// Shared by the first worker decode and a later residency miss. Grades,
@@ -1017,13 +1280,86 @@ impl Assets {
         if !grade.cpu() && strip.is_none() && bntx::is_bntx(&data) {
             return Ok(Pixels::Bntx(bntx::parse(&data)?.into_iter().next().context("empty BNTX")?, !grade.raw));
         }
+        #[cfg(target_os = "vita")]
+        if let Some(image) = compact.as_ref().filter(|i|i.encoding == compact::Encoding::GxtNativeUnorm) {
+            use knife_core::format::gxt_decode;
+            let size = gxt_decode::dimensions(image.payload)?;
+            anyhow::ensure!([size.0,size.1] == image.size,"KIMG GXT dimensions mismatch");
+            let (top,rows) = if let Some((k,n)) = strip {
+                anyhow::ensure!(n > 0 && k < n && size.1 >= n as u32,"invalid language strip");
+                if let Some(size) = logical.as_mut() { size[1] /= n as u32; }
+                (size.1 as usize*k/n,size.1 as usize/n)
+            } else { (0,size.1 as usize) };
+            let decode = Scope::new(Metric::GxtCpuDecode);
+            let (w,h,mut px) = gxt_decode::rgba8_rows(image.payload,top,rows,rgba_cap.unwrap_or(4*960*1080))?;
+            decode.finish(px.len() as u64,0);
+            if grade.cpu() {
+                let processing = Scope::new(Metric::CpuGrade); grade.apply(&mut px,false);
+                processing.finish(px.len() as u64,0);
+                return Ok(wrap(Pixels::Baked(w,h,px),logical));
+            }
+            return Ok(wrap(Pixels::Rgba(w,h,px,None),logical));
+        }
+        #[cfg(target_os = "vita")]
+        {
+            let (payload, srgb, expected) = if let Some(image) = compact.as_ref() {
+                (image.payload, image.is_srgb(), Some(image.size))
+            } else { (data, true, None) };
+            let codec = image::guess_format(payload).ok();
+            if let Some(image) = compact.as_ref() {
+                let expected_codec = match image.encoding {
+                    compact::Encoding::Jpeg => Some(image::ImageFormat::Jpeg),
+                    compact::Encoding::Png | compact::Encoding::PngUnorm => Some(image::ImageFormat::Png),
+                    _ => None,
+                };
+                if let Some(expected_codec) = expected_codec {
+                    anyhow::ensure!(codec == Some(expected_codec), "KIMG payload format mismatch");
+                }
+            }
+            let gray = grade.raw && !grade.cpu() && strip.is_none()
+                && knife_perf::optimizations::enabled(knife_perf::optimizations::GRAY_R8)
+                && codec == Some(image::ImageFormat::Png)
+                && payload.get(25).is_some_and(|color| matches!(*color, 0 | 4));
+            if gray || (knife_perf::optimizations::enabled(knife_perf::optimizations::DECODE_OWNER)
+                && matches!(codec, Some(image::ImageFormat::Png | image::ImageFormat::Jpeg))) {
+                use knife_platform_vita::image::DecodedImage;
+                let cap = u32::try_from(rgba_cap.unwrap_or(4 * 960 * 1080))?;
+                let mut owner = if gray { DecodedImage::decode_gray_bounded(payload, cap)? }
+                    else { DecodedImage::decode_bounded(payload, cap)? };
+                let w = owner.width();
+                let mut h = owner.height();
+                if let Some(expected) = expected { anyhow::ensure!([w, h] == expected, "KIMG encoded dimensions mismatch"); }
+                let mut range = 0..owner.byte_len() as usize;
+                if let Some((k, n)) = strip {
+                    anyhow::ensure!(n > 0 && k < n && h >= n as u32, "invalid language strip");
+                    let rows = h / n as u32;
+                    let top = (h as usize * k / n) * w as usize * 4;
+                    let bytes = rows as usize * w as usize * 4;
+                    range = top..top + bytes;
+                    h = rows;
+                    if let Some(size) = logical.as_mut() { size[1] /= n as u32; }
+                    // A borrowed view replaces copy_within/truncate entirely.
+                    knife_perf::add(Metric::LanguageCrop, 0, bytes as u64);
+                }
+                let baked = grade.cpu();
+                if baked {
+                    let processing = Scope::new(Metric::CpuGrade);
+                    grade.apply(&mut owner.pixels_mut()[range.clone()], srgb);
+                    processing.finish(range.len() as u64, 0);
+                }
+                let sampled = (!cfg!(target_os = "vita") && !baked && !grade.raw).then_some(srgb);
+                return Ok(wrap(Pixels::Native { width: w, height: h, owner, range, srgb: sampled, baked }, logical));
+            }
+        }
         let (w, mut h, mut px, srgb) = decode_image_limit(&data, rgba_cap)?;
         if let Some((k, n)) = strip {
             anyhow::ensure!(n > 0 && k < n && h >= n as u32, "invalid language strip");
             let rows = h / n as u32;
             let top = (h as usize * k / n) * w as usize * 4;
             let bytes = (rows * w) as usize * 4;
+            let copy = Scope::new(Metric::LanguageCrop);
             px.copy_within(top..top + bytes, 0);
+            copy.finish(if top == 0 { 0 } else { bytes as u64 }, bytes as u64);
             px.truncate(bytes);
             h = rows;
             if let Some(size) = logical.as_mut() {
@@ -1031,10 +1367,12 @@ impl Assets {
             }
         }
         if grade.cpu() {
+            let processing = Scope::new(Metric::CpuGrade);
             grade.apply(&mut px, srgb);
+            processing.finish(px.len() as u64, 0);
             return Ok(wrap(Pixels::Baked(w, h, px), logical));
         }
-        Ok(wrap(Pixels::Rgba(w, h, px, (!grade.raw).then_some(srgb)), logical))
+        Ok(wrap(Pixels::Rgba(w, h, px, (!cfg!(target_os = "vita") && !grade.raw).then_some(srgb)), logical))
     }
 
     fn upload_pixels(&self, r: &Renderer, name: &str, pixels: Pixels) -> Result<Image> {
@@ -1046,26 +1384,64 @@ impl Assets {
         let (pixels, logical) = match pixels {
             Pixels::Scaled(pixels, logical) => (*pixels, Some(logical)),
             #[cfg(target_os = "vita")]
-            Pixels::GxtAlter { logical, encoded, archive, index, physical } =>
-                (Pixels::GxtAlter { encoded, archive, index, logical, physical }, Some(logical)),
+            Pixels::GxtNative { logical, encoded, source, archive, index, physical, first_use } =>
+                (Pixels::GxtNative { encoded, source, archive, index, logical, physical, first_use }, Some(logical)),
             pixels => (pixels, None),
         };
         #[cfg(target_os = "vita")]
-        let altered = matches!(&pixels, Pixels::Bntx(_, true) | Pixels::Rgba(_, _, _, Some(_)));
+        let rebuilt_us = match &pixels { Pixels::SharedBaked(_, _, _, us) => *us, _ => 0 };
         #[cfg(target_os = "vita")]
-        let raw_r8 = matches!(&pixels, Pixels::Bntx(t, false) if t.format == TexFormat::R8Unorm);
+        let altered = false; // Native encoded UNORM8 never needs an Alter target.
+        #[cfg(target_os = "vita")]
+        let raw_r8 = matches!(&pixels, Pixels::Bntx(t, false) if t.format == TexFormat::R8Unorm)
+            || matches!(&pixels, Pixels::Native { owner, .. } if owner.bytes_per_pixel() == 1);
         let tex = match pixels {
             #[cfg(target_os = "vita")]
-            Pixels::GxtAlter { encoded, archive, index, logical, physical } => {
+            Pixels::GxtNative { encoded, source, archive, index, logical, physical, first_use } => {
                 let len = encoded.len();
-                let load = Rc::new(move || archive.read_uncompressed_range(index, 0, len));
-                r.defer_gxt_altered_reload(logical, physical, &encoded, name, load,
-                    extract_pre_altered_gxt)?
+                if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS)
+                    && self.atlas_cache.seed(&archive,index,source) {
+                    let cache = self.atlas_cache.clone();
+                    // The source pool charges this owner while a real STCH
+                    // holds its one-use lease. Its first draw cannot race an
+                    // eviction and synchronously read the card again.
+                    let ready=RefCell::new(first_use.then(||encoded.clone()));
+                    let load = Rc::new(move ||{
+                        if let Some(bytes)=ready.borrow_mut().take(){return Ok(bytes);}
+                        cache.range(archive.clone(),index,0,len)
+                    });
+                    r.defer_gxt_shared(logical,physical,&encoded,name,load,extract_native_gxt)?
+                } else {
+                    // Owned-byte baseline still uses the bounded I/O service;
+                    // disabling zero-copy must not restore an unbounded read.
+                    let cache=self.atlas_cache.clone();
+                    let load=Rc::new(move ||{
+                        let bytes=cache.range(archive.clone(),index,0,len)?;
+                        let copy=Scope::new(Metric::StageArcVec);let out=bytes.to_vec();
+                        copy.finish(out.len()as u64,bytes.allocation_len()as u64);Ok(out)
+                    });
+                    if first_use || knife_perf::optimizations::enabled(knife_perf::optimizations::GXT_READY) {
+                        r.defer_gxt_ready(logical,physical,encoded,name,load,extract_native_gxt)?
+                    } else { r.defer_gxt_altered_reload(logical,physical,&encoded,name,load,extract_native_gxt)? }
+                }
             },
+            #[cfg(target_os = "vita")]
+            Pixels::Native { width, height, owner, range, srgb, baked } => {
+                let px = &owner.pixels()[range];
+                if owner.bytes_per_pixel() == 1 {
+                    r.try_upload(width, height, Upload::R8(px), name)?
+                } else if baked {
+                    r.try_upload_baked(width, height, px, name)?
+                } else if let Some(srgb) = srgb {
+                    r.try_upload(width, height, Upload::Rgba8(px), name)?
+                } else { r.try_upload(width, height, Upload::Rgba8(px), name)? }
+            },
+            #[cfg(target_os = "vita")]
+            Pixels::SharedBaked(w, h, px, _) => r.try_upload_baked(w, h, &px, name)?,
             Pixels::Bntx(t, true) => upload_bntx(r, &t)?,
             Pixels::Bntx(t, false) => upload_bntx_raw(r, &t)?,
             #[cfg(target_os = "vita")]
-            Pixels::Rgba(w, h, px, Some(srgb)) => r.try_upload_altered(w, h, Upload::Rgba8(&px), srgb, name)?,
+            Pixels::Rgba(w, h, px, Some(_)) => r.try_upload(w, h, Upload::Rgba8(&px), name)?,
             #[cfg(not(target_os = "vita"))]
             Pixels::Rgba(w, h, px, Some(srgb)) => r.upload_altered(w, h, Upload::Rgba8(&px), srgb, name),
             #[cfg(target_os = "vita")]
@@ -1088,31 +1464,67 @@ impl Assets {
             if raw_r8 {
                 tex
             } else {
-                let ImageReload { archive, index, encoded_len, grade, strip } = source;
+                let ImageReload { archive, index, encoded_len, grade, strip, initial } = source;
+                if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS)
+                    && let Some(initial) = initial { self.atlas_cache.seed(&archive,index,initial); }
                 // Same background staging as the KATL path: a CG that re-reads megabytes from
                 // the card blocked the frame for ~670 ms on hardware.
                 let stage = Arc::clone(&self.byte_stage);
                 let key = byte_stage_key(&archive.name, index, 0, encoded_len);
-                stage.request(key, Arc::clone(&archive), index, 0, encoded_len);
-                let load = Rc::new(move || match stage.take(key) {
-                    Some(bytes) => Ok(bytes.to_vec()),
-                    None => archive.read_uncompressed_range(index, 0, encoded_len),
-                });
+                if !knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
+                    stage.request(key, Arc::clone(&archive), index, 0, encoded_len);
+                }
+                let decode_archive = archive.clone();
+                let cached_archive = archive.clone();
+                let cached_name = name.to_string();
+                let decode_name = name.to_string();
+                let source_cache = self.atlas_cache.clone();
+                let load = Rc::new(move || if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
+                    let view = source_cache.range(archive.clone(),index,0,encoded_len)?;
+                    let copy = Scope::new(Metric::StageArcVec); let out = view.to_vec();
+                    copy.finish(out.len() as u64,0); Ok(out)
+                } else { match stage.take(key) {
+                    Some(bytes) => {
+                        let copy = Scope::new(Metric::StageArcVec);
+                        let out = bytes.to_vec();
+                        copy.finish(out.len() as u64, 0);
+                        Ok(out)
+                    },
+                    None => {
+                        let bytes=stage.load_bounded(key,archive.clone(),index,0,encoded_len)?;
+                        let copy=Scope::new(Metric::StageArcVec);let out=bytes.to_vec();
+                        copy.finish(out.len()as u64,0);Ok(out)
+                    },
+                }});
                 let decode = Rc::new(move |bytes: &[u8]| {
-                    let pixels = Self::decode_image_pixels(bytes, grade, strip)?;
+                    let pixels = Self::decode_cached_pixels(bytes, &decode_archive, index,
+                        &decode_name, grade, strip, None)?;
                     let (pixels, reloaded_logical) = match pixels {
                         Pixels::Scaled(pixels, logical) => (*pixels, Some(logical)),
                         pixels => (pixels, None),
                     };
                     anyhow::ensure!(reloaded_logical == logical, "CG reload logical dimensions changed");
                     match pixels {
-                        Pixels::Rgba(w, h, px, srgb) => Ok((w, h, px, srgb.unwrap_or(false))),
-                        Pixels::Baked(w, h, px) => Ok((w, h, px, true)),
-                        Pixels::Bntx(t, alter) => Ok((t.width, t.height, bntx_decode::to_rgba8(&t)?, alter && t.format.is_srgb())),
+                        Pixels::Rgba(w, h, px, srgb) => Ok((w, h, knife_render::PixelOwner::from(px), srgb.unwrap_or(false))),
+                        Pixels::Baked(w, h, px) => Ok((w, h, knife_render::PixelOwner::from(px), false)),
+                        Pixels::SharedBaked(w, h, px, _) => Ok((w, h, knife_render::PixelOwner::new(px), false)),
+                        Pixels::Native { width, height, owner, range, srgb, baked } => {
+                            anyhow::ensure!(owner.bytes_per_pixel() == 4, "raw R8 must not enter RGBA reload");
+                            Ok((width, height, knife_render::PixelOwner::new(NativeSlice { owner, range }),
+                                false))
+                        },
+                        Pixels::Bntx(t, alter) => Ok((t.width, t.height,
+                            knife_render::PixelOwner::from(bntx_decode::to_rgba8(&t)?), false)),
                         _ => anyhow::bail!("invalid CG reload pixel route"),
                     }
                 });
-                r.adopt_image_reload(tex, encoded_len, name, altered, load, decode)?
+                let cached: knife_render::CachedImageReload = Rc::new(move || {
+                    graded_cache::lookup_source(&cached_archive, index, &cached_name, grade, strip).map(|result|
+                        (result.width, result.height, knife_render::PixelOwner::new(result.pixels), false))
+                });
+                let tex = r.adopt_image_reload_cached(tex, encoded_len, name, altered, load, decode, Some(cached))?;
+                if rebuilt_us != 0 { r.set_image_rebuild_us(&tex, rebuilt_us)?; }
+                tex
             }
         } else { tex };
         let no_shake = self.image_info(name).is_some_and(|i| i.no_shake);
@@ -1158,6 +1570,60 @@ impl Assets {
         Some(name.split('.').next().unwrap_or(name).to_string())
     }
 
+    #[cfg(target_os = "vita")]
+    fn indexed_ui_textures(&self, r: &Renderer, index: usize) -> Option<Result<Vec<(String, TexRef)>>> {
+        let entry = self.allui.entries().get(index)?;
+        let atlas = atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST, index, entry)?;
+        Some((|| {
+            anyhow::ensure!(atlas.decoded_bytes <= atlas_cache::CAP, "indexed atlas exceeds CPU budget");
+            let mut out = Vec::with_capacity(atlas.members.len());
+            for member in atlas.members {
+                anyhow::ensure!(member.offset.checked_add(member.len).is_some_and(|end| end <= atlas.decoded_bytes),
+                    "indexed atlas member exceeds decoded entry");
+                let archive = self.allui.clone();
+                let cache = self.atlas_cache.clone();
+                let (offset, len) = (member.offset, member.len);
+                let load = Rc::new(move || cache.range(archive.clone(), index, offset, len));
+                let tex = if let Some(metadata) = member.gxt {
+                    r.defer_gxt_indexed(member.logical, member.physical, len, metadata,
+                        member.name, load, extract_native_gxt)?
+                } else {
+                    let (logical, physical, encoding) = (member.logical, member.physical, member.encoding);
+                    let decode = Rc::new(move |bytes: &[u8]| {
+                        let actual = compact::parse(bytes)?;
+                        anyhow::ensure!(actual.logical == logical && actual.size == physical
+                            && actual.encoding as u32 == encoding, "indexed image metadata changed");
+                        decode_image_owned(bytes)
+                    });
+                    r.defer_altered_shared(logical, physical, len, member.name, load, decode)?
+                };
+                out.push((member.name.to_string(), tex));
+            }
+            Ok(out)
+        })())
+    }
+
+    /// Warm only the title/story cohort after metadata registration. Inactive
+    /// MENU/SAVE/CONF descriptors do not allocate atlas output. No owner is pinned
+    /// here: later large pages use the same bounded LRU and may replace this cohort.
+    #[cfg(target_os = "vita")]
+    pub fn warm_initial_ui_payloads(&self) -> Result<()> {
+        if !knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) { return Ok(()); }
+        let names = [self.ui_atlas("TITLE_PARTS"), self.ui_atlas("DISP_PARTS"), "BORDER_PARTS".into()];
+        let mut indices = Vec::new();
+        let mut need = 0usize;
+        for name in names {
+            let Some(index) = self.allui.find_stem(&name) else { return Ok(()); };
+            let Some(atlas) = atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST, index,
+                &self.allui.entries()[index]) else { return Ok(()); };
+            need = need.checked_add(atlas.decoded_bytes).context("startup atlas need overflow")?;
+            indices.push(index);
+        }
+        anyhow::ensure!(need <= atlas_cache::CAP, "startup UI cohort exceeds shared CPU budget");
+        for index in indices { drop(self.atlas_cache.whole(self.allui.clone(), index)?); }
+        Ok(())
+    }
+
     /// Load a UI texture atlas (BNTX in allui) by entry stem; returns all textures by name.
     pub fn ui_textures(&self, r: &Renderer, stem: &str) -> Result<Vec<(String, TexRef)>> {
         let i = self.allui.find_stem(stem).with_context(|| format!("{stem} not in allui"))?;
@@ -1167,8 +1633,23 @@ impl Assets {
         {
             return Ok(cached.clone());
         }
-        let data = self.allui.read(i)?;
         let mut out = Vec::new();
+        #[cfg(target_os = "vita")]
+        let shared_atlas = knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS);
+        #[cfg(target_os = "vita")]
+        let indexed = if shared_atlas {
+            if let Some(result) = self.indexed_ui_textures(r, i) { out = result?; true } else { false }
+        } else { false };
+        #[cfg(not(target_os = "vita"))]
+        let indexed = false;
+        if !indexed {
+        #[cfg(target_os = "vita")]
+        let data = if shared_atlas {
+            self.atlas_cache.whole(Arc::clone(&self.allui), i)?
+        } else { ByteView::owned(self.allui.read(i)?) };
+        #[cfg(not(target_os = "vita"))]
+        let data = self.allui.read(i)?;
+
         if compact::is_atlas(&data) {
             for (name, image) in compact::parse_atlas(&data)? {
                 #[cfg(target_os = "vita")]
@@ -1183,23 +1664,49 @@ impl Assets {
                         "KATL image outside atlas entry");
                     let len = image.len();
                     let archive = Arc::clone(&self.allui);
+                    if shared_atlas {
+                        let cache = Arc::clone(&self.atlas_cache);
+                        let load = Rc::new(move || cache.range(archive.clone(), i, offset, len));
+                        let tex = if metadata.encoding == compact::Encoding::GxtNativeUnorm {
+                            r.defer_gxt_shared(metadata.logical, metadata.size, image,
+                                name, load, extract_native_gxt)?
+                        } else {
+                            r.defer_altered_shared(metadata.logical, metadata.size, len,
+                                name, load, Rc::new(decode_image_owned))?
+                        };
+                        out.push((name.to_string(), tex));
+                        continue;
+                    }
                     let stage = Arc::clone(&self.byte_stage);
                     let key = byte_stage_key(&self.allui.name, i, offset, len);
                     // Start the read now: the atlas is usually sampled frames later, so the
                     // worker finishes long before the texture is prepared.
                     stage.request(key, Arc::clone(&archive), i, offset, len);
                     let load = Rc::new(move || match stage.take(key) {
-                        Some(bytes) => Ok(bytes.to_vec()),
-                        None => archive.read_uncompressed_range(i, offset, len),
+                        Some(bytes) => {
+                        let copy = Scope::new(Metric::StageArcVec);
+                        let out = bytes.to_vec();
+                        copy.finish(out.len() as u64, 0);
+                        Ok(out)
+                    },
+                        None => {
+                            let bytes=stage.load_bounded(key,archive.clone(),i,offset,len)?;
+                            let copy=Scope::new(Metric::StageArcVec);let out=bytes.to_vec();
+                            copy.finish(out.len()as u64,0);Ok(out)
+                        },
                     });
                     // The entry's bytes are already in hand here, so keeping them (within the
                     // renderer's encoded-source budget) removes the card read that made a
                     // re-preparation cost 300-700 ms on hardware. Larger images still fall
                     // back to the reload descriptor, which is what the budget is for.
+                    let copy = Scope::new(if metadata.encoding == compact::Encoding::GxtNativeUnorm {
+                        Metric::UiRetainGxt
+                    } else { Metric::UiRetainOther });
                     let retained = Arc::<[u8]>::from(image);
-                    let tex = if metadata.encoding == compact::Encoding::GxtAlterSrgb {
+                    copy.finish(image.len() as u64, 0);
+                    let tex = if metadata.encoding == compact::Encoding::GxtNativeUnorm {
                         r.defer_gxt_altered_reload(metadata.logical, metadata.size, image,
-                            name, load, extract_pre_altered_gxt)?
+                            name, load, extract_native_gxt)?
                     } else {
                         match r.defer_altered(metadata.logical, metadata.size,
                             Arc::clone(&retained), name, decode_image)
@@ -1219,6 +1726,7 @@ impl Assets {
                 let tex = upload_bntx(r, &t)?;
                 out.push((t.name.clone(), tex));
             }
+        }
         }
         // the game picks atlas images by index (the object table, sub_9A940); the other languages' atlases
         // (`NAME_<FOLDER>`) hold the same images in the same order under their own names (`title_titlelog_en`,
@@ -1527,9 +2035,19 @@ impl Assets {
 
     /// Stream table paths retain their original names; compact distributions use standard Ogg Opus.
     pub fn stream_path(&self, rel: &str) -> PathBuf {
-        let original = self.romfs.join(rel);
-        let ogg = original.with_extension("ogg");
-        if ogg.is_file() { ogg } else { original }
+        #[cfg(target_os = "vita")]
+        return self.stream_path_existing(rel).unwrap_or_else(|| self.romfs.join(rel));
+        #[cfg(not(target_os = "vita"))]
+        {
+            let original = self.romfs.join(rel);
+            let ogg = original.with_extension("ogg");
+            if ogg.is_file() { ogg } else { original }
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn stream_path_existing(&self, rel: &str) -> Option<PathBuf> {
+        self.stream_resolver.resolve(rel, knife_perf::optimizations::enabled(knife_perf::optimizations::STREAM_INDEX))
     }
 
     pub fn voice(&self, name: &str) -> Result<Pcm> {
@@ -1543,12 +2061,10 @@ pub fn upload_bntx(r: &Renderer, t: &bntx::Texture) -> Result<TexRef> {
     let (label, srgb) = (&t.name, t.format.is_srgb());
     #[cfg(target_os = "vita")]
     return match t.format {
-        TexFormat::Bc7Unorm | TexFormat::Bc7Srgb if r.bc_supported => r.try_upload_altered(t.width, t.height, Upload::Bc7(&t.data), srgb, label),
-        TexFormat::Bc1Unorm | TexFormat::Bc1Srgb if r.bc_supported => r.try_upload_altered(t.width, t.height, Upload::Bc1(&t.data), srgb, label),
-        TexFormat::Bc3Unorm | TexFormat::Bc3Srgb if r.bc_supported => r.try_upload_altered(t.width, t.height, Upload::Bc3(&t.data), srgb, label),
+        TexFormat::R8Unorm => r.try_upload(t.width, t.height, Upload::R8(&t.data), label),
         _ => {
             let rgba = bntx_decode::to_rgba8(t)?;
-            r.try_upload_altered(t.width, t.height, Upload::Rgba8(&rgba), srgb, label)
+            r.try_upload(t.width, t.height, Upload::Rgba8(&rgba), label)
         }
     };
     #[cfg(not(target_os = "vita"))]
@@ -1588,9 +2104,9 @@ fn upload_bntx_raw(r: &Renderer, t: &bntx::Texture) -> Result<TexRef> {
 }
 
 #[cfg(target_os = "vita")]
-fn extract_pre_altered_gxt(data: &[u8]) -> Result<knife_render::DeferredGxt<'_>> {
+fn extract_native_gxt(data: &[u8]) -> Result<knife_render::DeferredGxt<'_>> {
     let image = compact::parse(data)?;
-    anyhow::ensure!(image.encoding == compact::Encoding::GxtAlterSrgb,
+    anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm,
         "deferred GXT encoding changed or requires a different colour transform");
     Ok(knife_render::DeferredGxt {
         logical: image.logical, physical: image.size, file: image.payload,
@@ -1616,7 +2132,7 @@ fn decode_image_limit(data: &[u8], rgba_cap: Option<usize>) -> Result<(u32, u32,
         let format = match image.encoding {
             compact::Encoding::Jpeg => image::ImageFormat::Jpeg,
             compact::Encoding::Png | compact::Encoding::PngUnorm => image::ImageFormat::Png,
-            compact::Encoding::GxtAlterSrgb => anyhow::bail!("pre-altered GXT requires the native Vita block upload path"),
+            compact::Encoding::GxtNativeUnorm | compact::Encoding::GxtAlterSrgb => anyhow::bail!("GXT requires the matching native Vita block upload path"),
             _ => anyhow::bail!("unsupported CPU image encoding"),
         };
         anyhow::ensure!(image::guess_format(image.payload)? == format, "KIMG payload format mismatch");
@@ -1624,7 +2140,7 @@ fn decode_image_limit(data: &[u8], rgba_cap: Option<usize>) -> Result<(u32, u32,
         {
             let (w, h, pixels) = decode_native_image(image.payload, rgba_cap)?;
             anyhow::ensure!([w, h] == image.size, "KIMG encoded dimensions mismatch");
-            return Ok((w, h, pixels, image.is_srgb()));
+            return Ok((w, h, pixels, false));
         }
         #[cfg(not(target_os = "vita"))]
         {
@@ -1640,10 +2156,25 @@ fn decode_image_limit(data: &[u8], rgba_cap: Option<usize>) -> Result<(u32, u32,
     #[cfg(target_os = "vita")]
     if matches!(image::guess_format(data)?, image::ImageFormat::Png | image::ImageFormat::Jpeg) {
         let (w, h, pixels) = decode_native_image(data, rgba_cap)?;
-        return Ok((w, h, pixels, true));
+        return Ok((w, h, pixels, false));
     }
     let img = image::load_from_memory(data).context("decoding image")?.to_rgba8();
     Ok((img.width(), img.height(), img.into_raw(), true))
+}
+
+#[cfg(target_os = "vita")]
+fn decode_image_owned(data: &[u8]) -> Result<(u32, u32, knife_render::PixelOwner, bool)> {
+    let pixels = Assets::decode_image_pixels_limit(data, Bake::NONE, None, None)?;
+    let pixels = match pixels { Pixels::Scaled(px, _) => *px, px => px };
+    match pixels {
+        Pixels::Native { width, height, owner, range, srgb, baked } =>
+            Ok((width, height, knife_render::PixelOwner::new(NativeSlice { owner, range }), false)),
+        Pixels::Rgba(w, h, px, srgb) => Ok((w, h, px.into(), srgb.unwrap_or(false))),
+        Pixels::Baked(w, h, px) => Ok((w, h, px.into(), false)),
+        Pixels::SharedBaked(w, h, px, _) => Ok((w, h, knife_render::PixelOwner::new(px), false)),
+        Pixels::Bntx(t, _) => Ok((t.width, t.height, bntx_decode::to_rgba8(&t)?.into(), false)),
+        _ => anyhow::bail!("invalid owned atlas pixel route"),
+    }
 }
 
 #[cfg(target_os = "vita")]
@@ -1655,7 +2186,10 @@ fn decode_native_image(data: &[u8], cap: Option<usize>) -> Result<(u32, u32, Vec
     };
     // The native owner stays on its decoding thread. Only a bounded owned Rust
     // allocation crosses the queue; drop the C owner before publishing it.
-    Ok((image.width(), image.height(), image.pixels().to_vec()))
+    let copy = Scope::new(Metric::DecodedCVec);
+    let pixels = image.pixels().to_vec();
+    copy.finish(pixels.len() as u64, 0);
+    Ok((image.width(), image.height(), pixels))
 }
 
 fn atlas_names(data: &[u8]) -> Result<Vec<String>> {
@@ -1675,31 +2209,27 @@ fn upload_compact(r: &Renderer, name: &str, data: &[u8]) -> Result<TexRef> {
 
 // BEGIN standalone CG GXT route (std-only so host rustc tests this exact logic).
 #[cfg(any(target_os = "vita", test))]
-fn gxt_alter_route(codec8: bool, cpu_grade: bool, strip: bool, raw: bool) -> std::result::Result<bool, &'static str> {
-    if !codec8 { return Ok(false); }
-    if cpu_grade { return Err("CPU grade"); }
-    if strip { return Err("language strip"); }
-    if raw { return Err("raw sample"); }
-    Ok(true)
+fn gxt_native_route(codec9: bool, cpu_grade: bool, strip: bool, raw: bool) -> bool {
+    codec9 && !cpu_grade && !strip && !raw
 }
 // END standalone CG GXT route.
 
 // BEGIN standalone CG GXT routing tests (run from a host rustc harness).
 #[cfg(test)]
 mod cg_gxt_route_tests {
-    use super::gxt_alter_route;
+    use super::gxt_native_route;
 
     #[test]
-    fn default_alter_codec8_uses_deferred_blocks() {
-        assert_eq!(gxt_alter_route(true, false, false, false), Ok(true));
-        assert_eq!(gxt_alter_route(false, false, false, false), Ok(false));
+    fn native_unorm_codec9_uses_deferred_blocks() {
+        assert_eq!(gxt_native_route(true, false, false, false), true);
+        assert_eq!(gxt_native_route(false, false, false, false), false);
     }
 
     #[test]
-    fn cpu_grade_raw_and_language_strip_refuse_prebaked_colour() {
-        assert_eq!(gxt_alter_route(true, true, false, false), Err("CPU grade"));
-        assert_eq!(gxt_alter_route(true, false, true, false), Err("language strip"));
-        assert_eq!(gxt_alter_route(true, false, false, true), Err("raw sample"));
+    fn cpu_grade_raw_and_language_strip_select_bounded_decoder() {
+        assert_eq!(gxt_native_route(true, true, false, false), false);
+        assert_eq!(gxt_native_route(true, false, true, false), false);
+        assert_eq!(gxt_native_route(true, false, false, true), false);
     }
 }
 // END standalone CG GXT routing tests.

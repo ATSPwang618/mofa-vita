@@ -30,7 +30,7 @@ import PIL
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / ".work" / "vita" / "compressed-fixtures"
-SDK_BIN = Path("D:/unity/PSVITA/sdk/host_tools/bin")
+from tool_paths import tool_path
 FORMATS = {
     "pvrtc4": (0x81000000, "SCE_GXM_TEXTURE_FORMAT_PVRT4BPP_ABGR", 4),
     "dxt1": (0x85000000, "SCE_GXM_TEXTURE_FORMAT_UBC1_ABGR", 4),
@@ -347,7 +347,7 @@ def main() -> int:
         previous.mkdir(parents=True, exist_ok=False)
         for old_path in [OUTPUT / "manifest.json", *OUTPUT.glob("*.log")]:
             (previous / old_path.name).write_bytes(old_path.read_bytes())
-    tools = {"psp2pvrt64": SDK_BIN / "psp2pvrt64.exe", "psp2gxt": SDK_BIN / "psp2gxt.exe"}
+    tools = {"psp2pvrt64": tool_path("psp2pvrt64", "KNIFE_VITA_PVRTC"), "psp2gxt": tool_path("psp2gxt", "KNIFE_VITA_GXT")}
     manifest = {"schema": "knife-vita-compressed-synthetic-fixtures-v1",
                 "created_utc": datetime.now(timezone.utc).isoformat(),
                 "synthetic": True, "no_game_data": True, "actualexecuted": True,

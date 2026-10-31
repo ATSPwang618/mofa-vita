@@ -1,0 +1,17 @@
+SceShaccCgExt (Bythos). License: see the included GPLv3 LICENSE.
+Upstream: https://github.com/bythos14/SceShaccCgExt
+Source pin: 102192366c25fe7b8fec073d665494b6172605c3
+The complete, unmodified source for this archive is in source/.
+Rebuilt with Vita GCC 13.3.0 for ARMv7 hard-float (VFP register arguments).
+The previous archive used base AAPCS and was rejected by hard-float linkers.
+The source pin preserves the previous six-patch implementation and exported API.
+SHA256: 2707ddf51699b95b9b8b45ac806b1521318ddaf9500aaf07c3db6d1edb710cdf
+
+Rebuild (from the repository root, with VITASDK configured):
+cmake -S knife/vita/vendor/shacccg-ext/source -B .work/shacccg-ext -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake" \
+  -DCMAKE_C_FLAGS="-march=armv7-a -mfloat-abi=hard -I$PWD/knife/vita/vendor/dependencies/include" \
+  -DCMAKE_CXX_FLAGS="-march=armv7-a -mfloat-abi=hard -I$PWD/knife/vita/vendor/dependencies/include"
+cmake --build .work/shacccg-ext
+Copy the output archive and update its pinned checksum in knife/vita/CMakeLists.txt.
+The separate runtime compiler module is in ../shacccg/.

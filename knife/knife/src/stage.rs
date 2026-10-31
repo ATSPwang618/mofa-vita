@@ -1689,7 +1689,12 @@ impl Stage {
         if first {
             self.group.blend = blend;
             self.group.alpha = abyte;
-            out.push(Draw::Mask { quad: first_mask, clear: true });
+            // The replacement mask starts with a full-target clear, with no
+            // intervening mask reader. Keep the first footprint only when that
+            // replacement is absent; group blend/alpha still come from above.
+            if mask.is_none() {
+                out.push(Draw::Mask { quad: first_mask, clear: true });
+            }
         }
         if let Some(rect) = mask {
             out.push(Draw::Mask { quad: rect, clear: true });

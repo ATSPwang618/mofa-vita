@@ -1,0 +1,174 @@
+{
+  "schema": "knife-vita-dependency-license-provenance-v1",
+  "licenses": [
+    {
+      "package": "libpng",
+      "sdk_package_version": "1.6.58-1",
+      "license_description": "libpng-2.0",
+      "file": "libpng/LICENSE",
+      "upstream_url": "https://raw.githubusercontent.com/pnggroup/libpng/v1.6.58/LICENSE",
+      "copied_from": "https://raw.githubusercontent.com/pnggroup/libpng/v1.6.58/LICENSE",
+      "bytes": 5345,
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526",
+      "upstream_equals_sdk_copy": null
+    },
+    {
+      "package": "libjpeg-turbo",
+      "sdk_package_version": "3.2.0-1",
+      "license_description": "IJG and BSD-3-Clause",
+      "file": "libjpeg-turbo/LICENSE.md",
+      "upstream_url": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/3.2.0/LICENSE.md",
+      "copied_from": "${VITASDK}/arm-vita-eabi/share/doc/libjpeg-turbo/LICENSE.md",
+      "bytes": 6077,
+      "sha256": "ba6bceebcba0fdd35488477c2cca8c4632ce82c74dbfbc87d886ce6fc4433579",
+      "upstream_equals_sdk_copy": true
+    },
+    {
+      "package": "libjpeg-turbo",
+      "sdk_package_version": "3.2.0-1",
+      "license_description": "IJG",
+      "file": "libjpeg-turbo/README.ijg",
+      "upstream_url": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/3.2.0/README.ijg",
+      "copied_from": "${VITASDK}/arm-vita-eabi/share/doc/libjpeg-turbo/README.ijg",
+      "bytes": 12799,
+      "sha256": "75815e3bf6484201a3c3d17a1bbf10f2e8e3237f84df10a2357ea896db2a81d6",
+      "upstream_equals_sdk_copy": true
+    },
+    {
+      "package": "zlib",
+      "sdk_package_version": "1.3.2-2",
+      "license_description": "Zlib",
+      "file": "zlib/LICENSE",
+      "upstream_url": "https://raw.githubusercontent.com/madler/zlib/v1.3.2/LICENSE",
+      "copied_from": "https://raw.githubusercontent.com/madler/zlib/v1.3.2/LICENSE",
+      "bytes": 1002,
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
+      "upstream_equals_sdk_copy": null
+    },
+    {
+      "package": "opus",
+      "sdk_package_version": "1.6.1-1",
+      "license_description": "BSD-3-Clause; see upstream notices",
+      "file": "opus/COPYING",
+      "upstream_url": "https://raw.githubusercontent.com/xiph/opus/v1.6.1/COPYING",
+      "copied_from": "https://raw.githubusercontent.com/xiph/opus/v1.6.1/COPYING",
+      "bytes": 1945,
+      "sha256": "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551",
+      "upstream_equals_sdk_copy": null
+    },
+    {
+      "package": "opus",
+      "sdk_package_version": "1.6.1-1",
+      "license_description": "upstream licensing and IPR notice",
+      "file": "opus/LICENSE_PLEASE_READ.txt",
+      "upstream_url": "https://raw.githubusercontent.com/xiph/opus/v1.6.1/LICENSE_PLEASE_READ.txt",
+      "copied_from": "https://raw.githubusercontent.com/xiph/opus/v1.6.1/LICENSE_PLEASE_READ.txt",
+      "bytes": 703,
+      "sha256": "7efb4989e0cd1b256229bdf2f09300c5d14e35db0e7476bfb87fac243498273d",
+      "upstream_equals_sdk_copy": null
+    },
+    {
+      "package": "opusfile",
+      "sdk_package_version": "0.12-1",
+      "license_description": "BSD-3-Clause",
+      "file": "opusfile/COPYING",
+      "upstream_url": "https://raw.githubusercontent.com/xiph/opusfile/v0.12/COPYING",
+      "copied_from": "${VITASDK}/arm-vita-eabi/share/doc/opusfile/COPYING",
+      "bytes": 1487,
+      "sha256": "0267ae795ab744c4e0f9c45e249440fdf2e75dac8c804f36066b28649bf74aaf",
+      "upstream_equals_sdk_copy": true
+    },
+    {
+      "package": "libogg",
+      "sdk_package_version": "1.3.6-2",
+      "license_description": "BSD-3-Clause",
+      "file": "libogg/COPYING",
+      "upstream_url": "https://raw.githubusercontent.com/xiph/ogg/v1.3.6/COPYING",
+      "copied_from": "https://raw.githubusercontent.com/xiph/ogg/v1.3.6/COPYING",
+      "bytes": 1466,
+      "sha256": "d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814",
+      "upstream_equals_sdk_copy": null
+    },
+    {
+      "package": "taihen",
+      "sdk_package_version": "0.11-1",
+      "license_description": "MIT",
+      "file": "taihen/LICENSE",
+      "upstream_url": "https://raw.githubusercontent.com/yifanlu/taiHEN/309b3800bcb8ebbd5e4f5e5e920af3da3590b829/LICENSE",
+      "copied_from": "https://raw.githubusercontent.com/yifanlu/taiHEN/309b3800bcb8ebbd5e4f5e5e920af3da3590b829/LICENSE",
+      "bytes": 1075,
+      "sha256": "b82d83d4c589bfba4c9ce82de4ba98d2b9186b5c59e6cb848bd7ef143b1af437",
+      "upstream_equals_sdk_copy": null
+    }
+  ],
+  "archives": [
+    {
+      "package": "libpng",
+      "sdk_package_version": "1.6.58-1",
+      "archive": "libpng.a",
+      "bytes": 274804,
+      "sha256": "f8d1c6f12ae6468c12c6c81fb90f17419c517ed3bb3754c20a2dc806bd507f74"
+    },
+    {
+      "package": "libjpeg-turbo",
+      "sdk_package_version": "3.2.0-1",
+      "archive": "libjpeg.a",
+      "bytes": 578218,
+      "sha256": "74f61be24c6cdc7a840df277df6f25b19496d6e225a04663b16fc7bc31fe0b23"
+    },
+    {
+      "package": "zlib",
+      "sdk_package_version": "1.3.2-2",
+      "archive": "libz.a",
+      "bytes": 92398,
+      "sha256": "ec823d1db2c1e01572396ae6843b181ee60c9f20ca4992e571ee16771231e97f"
+    },
+    {
+      "package": "opusfile",
+      "sdk_package_version": "0.12-1",
+      "archive": "libopusfile.a",
+      "bytes": 36320,
+      "sha256": "d202e0d9283c7890b08b06a874d2516ecab3ba3d99bf2db42da29ec22603638f"
+    },
+    {
+      "package": "opus",
+      "sdk_package_version": "1.6.1-1",
+      "archive": "libopus.a",
+      "bytes": 599824,
+      "sha256": "e70dfa228ab99600b46c35f62d941f121f80f8aa460a3240d39e27ce9ceda61d"
+    },
+    {
+      "package": "libogg",
+      "sdk_package_version": "1.3.6-2",
+      "archive": "libogg.a",
+      "bytes": 26170,
+      "sha256": "5f80ddba19df7e7d9bc9257fdf1f737bdc4e59f709a625c56413883654a1f45f"
+    },
+    {
+      "package": "taihen",
+      "sdk_package_version": "0.11-1",
+      "archive": "libtaihen_stub.a",
+      "bytes": 17868,
+      "sha256": "c499972c901d64a7cb247263142e17441a32ff2d20193340b62c404053147d57"
+    }
+  ],
+  "source_core": {
+    "sdk_package": "vitasdk-core-2026.08.1-1",
+    "gcc": "15.2.0",
+    "target": "arm-vita-eabi",
+    "newlib": "4.1.0",
+    "newlib_commit": "64aa7aa33d4f380451a1f100d19589226cdad334",
+    "vita_headers_commit": "ebc8f4f7ac8313fe4f74ca95724116b224bad184",
+    "vita_toolchain_commit": "c527abce028df33f5281e9ed4994c25fcef53c7d",
+    "source": "installed SDK var/lib/pacman/local,version_info.txt,_newlib_version.h and archive ELF attributes"
+  },
+  "abi": {
+    "machine": "32-bit little-endian ARMv7-A Vita EABI",
+    "floating_point_calls": "hard-float VFP registers (six C libraries); taihen import-only stub has no VFP-argument attribute",
+    "native_objects": "ARMv7, VFPv3/NEON,8-byte stack alignment,small enum attributes in six C libraries",
+    "gcc_lto_sections_present": false,
+    "runtime": "Vita newlib4.1.0 ABI; retain its headers/libc/libm/libgcc and matching Sce SDK imports from a compatible coreSDK. These are not Linux ARM,macOS orWindows libraries. Host OS may differ because target archives are ARM ELF, while the cross compiler/packaging tools must be native to the host.",
+    "known_compatible_core": "VitaSDK2026.08.1; other core versions need compatible newlib/header ABI and a real link check, not an assumption based only on ARM architecture."
+  },
+  "distribution": "Preserve these upstream notices with redistributed static archives and linked VPK. IJG acknowledgement is included in NOTICE.txt. taihen_stub is an import library, not the installed device taiHEN runtime. These files do not license the separate SceShaccCg compiler module or SceShaccCgExt archive."
+}

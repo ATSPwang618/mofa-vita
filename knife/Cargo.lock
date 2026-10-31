@@ -1484,6 +1484,7 @@ dependencies = [
  "image",
  "knife-audio",
  "knife-core",
+ "knife-perf",
  "knife-platform-vita",
  "knife-render",
  "mp4",
@@ -1512,6 +1513,7 @@ version = "0.9.4"
 dependencies = [
  "anyhow",
  "kira",
+ "knife-perf",
  "knife-platform-vita",
  "ogg",
  "opus",
@@ -1526,15 +1528,21 @@ dependencies = [
  "anyhow",
  "bcdec_rs",
  "flate2",
+ "knife-perf",
  "memmap2",
  "tracing",
 ]
+
+[[package]]
+name = "knife-perf"
+version = "0.1.0"
 
 [[package]]
 name = "knife-platform-vita"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "knife-perf",
  "knife-render-api",
 ]
 
@@ -1545,6 +1553,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam 0.34.1",
+ "knife-perf",
  "knife-platform-vita",
  "knife-render-api",
  "pollster",

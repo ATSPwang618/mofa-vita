@@ -21,15 +21,15 @@ Vita 上这 6 个文件的根目录为 `ux0:data/knife-woh-dev/text-assets`，�
 
 ## 测试与编译
 
-在 `pocket-ubuntu` WSL 中执行：
+在 Linux、macOS 或任意已配置的 WSL 发行版中执行（需 Rust；ARM 编译还需 VitaSDK）：
 
 ```sh
-env PATH=/opt/vitasdk/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin bash ./test-host.sh green
-env PATH=/opt/vitasdk/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin bash ./build-arm.sh
+bash ./test-host.sh green
+bash ./build-arm.sh
 python3 ./record-verification.py
 ```
 
-缓存默认为 `/root/.cache/knife-vita-text-agent`，不使用主任务的 Vita cache。ARM 编译用 nightly-2026-05-28、`build-std=std,panic_abort`、VitaSDK GCC，并保持 `--locked --offline`。ELF 默认位于缓存的 `armv7-sony-vita-newlibeabihf/vita/vita-text-probe.elf`。
+缓存默认为 `${XDG_CACHE_HOME:-$HOME/.cache}/knife-vita-text-agent`，可通过 `CARGO_TARGET_DIR` 覆盖，不使用主任务的 Vita cache。ARM 编译用 nightly-2026-05-28、`build-std=std,panic_abort`、VitaSDK GCC，并保持 `--locked`。默认允许 Cargo 获取缺失依赖；设置 `KNIFE_VITA_OFFLINE=1` 才启用 `--offline`。脚本保留现有 PATH，添加 `${CARGO_HOME:-$HOME/.cargo}/bin`，并复用生产入口发现 VitaSDK；也可显式设置 `VITASDK`。ELF 默认位于缓存的 `armv7-sony-vita-newlibeabihf/vita/vita-text-probe.elf`。
 
 主机测试编译当前 `knife-render/src/vita.rs` 的独立测试快照。`build.rs` 只调整 recorder 模块路径、原上游测试模块注册并追加测试查询接口，功能代码不改。它显式排除依赖 desktop backend 的上游 facade 测试模块；主工程仍拥有那些回归。原 `text.rs` 的一个依赖旧 romfs 的 legacy test 被 `--skip` 显式过滤，本探针新增的 10 个测试强制使用上述真实字体，不能因缺少输入而跳过。
 

@@ -6,7 +6,7 @@ shared workspace lockfile, root packaging scripts, or emulator installation.
 
 The binary is `vita-movie-probe`; intended DEV title ID is `KNIF00011`.
 The root task packages and executes it. `build-arm.sh` only builds the final
-ELF using the independent `/root/.cache/knife-vita-movie-agent` cache.
+ELF using the independent `${XDG_CACHE_HOME:-$HOME/.cache}/knife-vita-movie-agent` cache (override with `CARGO_TARGET_DIR`). The scripts preserve PATH and add `${CARGO_HOME:-$HOME/.cargo}/bin`; ARM builds discover VitaSDK through the production launcher or use an explicit `VITASDK`. Cargo may download missing dependencies unless `KNIFE_VITA_OFFLINE=1`. They work on Linux, macOS, or a configured WSL distribution.
 
 Inputs are read from the existing `ux0:data/knife-woh/assets` junction:
 

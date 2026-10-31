@@ -152,17 +152,42 @@ fn the_graphics_independent_probe_checks_the_real_decoder_and_records_its_scope(
 }
 
 #[test]
-fn image_owners_cannot_be_sent_or_shared_between_threads() {
-    trait AmbiguousIfSend<A> {
-        fn check() {}
-    }
-    impl<T: ?Sized> AmbiguousIfSend<()> for T {}
-    impl<T: ?Sized + Send> AmbiguousIfSend<u8> for T {}
-    let _ = <DecodedImage as AmbiguousIfSend<_>>::check;
+fn exclusive_image_owner_moves_without_copy_and_stays_not_sync() {
+    let mut owner = DecodedImage::decode(PNG).unwrap();
+    let address = owner.pixels().as_ptr() as usize;
+    owner.pixels_mut()[0] = 19;
+    let before = frees();
+    let thread = std::thread::spawn(move || {
+        assert_eq!(owner.pixels().as_ptr() as usize, address);
+        assert_eq!(owner.pixels()[0], 19);
+        assert_eq!(owner.bytes_per_pixel(), 4);
+        drop(owner);
+    });
+    thread.join().unwrap();
+    assert_eq!(frees(), before + 1);
+
     trait AmbiguousIfSync<A> {
         fn check() {}
     }
     impl<T: ?Sized> AmbiguousIfSync<()> for T {}
     impl<T: ?Sized + Sync> AmbiguousIfSync<u8> for T {}
     let _ = <DecodedImage as AmbiguousIfSync<_>>::check;
+}
+
+#[test]
+fn freezing_consumes_exclusive_owner_and_frees_only_after_last_shared_reader() {
+    let mut owner=DecodedImage::decode(PNG).unwrap();
+    owner.pixels_mut()[0]=42;
+    let address=owner.pixels().as_ptr() as usize;
+    let frozen=std::sync::Arc::new(owner.freeze());
+    let before=frees();
+    let readers:Vec<_>=(0..4).map(|_|{
+        let frozen=frozen.clone();std::thread::spawn(move||{
+            assert_eq!(frozen.as_ref().as_ref().as_ptr() as usize,address);
+            assert_eq!(frozen.as_ref().as_ref()[0],42);
+        })
+    }).collect();
+    for reader in readers {reader.join().unwrap();}
+    assert_eq!(frees(),before,"last shared cache pin still owns the C buffer");
+    drop(frozen);assert_eq!(frees(),before+1);
 }

@@ -1,6 +1,6 @@
-//! Owned RGBA8 images decoded by the Vita native PNG/JPEG boundary.
+//! Exclusive RGBA8 / grayscale8 allocations decoded by the Vita native image boundary.
 
-use std::{marker::PhantomData, rc::Rc};
+use std::{marker::PhantomData, cell::Cell};
 
 /// Approximate cross-thread snapshot of cumulative native counters. These
 /// temporary CDRAM bytes are separate from GXM mappings and the process heap.
@@ -111,10 +111,14 @@ const _: () = {
 unsafe extern "C" {
     fn kv_image_decode(encoded: *const u8, length: u32, out: *mut RawDecodedImage) -> i32;
     fn kv_image_decode_bounded(encoded: *const u8, length: u32, out: *mut RawDecodedImage, max_rgba: u32) -> i32;
+    fn kv_image_decode_gray_bounded(encoded: *const u8, length: u32, out: *mut RawDecodedImage, max_bytes: u32) -> i32;
     fn kv_image_free(image: *mut RawDecodedImage);
 }
 
 fn validated_output_length(raw: &RawDecodedImage) -> Result<usize, ImageDecodeError> {
+    validated_output_length_bpp(raw, 4)
+}
+fn validated_output_length_bpp(raw: &RawDecodedImage, bpp: u32) -> Result<usize, ImageDecodeError> {
     let invalid = ImageDecodeError::InvalidOutput;
     if raw.pixels.is_null() {
         return Err(invalid("missing pixel allocation"));
@@ -128,8 +132,8 @@ fn validated_output_length(raw: &RawDecodedImage) -> Result<usize, ImageDecodeEr
     }
     let stride = raw
         .width
-        .checked_mul(4)
-        .ok_or(invalid("RGBA stride overflow"))?;
+        .checked_mul(bpp)
+        .ok_or(invalid("pixel stride overflow"))?;
     let length = stride
         .checked_mul(raw.height)
         .ok_or(invalid("RGBA length overflow"))?;
@@ -144,17 +148,24 @@ fn validated_output_length(raw: &RawDecodedImage) -> Result<usize, ImageDecodeEr
     Ok(length)
 }
 
-/// Owns one immutable, tightly packed, straight-alpha RGBA8 allocation from C.
+/// Owns tightly packed RGBA8 or raw grayscale8 pixels from the C allocator.
 ///
 /// The encoded input is borrowed only during `decode`. Pixels are borrowed from
 /// this owner and released only by `kv_image_free`, including on a failed native
 /// status or an inconsistent successful result. No C pointer enters a Rust Vec.
-/// The owner stays on its creating thread (`!Send` and `!Sync`).
+/// The exclusive owner may move to the renderer thread; it remains `!Sync`.
 pub struct DecodedImage {
     raw: RawDecodedImage,
-    // Keep ownership local even if a future refactor changes the pointer field.
-    _thread_bound: PhantomData<Rc<()>>,
+    // Moving the exclusive owner is allowed; sharing it between threads is not.
+    _not_sync: PhantomData<Cell<()>>,
+    bpp: u32,
 }
+
+// SAFETY: all codec/GXM/JPEG state is destroyed before decode returns. The only
+// surviving allocation comes from thread-safe C malloc and is released by free.
+// Ownership is exclusive; no borrowed input, driver mapping or codec context crosses
+// the worker boundary. Cell keeps shared mutable access (!Sync) forbidden.
+unsafe impl Send for DecodedImage {}
 
 impl DecodedImage {
     pub fn decode(encoded: &[u8]) -> Result<Self, ImageDecodeError> {
@@ -169,7 +180,8 @@ impl DecodedImage {
         let length = checked_input_length(encoded.len())?;
         let mut image = Self {
             raw: RawDecodedImage::default(),
-            _thread_bound: PhantomData,
+            _not_sync: PhantomData,
+            bpp: 4,
         };
         // SAFETY: input is nonempty, its u32 length is checked and bounded, and it
         // remains alive for this synchronous call. Output is aligned, zeroed and
@@ -185,6 +197,22 @@ impl DecodedImage {
         }
         validated_output_length(&image.raw)?;
         Ok(image)
+    }
+
+    /// Preserve native grayscale samples for RULE shaders that read only .r.
+    /// C rejects color PNG/JPEG rather than guessing a luminance conversion.
+    pub fn decode_gray_bounded(encoded: &[u8], max_bytes: u32) -> Result<Self, ImageDecodeError> {
+        let length = checked_input_length(encoded.len())?;
+        let mut image = Self { raw: RawDecodedImage::default(), _not_sync: PhantomData, bpp: 1 };
+        let status = unsafe { kv_image_decode_gray_bounded(encoded.as_ptr(), length, &mut image.raw, max_bytes) };
+        if status != 0 { return Err(ImageDecodeError::Native(status)); }
+        validated_output_length_bpp(&image.raw, 1)?;
+        Ok(image)
+    }
+    pub fn bytes_per_pixel(&self) -> u32 { self.bpp }
+    pub fn pixels_mut(&mut self) -> &mut [u8] {
+        // SAFETY: a unique owner borrow excludes every immutable pixel borrow.
+        unsafe { std::slice::from_raw_parts_mut(self.raw.pixels, self.raw.length as usize) }
     }
 
     pub fn width(&self) -> u32 {
@@ -207,6 +235,15 @@ impl DecodedImage {
         unsafe { std::slice::from_raw_parts(self.raw.pixels, self.raw.length as usize) }
     }
 }
+
+/// Immutable allocation after its exclusive writer has surrendered the owner.
+/// The C decoder/driver contexts are already gone; only malloc/free remain.
+pub struct FrozenImage { image: DecodedImage }
+// SAFETY: FrozenImage never exposes DecodedImage or pixels_mut. All shared access
+// is immutable, and Rust destroys the owner only after its final Arc pin ends.
+unsafe impl Sync for FrozenImage {}
+impl AsRef<[u8]> for FrozenImage { fn as_ref(&self) -> &[u8] { self.image.pixels() } }
+impl DecodedImage { pub fn freeze(self) -> FrozenImage { FrozenImage { image: self } } }
 
 impl Drop for DecodedImage {
     fn drop(&mut self) {

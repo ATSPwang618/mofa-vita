@@ -1,4 +1,6 @@
 """Read texture headers without extracting or modifying the game archives."""
+import argparse
+import os
 import collections
 import gzip
 import hashlib
@@ -10,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'dist/Witch-on-the-Holy-Night-Windows-x64/assets'
-MOD = Path('D:/PSV/原版game收集/魔夜重制版-switch版/魔夜澄空汉化mod(12月27日更新)/010012A017F18000/romfs')
+MOD = Path(os.environ['KNIFE_TRANSLATION_ROMFS']).expanduser() if os.environ.get('KNIFE_TRANSLATION_ROMFS') else None
 
 
 def inspect_archive(base):
@@ -83,6 +85,11 @@ def text_slots(path):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--assets', type=Path, default=ASSETS)
+    parser.add_argument('--mod', type=Path, default=MOD, required=MOD is None)
+    args = parser.parse_args()
+    ASSETS, MOD = args.assets, args.mod
     output = {'archives': {base: inspect_archive(base) for base in ['jallpac', 'jallpachd', 'allpacml', 'allpachdml', 'allui']}}
     base_text, mod_text = text_slots(ASSETS/'script_text.mrg'), text_slots(MOD/'script_text.mrg')
     output['translation_slots'] = [{'slot':i, 'base_lines':len(a), 'mod_lines':len(b),

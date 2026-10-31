@@ -22,7 +22,8 @@ import PIL
 
 ROOT = Path(__file__).resolve().parents[1]
 SAFE_ROOT = (ROOT / ".work" / "vita").resolve()
-SDK = Path("D:/unity/PSVITA/sdk/host_tools/bin/psp2gxt.exe")
+from tool_paths import tool_path
+SDK = tool_path("psp2gxt", "KNIFE_VITA_GXT")
 FORMATS = {"dxt1": 0x85000000, "dxt5": 0x87000000}
 MAX_KIMG = 32 * 1024 * 1024
 MAX_GXT = 16 * 1024 * 1024

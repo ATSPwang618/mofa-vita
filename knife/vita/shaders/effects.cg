@@ -307,53 +307,60 @@ float4 fs_blur(FragmentInput i) : COLOR {
     return clamp(acc, float4(0.0, 0.0, 0.0, 0.0), float4(1.0, 1.0, 1.0, 1.0));
 }
 
-float4 fs_alter(FragmentInput i) : COLOR {
-    float4 t = tex2D(tex0, i.uv);
-    return float4(pow(t.rgb, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2)), t.a);
-}
+// Vita material bytes are already in the encoded game color space. Alter and
+// presentation therefore preserve samples; no desktop gamma-domain conversion.
+float4 fs_alter(FragmentInput i) : COLOR { return tex2D(tex0, i.uv); }
+float4 fs_present(FragmentInput i) : COLOR { return float4(tex2D(tex0, i.uv).rgb, 1.0); }
+float4 fs_present_srgb(FragmentInput i) : COLOR { return fs_present(i); }
 
-float3 srgb_encode(float3 l) {
-    float3 high = 1.055 * pow(l, float3(1.0 / 2.4, 1.0 / 2.4, 1.0 / 2.4)) - 0.055;
-    float3 low = l * 12.92;
-    // step(edge, x) is one for x >= edge, including the low-branch boundary.
-    // Keep the WGSL piecewise transfer exactly, using one vector expression.
-    return lerp(high, low, step(l, float3(0.0031308, 0.0031308, 0.0031308)));
-}
-
-float4 fs_present(FragmentInput i) : COLOR {
+// Exact plain Sprite subset: no haze, soft clip, rule or premultiply flag.
+// Keep Sprite's multiplication by sampled alpha even with Opaque fixed blend.
+float4 fs_sprite_plain(FragmentInput i) : COLOR {
     float4 t = tex2D(tex0, i.uv);
-    return float4(srgb_encode(pow(t.rgb, float3(2.2, 2.2, 2.2))), 1.0);
-}
-
-float4 fs_present_srgb(FragmentInput i) : COLOR {
-    float4 t = tex2D(tex0, i.uv);
-    return float4(pow(t.rgb, float3(2.2, 2.2, 2.2)), 1.0);
+    float a = t.a * i.color.a;
+    return float4(t.rgb * i.color.rgb * a, a);
 }
 
 float3 ps_mix(float3 d, float3 r, float a) {
     return d + a * (r - d);
 }
 
-// The removed RGBA8 scratch pass used destination alpha * mask alpha and
-// stored it as UNORM8 before the final draw. Preserve that intermediate
-// quantization, including its all-zero/all-one boundaries.
+// Encoded UNORM8 surfaces retain the old copy/MaskAlpha quantization without
+// HALF/sRGB transfers. Repeated RGB writes are idempotent after the first pack.
+float unorm8_round(float value) {
+    return floor(clamp(value, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+}
+float3 group_rgb(float3 pixel) {
+    return floor(clamp(pixel, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0)) * 255.0 + 0.5) / 255.0;
+}
 float group_alpha(float pixel, float mask) {
-    return floor(clamp(pixel * mask, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+    return unorm8_round(unorm8_round(pixel) * unorm8_round(mask));
 }
 
 // Vita-only entry: source/mask use identical full-canvas UVs, no haze/soft clip.
 float4 fs_group_composite(FragmentInput i) : COLOR {
     float4 t = tex2D(tex0, i.uv);
     float a = group_alpha(t.a, tex2D(tex1, i.uv).a) * i.color.a;
-    return float4(t.rgb * i.color.rgb * a, a);
+    return float4(group_rgb(t.rgb) * i.color.rgb * a, a);
 }
 
-float4 fs_ps(FragmentInput i) : COLOR {
+struct PsSample {
+    float4 texel;
+    float3 source;
+    float opacity;
+    float alpha;
+};
+
+// Share source, group, fill, haze/soft and rule preparation between the generic
+// 24-op route and the measured PsOp 19 entry. Specialisation removes only the
+// operation selection; it does not narrow those input semantics.
+PsSample ps_source(FragmentInput i) {
     float4 t = sample_img(i);
     if (tu.params2.z > 0.5) { t.a = 1.0; }
-    if (tu.params2.w > 0.5) { t.a = group_alpha(t.a, tex2D(tex2, i.uv).a); }
-    float4 d4 = load_texel(tex1, int2(i.pos.xy), uTex1Size);
-    float3 d = d4.rgb;
+    if (tu.params2.w > 0.5) {
+        t.rgb = group_rgb(t.rgb);
+        t.a = group_alpha(t.a, tex2D(tex2, i.uv).a);
+    }
     float3 s = t.rgb * i.color.rgb;
     // Broadcast fill before comparing: width/height share this uniform vector.
     // 1-step(fill, 0.5) keeps the original strict > boundary for all three lanes.
@@ -363,7 +370,43 @@ float4 fs_ps(FragmentInput i) : COLOR {
     if (tu.params2.x >= 0.0) {
         ca *= rule_mask(rule_at(i.pos.xy / tu.params.zw, tu.params2.y), tu.params2.x, tu.params2.y);
     }
-    float a = t.a * ca;
+    PsSample result;
+    result.texel = t;
+    result.source = s;
+    result.opacity = ca;
+    result.alpha = t.a * ca;
+    return result;
+}
+
+// Operation-specific entries and the generic fallback use the same equations.
+float3 ps_hard_light(float3 d, float3 s, float a) {
+    const float3 one = float3(1.0, 1.0, 1.0);
+    float3 high = one - 2.0 * (one - s) * (one - d);
+    float3 low = 2.0 * d * s;
+    float3 r = float3(s.r < 0.5 ? low.r : high.r,
+                      s.g < 0.5 ? low.g : high.g,
+                      s.b < 0.5 ? low.b : high.b);
+    return ps_mix(d, r, a);
+}
+
+float3 ps_overlay(float3 d, float3 s, float a) {
+    const float3 one = float3(1.0, 1.0, 1.0);
+    float3 high = one - 2.0 * (one - s) * (one - d);
+    float3 low = 2.0 * d * s;
+    float3 r = float3(d.r < 0.5 ? low.r : high.r,
+                      d.g < 0.5 ? low.g : high.g,
+                      d.b < 0.5 ? low.b : high.b);
+    return ps_mix(d, r, a);
+}
+
+// Both snapshot and target-colour entries share exactly this 24-op body.
+float4 ps_apply(FragmentInput i, float4 d4) {
+    PsSample source = ps_source(i);
+    float4 t = source.texel;
+    float3 s = source.source;
+    float ca = source.opacity;
+    float a = source.alpha;
+    float3 d = d4.rgb;
     const float3 one = float3(1.0, 1.0, 1.0);
     const float3 zero = float3(0.0, 0.0, 0.0);
     float op = floor(tu.params.x + 0.5);
@@ -406,20 +449,10 @@ float4 fs_ps(FragmentInput i) : COLOR {
     else if (op == 11.0 || op == 12.0) {
         float3 h = s;
         if (op == 12) { h = min(s / t.a, one); }
-        float3 high = one - 2.0 * (one - h) * (one - d);
-        float3 low = 2.0 * d * h;
-        float3 r = float3(h.r < 0.5 ? low.r : high.r,
-                          h.g < 0.5 ? low.g : high.g,
-                          h.b < 0.5 ? low.b : high.b);
-        return float4(ps_mix(d, r, a), 1.0);
+        return float4(ps_hard_light(d, h, a), 1.0);
     }
     else if (op == 13.0) {
-        float3 high = one - 2.0 * (one - s) * (one - d);
-        float3 low = 2.0 * d * s;
-        float3 r = float3(d.r < 0.5 ? low.r : high.r,
-                          d.g < 0.5 ? low.g : high.g,
-                          d.b < 0.5 ? low.b : high.b);
-        return float4(ps_mix(d, r, a), 1.0);
+        return float4(ps_overlay(d, s, a), 1.0);
     }
     else if (op == 14.0) {
         float3 high = pow(d, one / (2.0 * s));
@@ -442,4 +475,89 @@ float4 fs_ps(FragmentInput i) : COLOR {
     else if (op == 24.0) { return float4(s, 1.0); }
     return float4(d, 1.0);
 }
+
+float4 fs_ps(FragmentInput i) : COLOR {
+    return ps_apply(i, load_texel(tex1, int2(i.pos.xy), uTex1Size));
+}
+
+// Existing Hazuki nanovg_gxm_utils.h uses this exact native UCHAR4 declaration.
+// Raw target-register components are 0..255, unlike normalized texture samples.
+// Native GXP IDs1/9/97/105 independently confirm output metadata type7,4 lanes.
+#ifdef KNIFE_RUNTIME_NATIVE_FETCH
+unsigned char4 native_pack(float4 value) {
+    return unsigned char4(floor(clamp(value, float4(0.0, 0.0, 0.0, 0.0),
+                                      float4(1.0, 1.0, 1.0, 1.0)) * 255.0 + 0.5));
+}
+float4 native_unpack(unsigned char4 value) { return float4(value) / 255.0; }
+
+__nativecolor __regformat unsigned char4 fs_ps_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    return native_pack(ps_apply(i, native_unpack(destination)));
+}
+
+__nativecolor __regformat unsigned char4 fs_ps19_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_source(i);
+    if (min(source.alpha, 0.0) == source.alpha) { return destination; }
+    float4 d = native_unpack(destination);
+    return native_pack(float4(ps_mix(d.rgb * d.a, source.source, source.alpha), 1.0));
+}
+
+#ifdef KNIFE_RUNTIME_PS_SPECIALIZED
+// The ordinary Sprite source subset of PsOp2. Keep the generic path's
+// destination-preserving zero-alpha branch and the same encoded RGBA8 pack.
+__nativecolor __regformat unsigned char4 fs_ps2_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    float3 s = t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float4 d = native_unpack(destination);
+    return native_pack(float4(ps_mix(d.rgb, min(d.rgb, s), a), 1.0));
+}
+
+__nativecolor __regformat unsigned char4 fs_ps19_group_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    float3 s = group_rgb(t.rgb) * i.color.rgb;
+    float a = group_alpha(t.a, tex2D(tex2, i.uv).a) * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float4 d = native_unpack(destination);
+    return native_pack(float4(ps_mix(d.rgb * d.a, s, a), 1.0));
+}
+
+__nativecolor __regformat unsigned char4 fs_ps11_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    float3 s = t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float4 d = native_unpack(destination);
+    return native_pack(float4(ps_hard_light(d.rgb, s, a), 1.0));
+}
+
+__nativecolor __regformat unsigned char4 fs_ps13_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    float3 s = t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float4 d = native_unpack(destination);
+    return native_pack(float4(ps_overlay(d.rgb, s, a), 1.0));
+}
+
+// Ordinary op19 without haze/soft/rule/group. Stage clip_draw can prepare
+// this as Sprite, Fill or NoAlpha; retain both exact source-preparation flags.
+__nativecolor __regformat unsigned char4 fs_ps19_plain_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (tu.params2.z > 0.5) { t.a = 1.0; }
+    float3 s = tu.params.y > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float4 d = native_unpack(destination);
+    return native_pack(float4(ps_mix(d.rgb * d.a, s, a), 1.0));
+}
+#endif
+#endif
 #endif

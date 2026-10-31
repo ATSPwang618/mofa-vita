@@ -1,13 +1,26 @@
 #include "gxm_backend.h"
+#include "perf_audit.h"
 #include "jpeg_hw.h"
+#ifdef __vita__
+#include "runtime_shaders.h"
+#else
+/* Host state tests exercise no Vita compiler or GXP execution. */
+static int kv_runtime_shader_initialize(void) { return 0; }
+static int kv_runtime_shader_available(uint32_t shader) { (void)shader; return 0; }
+static void kv_runtime_shader_shutdown(void) { }
+#endif
 #include "shaders/generated/shaders.h"
 #include <psp2/display.h>
 #include <psp2/gxm.h>
+#ifndef __vita__
+static const SceGxmProgram *kv_runtime_shader_program(uint32_t shader) { (void)shader; return 0; }
+#endif
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 #include <math.h>
 #include <stddef.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,15 +29,17 @@ enum { WIDTH = 960, HEIGHT = 544, CONTENT_H = 540, CONTENT_Y = 2,
     /* Three scanout buffers, as the reference Vita renderer uses: with two, the display
        queue wait dominated `present` once rendering became cheap. */
     STRIDE = 960, BUFFERS = 3, MAX_QUADS = 1024, PATCHER_BYTES = 64 * 1024,
-    /* Leave bounded CDRAM headroom for the independently serialized JPEG engine. */
-    CDRAM_LIMIT = 64 * 1024 * 1024 - KV_JPEG_HW_CDRAM_RESERVE,
+    /* 112 MiB process allowance: keep 8 MiB outside our total, including the
+       independently serialized JPEG reserve. Allocation still checks the
+       kernel; cache ceilings do not preallocate or override real free memory. */
+    CDRAM_LIMIT = 104 * 1024 * 1024 - KV_JPEG_HW_CDRAM_RESERVE,
     MAIN_MAP_LIMIT = 16 * 1024 * 1024 };
 enum { KV_BAD_ARGUMENT = -1, KV_STATE = -2, KV_BUDGET = -3, KV_ALLOC = -4 };
 /* Defined in effects_backend.inc: invalidates the cached pass state and the vertex ring. */
 void kv_reset_effect_state(void);
 void kv_reset_effect_ring(KvGxm *g);
 enum { KV_TEXTURE_LINEAR = 0, KV_TEXTURE_MOVIE = 1, KV_TEXTURE_COMPRESSED = 2 };
-enum { OUTPUT_MODES = 2 };
+enum { OUTPUT_MODES = 1 };
 
 /* Timing probes: the GXM owner thread is single, so plain counters are enough. */
 static KvGxmTiming kv_gxm_timing_counters;
@@ -33,7 +48,90 @@ static void kv_probe_add(uint64_t *total, uint64_t *calls, uint64_t start) {
     *total += kv_probe_now() - start;
     *calls += 1;
 }
-typedef struct Block { SceUID uid; void *base; uint32_t size, offset, mapping, cdram, accounted; } Block;
+static int perf_begin_scene(SceGxmContext *context, unsigned int flags, const SceGxmRenderTarget *target,
+    const SceGxmValidRegion *region, SceGxmSyncObject *vertex_sync, SceGxmSyncObject *fragment_sync,
+    const SceGxmColorSurface *color, const SceGxmDepthStencilSurface *depth) {
+    const uint64_t started = kv_perf_begin();
+    kv_perf_native_enter(KV_NATIVE_BEGIN_SCENE, 0);
+    const int result = sceGxmBeginScene(context, flags, target, region, vertex_sync, fragment_sync, color, depth);
+    kv_perf_native_leave();
+    kv_perf_end(KV_PERF_BEGIN_SCENE, started, 0, result < 0);
+    return result;
+}
+static int perf_end_scene_kind(SceGxmContext *context, const SceGxmNotification *vertex,
+    const SceGxmNotification *fragment, uint32_t kind, uint32_t previous_ps_ops) {
+    const uint64_t started = kv_perf_begin();
+    kv_perf_native_enter(KV_NATIVE_END_SCENE, kind);
+    const int result = sceGxmEndScene(context, vertex, fragment);
+    kv_perf_native_leave();
+    const uint64_t finished = kv_perf_begin();
+    const enum KvPerfMetric classes[] = { KV_PERF_END_OTHER, KV_PERF_END_STAGE,
+        KV_PERF_END_GROUP_PIXEL, KV_PERF_END_GROUP_MASK, KV_PERF_END_SCRATCH,
+        KV_PERF_END_CANVAS, KV_PERF_END_COPY_PS, KV_PERF_END_COPY_GROUP,
+        KV_PERF_END_PRESENT, KV_PERF_END_BAKE };
+    kv_perf_end_at(KV_PERF_END_SCENE, started, finished, 0, result < 0);
+    kv_perf_end_at(classes[kind < 10 ? kind : 0], started, finished, 0, result < 0);
+    /* Correlation with the immediately preceding submitted scene, not GPU
+       execution attribution. These four categories also partition EndScene. */
+    const uint32_t ps19 = 1U << 18;
+    const enum KvPerfMetric after[] = { KV_PERF_END_AFTER_NO_PS, KV_PERF_END_AFTER_PS19,
+        KV_PERF_END_AFTER_PS_OTHER, KV_PERF_END_AFTER_PS_MIXED };
+    const uint32_t previous = ((previous_ps_ops & ps19) ? 1U : 0U)
+        | ((previous_ps_ops & ~ps19) ? 2U : 0U);
+    kv_perf_end_at(after[previous], started, finished, 0, result < 0);
+    return result;
+}
+static int perf_end_scene(SceGxmContext *context, const SceGxmNotification *vertex, const SceGxmNotification *fragment) {
+    return perf_end_scene_kind(context, vertex, fragment, KV_SCENE_OTHER, 0);
+}
+static void perf_finish(SceGxmContext *context, enum KvPerfMetric reason) {
+    const uint64_t started = kv_perf_begin();
+    kv_perf_native_enter(KV_NATIVE_FINISH, reason);
+    sceGxmFinish(context);
+    kv_perf_native_leave();
+    kv_perf_end(reason, started, 0, 0);
+}
+static int perf_transfer_finish(enum KvPerfMetric reason) {
+    const uint64_t started = kv_perf_begin();
+    kv_perf_native_enter(KV_NATIVE_TRANSFER_FINISH, reason);
+    const int result = sceGxmTransferFinish();
+    kv_perf_native_leave();
+    kv_perf_end(reason, started, 0, result < 0);
+    return result;
+}
+static int perf_display_finish(void) {
+    const uint64_t started = kv_perf_begin();
+    kv_perf_native_enter(KV_NATIVE_DISPLAY_FINISH, 0);
+    const int result = sceGxmDisplayQueueFinish();
+    kv_perf_native_leave();
+    kv_perf_end(KV_PERF_DISPLAY_FINISH, started, 0, result < 0);
+    return result;
+}
+static int perf_display_enqueue(SceGxmSyncObject *old_sync, SceGxmSyncObject *new_sync, const void *data) {
+    const uint64_t started = kv_perf_begin();
+    kv_perf_native_enter(KV_NATIVE_DISPLAY_ENQUEUE, 0);
+    const int result = sceGxmDisplayQueueAddEntry(old_sync, new_sync, data);
+    kv_perf_native_leave();
+    kv_perf_end(KV_PERF_DISPLAY_ENQUEUE, started, 0, result < 0);
+    return result;
+}
+static void perf_zero(enum KvPerfMetric metric, void *data, uint32_t length) {
+    const uint64_t started = kv_perf_begin();
+    memset(data, 0, length);
+    kv_perf_end(metric, started, length, 0);
+}
+typedef struct TexturePage TexturePage;
+typedef struct RetiredPixels RetiredPixels;
+typedef struct PoolSpan PoolSpan;
+typedef struct Block {
+    SceUID uid; void *base; uint32_t size, offset, mapping, cdram, accounted;
+    TexturePage *page; PoolSpan *span;
+} Block;
+typedef struct BatchSlot { Block vertices; uint32_t used, first_sequence, last_sequence; } BatchSlot;
+enum { KV_OPT_BATCH_ARENA = 1U << 2, KV_OPT_ASYNC_SUBMIT = 1U << 5,
+    KV_OPT_COMPACT_STREAM = 1U << 6, KV_OPT_TEXTURE_POOL = 1U << 8,
+    KV_OPT_DEPENDENCY_GRAPH = 1U << 12, KV_OPT_SOURCE_RENAME = 1U << 13,
+    BATCH_SLOTS = 2, BATCH_MAX_BYTES = 4 * 1024 * 1024 };
 #ifdef KV_GXM_DEV_DIAGNOSTICS
 static void native_trace(const char *stage, const Block *block) {
     FILE *log = fopen("ux0:data/knife-woh-dev/gxm-native.log", "a");
@@ -53,6 +151,7 @@ static void native_trace(const char *stage, const Block *block) {
 typedef struct Vertex { float position[2], uv[2], color[4]; } Vertex;
 typedef struct KvEffects KvEffects;
 static int effects_destroy(KvGxm *g);
+static int effects_optional_initialize(KvGxm *g);
 static int texture_target_destroy(KvGxm *g, KvGxmTexture *texture);
 _Static_assert(sizeof(Vertex) == 32, "basic vertex ABI");
 _Static_assert(sizeof(KvEffectVertex) == 112, "effects vertex ABI");
@@ -66,14 +165,16 @@ struct KvGxmTexture {
     SceGxmSyncObject *sync;
     SceGxmColorSurface surface;
     uint32_t width, height, pitch, bpp, srgb, storage;
-    int ready, rendered;
+    int ready, rendered, retiring;
+    uint32_t last_use, last_read, last_write;
+    uint64_t rename_identity;
 };
-typedef struct DisplayData { void *address; volatile int *error; } DisplayData;
+typedef struct DisplayData { void *address; _Atomic int *error; } DisplayData;
 struct KvGxm {
     SceUID thread;
     int initialized, scene_open, closing, scanout_submitted;
     char error[128];
-    volatile int display_error;
+    _Atomic int display_error;
     SceGxmContext *context;
     void *context_host;
     SceGxmRenderTarget *target;
@@ -81,7 +182,6 @@ struct KvGxm {
     SceGxmShaderPatcherId vertex_id, fragment_id;
     SceGxmVertexProgram *vertex_program;
     SceGxmFragmentProgram *opaque_program, *alpha_program;
-    SceGxmFragmentProgram *srgb_opaque_program, *srgb_alpha_program;
     SceGxmColorSurface surfaces[BUFFERS];
     SceGxmDepthStencilSurface depth;
     SceGxmSyncObject *sync[BUFFERS];
@@ -94,6 +194,17 @@ struct KvGxm {
 #endif
     KvEffects *effects;
     uint32_t back, front, quads;
+    BatchSlot batches[BATCH_SLOTS];
+    uint32_t batch_index, batch_active, sequence, dependency_pending;
+    uint32_t shader_capabilities;
+    uint32_t gpu_covered_sequence, scene_kind, scene_ps_ops, previous_scene_ps_ops;
+    uint32_t plan_ready, plan_need_sequence, plan_hazards, plan_kind;
+    KvGxmTexture *plan_target;
+    RetiredPixels *retired_pixels;
+    uint32_t rename_bytes, rename_owners;
+    uint64_t next_rename_identity;
+    volatile unsigned int *completion;
+    TexturePage *texture_pages;
     KvGxmStats stats;
 };
 
@@ -125,25 +236,18 @@ static int texture_owned(const KvGxm *g, const KvGxmTexture *texture) {
 #define CHECK(g, expression) do { int result_ = (expression); \
     if (result_ < 0) return fail(g, #expression, result_); } while (0)
 
-/* RGBA8 storage is always four bytes per pixel. Native GXM gamma conversion
-   requires 64-bit output registers (HALF4); display/linear surfaces use UCHAR4.
-   Cache these separately so switching destinations cannot reuse the wrong ABI. */
-static uint32_t output_mode(const KvGxm *g) {
-    return g->current_target && g->current_target->srgb ? 1U : 0U;
-}
+/* Vita render/material contract: encoded UNORM8 storage, UCHAR4 output.
+   Display and offscreen surfaces share this contract; no gamma conversion. */
+static uint32_t output_mode(const KvGxm *g) { (void)g; return 0; }
 static int quad_program(KvGxm *g, uint32_t alpha, SceGxmFragmentProgram **out) {
-    const uint32_t srgb = output_mode(g);
-    SceGxmFragmentProgram **cached = srgb ?
-        (alpha ? &g->srgb_alpha_program : &g->srgb_opaque_program) :
-        (alpha ? &g->alpha_program : &g->opaque_program);
+    SceGxmFragmentProgram **cached = alpha ? &g->alpha_program : &g->opaque_program;
     if (!*cached) {
         const SceGxmBlendInfo blend = { .colorMask = SCE_GXM_COLOR_MASK_ALL,
             .colorFunc = SCE_GXM_BLEND_FUNC_ADD, .alphaFunc = SCE_GXM_BLEND_FUNC_ADD,
             .colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA, .colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
             .alphaSrc = SCE_GXM_BLEND_FACTOR_ONE, .alphaDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA };
         CHECK(g, sceGxmShaderPatcherCreateFragmentProgram(g->patcher, g->fragment_id,
-            srgb ? SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4 : SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
-            SCE_GXM_MULTISAMPLE_NONE, alpha ? &blend : NULL,
+            SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4, SCE_GXM_MULTISAMPLE_NONE, alpha ? &blend : NULL,
             (const SceGxmProgram *)knife_quad_v_gxp, cached));
     }
     *out = *cached;
@@ -152,7 +256,8 @@ static int quad_program(KvGxm *g, uint32_t alpha, SceGxmFragmentProgram **out) {
 
 /* Explicit memory classes: no implicit fallback from exhausted CDRAM to RAM. */
 static int block_free(KvGxm *g, Block *b);
-static int block_alloc(KvGxm *g, Block *b, uint32_t requested, int cdram, uint32_t mapping) {
+static int pool_slice_free(KvGxm *g, Block *b);
+static int block_alloc_inner(KvGxm *g, Block *b, uint32_t requested, int cdram, uint32_t mapping) {
     const uint32_t alignment = cdram ? 256 * 1024 : 4096;
     if (!requested || requested > UINT32_MAX - alignment + 1) return KV_BAD_ARGUMENT;
     b->size = (requested + alignment - 1) & ~(alignment - 1);
@@ -185,7 +290,17 @@ static int block_alloc(KvGxm *g, Block *b, uint32_t requested, int cdram, uint32
     TRACE_BLOCK("block: allocated", b);
     return 0;
 }
-static int block_free(KvGxm *g, Block *b) {
+static int block_alloc(KvGxm *g, Block *b, uint32_t requested, int cdram, uint32_t mapping) {
+    const uint64_t started = kv_perf_begin();
+    const int result = block_alloc_inner(g, b, requested, cdram, mapping);
+    const uint64_t finished = kv_perf_begin();
+    kv_perf_end_at(cdram ? KV_PERF_BLOCK_CDRAM : KV_PERF_BLOCK_MAIN, started, finished, requested,
+        result >= 0 ? b->size : 0);
+    if (result < 0) kv_perf_end_at(KV_PERF_BLOCK_FAILED, started, finished, requested, 0);
+    return result;
+}
+static int block_free_inner(KvGxm *g, Block *b) {
+    if (b->page) return pool_slice_free(g, b);
     if (b->uid <= 0) return 0;
     if (b->mapping) {
         TRACE_BLOCK("block: before unmap", b);
@@ -206,6 +321,13 @@ static int block_free(KvGxm *g, Block *b) {
     memset(b, 0, sizeof(*b));
     return 0;
 }
+static int block_free(KvGxm *g, Block *b) {
+    const uint32_t bytes = b->uid > 0 ? b->size : 0, cdram = b->cdram;
+    const uint64_t started = kv_perf_begin();
+    const int result = block_free_inner(g, b);
+    if (bytes) kv_perf_end(KV_PERF_BLOCK_FREE, started, result >= 0 ? bytes : 0, cdram);
+    return result;
+}
 static void *patcher_alloc(void *user, unsigned int size) { (void)user; return malloc(size); }
 static void patcher_free(void *user, void *memory) { (void)user; free(memory); }
 static void display_callback(const void *data) {
@@ -215,12 +337,15 @@ static void display_callback(const void *data) {
         .width = WIDTH, .height = HEIGHT };
     int result = sceDisplaySetFrameBuf(&frame, SCE_DISPLAY_SETBUF_NEXTFRAME);
     if (result >= 0) result = sceDisplayWaitVblankStart();
-    if (result < 0) *display->error = result;
+    if (result < 0) atomic_store_explicit(display->error, result, memory_order_relaxed);
 }
 
+#include "gpu_lifetime.inc"
+
 static int initialize(KvGxm *g) {
-    const SceGxmInitializeParams init = { .flags = SCE_GXM_INITIALIZE_FLAG_DEFAULT,
-        .displayQueueMaxPendingCount = 1, .displayQueueCallback = display_callback,
+    /* SDKs before the named DEFAULT enum use the same documented zero value. */
+    const SceGxmInitializeParams init = { .flags = 0,
+        .displayQueueMaxPendingCount = (kv_render_options() & KV_OPT_ASYNC_SUBMIT) ? BUFFERS - 1 : 1, .displayQueueCallback = display_callback,
         .displayQueueCallbackDataSize = sizeof(DisplayData),
         .parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE };
     CHECK(g, sceGxmInitialize(&init));
@@ -303,10 +428,12 @@ static int initialize(KvGxm *g) {
     if (program_result < 0) return program_result;
     program_result = quad_program(g, 1, &g->alpha_program);
     if (program_result < 0) return program_result;
-    CHECK(g, block_alloc(g, &g->vertices, MAX_QUADS * 4 * sizeof(Vertex), 0, 1));
+    if (!(kv_render_options() & KV_OPT_BATCH_ARENA))
+        CHECK(g, block_alloc(g, &g->vertices, MAX_QUADS * 4 * sizeof(Vertex), 0, 1));
     CHECK(g, block_alloc(g, &g->indices, 6 * sizeof(uint16_t), 0, 1));
     const uint16_t indices[] = { 0, 1, 2, 2, 1, 3 };
     memcpy(g->indices.base, indices, sizeof(indices));
+    memset((uint8_t *)g->indices.base + 16, 0, 4 * sizeof(float));
     const uint8_t white[] = {255, 255, 255, 255};
     int result = kv_gxm_texture_create(g, white, 1, 1, 4, &g->white);
     if (result < 0) return result; /* Preserve the exact failing SDK operation. */
@@ -324,6 +451,12 @@ int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t capacity) {
     if (!g) { snprintf(error, capacity, "backend allocation"); return KV_ALLOC; }
     g->thread = sceKernelGetThreadId();
     int result = initialize(g);
+    if (result >= 0 && (kv_render_options() & ((1U << 3) | (1U << 4)))) {
+        /* Compilation and complete optional program admission are startup work.
+           A rejected optional shader returns to its original rendering chain. */
+        (void)kv_runtime_shader_initialize();
+        result = effects_optional_initialize(g);
+    }
     if (result < 0) {
         snprintf(error, capacity, "%s", g->error);
         int cleanup = kv_gxm_destroy(g);
@@ -337,6 +470,10 @@ int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t capacity) {
     *out = g;
     return 0;
 }
+int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader) {
+    if (!active(g)) return KV_STATE;
+    return shader < 32 && (g->shader_capabilities & (1U << shader)) ? 1 : 0;
+}
 
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
     uint32_t height, uint32_t stride, KvGxmTexture **out) {
@@ -347,7 +484,7 @@ int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
     if (!t) return fail(g, "texture owner allocation", KV_ALLOC);
     const uint32_t pitch = (width + 7) & ~7U;
     t->width = width; t->height = height; t->pitch = pitch; t->bpp = 4;
-    int result = block_alloc(g, &t->pixels, pitch * height * 4, 1, 1);
+    int result = texture_pixels_alloc(g, &t->pixels, pitch * height * 4);
     if (result < 0) {
         if (t->pixels.uid > 0) {
             t->owner = g; t->next = g->textures; g->textures = t;
@@ -356,9 +493,11 @@ int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
         return fail(g, "texture CDRAM allocation", result);
     }
     t->owner = g; t->next = g->textures; g->textures = t;
-    memset(t->pixels.base, 0, t->pixels.size);
+    texture_initialize_padding(t, KV_PERF_ZERO_LINEAR, rgba != NULL);
+    const uint64_t copy_started = kv_perf_begin();
     for (uint32_t y = 0; y < height; ++y)
         memcpy((uint8_t *)t->pixels.base + y * pitch * 4, rgba + y * stride, width * 4);
+    kv_perf_end(KV_PERF_UPLOAD_RGBA, copy_started, (uint64_t)width * height * 4, t->pixels.size);
     /* LINEAR uses an eight-pixel row alignment. LINEAR_STRIDED stores stride
        bits in the min-filter field and rejects sceGxmTextureSetMinFilter. */
     const char *stage = "sceGxmTextureInitLinear";
@@ -390,7 +529,13 @@ int32_t kv_gxm_texture_destroy(KvGxm *g, KvGxmTexture *t) {
 #ifdef KV_GXM_DEV_DIAGNOSTICS
     if (g->diagnostic_scanout == t) return fail(g, "DEV target is still scanned out", KV_STATE);
 #endif
-    sceGxmFinish(g->context);
+    if (async_submission(g)) {
+        /* Retain native ownership until the last submitted fragment reader/writer
+           completes. Logical Rust handles can disappear immediately. */
+        t->ready = 0; t->retiring = 1;
+        return collect_retired_textures(g);
+    }
+    perf_finish(g->context, KV_PERF_FINISH_DESTROY);
     KvGxmTexture **entry = &g->textures;
     while (*entry && *entry != t) entry = &(*entry)->next;
     if (!*entry) return KV_BAD_ARGUMENT;
@@ -406,13 +551,15 @@ int32_t kv_gxm_begin(KvGxm *g, const float clear[4]) {
     if (!active(g) || g->scene_open || !clear) return KV_STATE;
     if (g->display_error < 0) return fail(g, "display callback", g->display_error);
     /* Baseline serial submission: arenas are reused only after GPU completion. */
-    sceGxmFinish(g->context);
-    CHECK(g, sceGxmBeginScene(g->context, 0, g->target, NULL, NULL,
+    if (!async_submission(g)) perf_finish(g->context, KV_PERF_FINISH_PRESENT_BEGIN);
+    CHECK(g, ensure_batch(g));
+    CHECK(g, perf_begin_scene(g->context, scene_flags(g, NULL, KV_SCENE_PRESENT), g->target, NULL, NULL,
         g->sync[g->back], &g->surfaces[g->back], &g->depth));
-    g->scene_open = 1; g->quads = 0; g->current_target = NULL;
+    g->scene_open = 1; g->current_target = NULL;
+    if (!(kv_render_options() & KV_OPT_BATCH_ARENA)) g->quads = 0;
     /* A new frame starts with an empty effect vertex ring; the Finish above drained the
        previous frame's readers. */
-    kv_reset_effect_ring(g);
+    if (!(kv_render_options() & KV_OPT_BATCH_ARENA)) kv_reset_effect_ring(g);
     kv_reset_effect_state();
     sceGxmSetViewport(g->context, WIDTH / 2.0f, WIDTH / 2.0f,
         CONTENT_Y + CONTENT_H / 2.0f, -CONTENT_H / 2.0f, 0.5f, 0.5f);
@@ -424,32 +571,47 @@ int32_t kv_gxm_begin(KvGxm *g, const float clear[4]) {
     const float rect[4] = {0, 0, WIDTH, CONTENT_H}, uv[4] = {0, 0, 1, 1};
     return kv_gxm_draw_quad(g, NULL, rect, uv, clear, 0);
 }
-int32_t kv_gxm_draw_quad(KvGxm *g, const KvGxmTexture *t, const float rect[4],
+static int32_t draw_quad_inner(KvGxm *g, const KvGxmTexture *t, const float rect[4],
     const float uv[4], const float color[4], uint32_t alpha) {
     if (!active(g) || !g->scene_open || !rect || !uv || !color || alpha > 1) return KV_STATE;
-    if (g->quads >= MAX_QUADS) return fail(g, "per-frame vertex arena", KV_BUDGET);
+    if (!(kv_render_options() & KV_OPT_BATCH_ARENA) && g->quads >= MAX_QUADS)
+        return fail(g, "per-frame vertex arena", KV_BUDGET);
     if (!t) t = g->white;
     if (!texture_owned(g, t)) return KV_BAD_ARGUMENT;
     for (uint32_t i = 0; i < 4; ++i)
         if (!isfinite(rect[i]) || !isfinite(uv[i]) || !isfinite(color[i])) return KV_BAD_ARGUMENT;
+    CHECK(g, require_scene_read(g, t));
     SceGxmFragmentProgram *program = NULL;
     const int program_result = quad_program(g, alpha, &program);
     if (program_result < 0) return program_result;
-    Vertex *v = (Vertex *)g->vertices.base + g->quads * 4;
+    const uint64_t vertex_started = kv_perf_begin();
+    Vertex *v = NULL;
+    CHECK(g, batch_vertices(g, sizeof(Vertex) * 4, (void **)&v));
+    if (!(kv_render_options() & KV_OPT_BATCH_ARENA))
+        v = (Vertex *)g->vertices.base + g->quads * 4;
     for (uint32_t i = 0; i < 4; ++i) {
         v[i].position[0] = (rect[0] + (i & 1 ? rect[2] : 0)) * (2.0f / WIDTH) - 1.0f;
         v[i].position[1] = 1.0f - (rect[1] + (i & 2 ? rect[3] : 0)) * (2.0f / CONTENT_H);
         v[i].uv[0] = uv[i & 1 ? 2 : 0]; v[i].uv[1] = uv[i & 2 ? 3 : 1];
         memcpy(v[i].color, color, sizeof(v[i].color));
     }
+    kv_perf_end(KV_PERF_BASIC_VERTEX, vertex_started, sizeof(Vertex) * 4, 0);
     sceGxmSetVertexProgram(g->context, g->vertex_program);
     sceGxmSetFragmentProgram(g->context, program);
     CHECK(g, sceGxmSetVertexStream(g->context, 0, v));
     CHECK(g, sceGxmSetFragmentTexture(g->context, 0, &t->descriptor));
+    texture_use(g, t);
     CHECK(g, sceGxmDraw(g->context, SCE_GXM_PRIMITIVE_TRIANGLES,
         SCE_GXM_INDEX_FORMAT_U16, g->indices.base, 6));
     ++g->quads; ++g->stats.draws;
     return 0;
+}
+int32_t kv_gxm_draw_quad(KvGxm *g, const KvGxmTexture *t, const float rect[4],
+    const float uv[4], const float color[4], uint32_t alpha) {
+    const uint64_t started = kv_perf_begin();
+    const int result = draw_quad_inner(g, t, rect, uv, color, alpha);
+    kv_perf_end(KV_PERF_DRAW_BASIC, started, 0, result < 0);
+    return result;
 }
 int32_t kv_gxm_present(KvGxm *g) {
     if (!active(g) || !g->scene_open || g->current_target) return KV_STATE;
@@ -458,30 +620,35 @@ int32_t kv_gxm_present(KvGxm *g) {
 #define SUBMIT(expression) do { int result_ = (expression); \
     if (result_ < 0) { g->closing = 1; return fail(g, #expression, result_); } } while (0)
     { const uint64_t t0 = kv_probe_now();
-      SUBMIT(sceGxmEndScene(g->context, NULL, NULL));
+      SUBMIT(end_submitted_scene(g));
       kv_probe_add(&kv_gxm_timing_counters.end_scene_us, &kv_gxm_timing_counters.end_scene_calls, t0); }
     g->scene_open = 0;
     SUBMIT(sceGxmPadHeartbeat(&g->surfaces[g->back], g->sync[g->back]));
     const DisplayData data = {g->display[g->back].base, &g->display_error};
     /* Retire scanout even when callback installation succeeds but its wait fails. */
     g->scanout_submitted = 1;
-    SUBMIT(sceGxmDisplayQueueAddEntry(g->sync[g->front], g->sync[g->back], &data));
-    /* The display entry needs this frame's GPU work retired before the queue can
-       withdraw the buffer; EndScene passes no notifications, so the Finish here is
-       what makes the scanout signal progress. Removing it black-screens. */
-    { const uint64_t t0 = kv_probe_now();
-      sceGxmFinish(g->context);
-      kv_probe_add(&kv_gxm_timing_counters.finish_us, &kv_gxm_timing_counters.finish_calls, t0); }
-    { const uint64_t t0 = kv_probe_now();
-      SUBMIT(sceGxmDisplayQueueFinish());
-      kv_probe_add(&kv_gxm_timing_counters.display_finish_us,
-          &kv_gxm_timing_counters.display_finish_calls, t0); }
+    SUBMIT(perf_display_enqueue(g->sync[g->front], g->sync[g->back], &data));
+    /* Legacy A/B keeps its global drains. The asynchronous path has fragment
+       completion, GPU scene dependencies, independently owned arena slots and
+       bounded display-queue backpressure; AddEntry copies its callback payload. */
+    if (!async_submission(g)) {
+        const uint64_t t0 = kv_probe_now();
+        perf_finish(g->context, KV_PERF_FINISH_PRESENT_END);
+        kv_probe_add(&kv_gxm_timing_counters.finish_us, &kv_gxm_timing_counters.finish_calls, t0);
+    }
+    if (!async_submission(g)) {
+        const uint64_t t0 = kv_probe_now();
+        SUBMIT(perf_display_finish());
+        kv_probe_add(&kv_gxm_timing_counters.display_finish_us,
+            &kv_gxm_timing_counters.display_finish_calls, t0);
+    }
 #undef SUBMIT
     if (g->display_error < 0) { g->closing = 1; return fail(g, "display callback", g->display_error); }
     g->front = g->back; g->back = (g->back + 1) % BUFFERS;
 #ifdef KV_GXM_DEV_DIAGNOSTICS
     g->diagnostic_scanout = NULL;
 #endif
+    g->batch_active = 0;
     ++g->stats.frames;
     return 0;
 }
@@ -490,8 +657,8 @@ int32_t kv_gxm_dev_scanout_target(KvGxm *g, KvGxmTexture *t) {
 #ifdef KV_GXM_DEV_DIAGNOSTICS
     if (!t || !texture_owned(g, t) || !t->target || t->bpp != 4 || t->srgb
         || t->width != WIDTH || t->height != HEIGHT || t->pitch != STRIDE) return KV_BAD_ARGUMENT;
-    sceGxmFinish(g->context);
-    CHECK(g, sceGxmDisplayQueueFinish());
+    perf_finish(g->context, KV_PERF_FINISH_DEV);
+    CHECK(g, perf_display_finish());
     /* Normal offscreen textures need no display sync. Only this DEV direct
        scanout path hands one to the display queue. */
     if (!t->sync) CHECK(g, sceGxmSyncObjectCreate(&t->sync));
@@ -502,7 +669,7 @@ int32_t kv_gxm_dev_scanout_target(KvGxm *g, KvGxmTexture *t) {
     g->diagnostic_scanout = t;
     const DisplayData data = {t->pixels.base, &g->display_error};
     CHECK(g, sceGxmDisplayQueueAddEntry(g->sync[g->front], t->sync, &data));
-    CHECK(g, sceGxmDisplayQueueFinish());
+    CHECK(g, perf_display_finish());
     if (g->display_error < 0) return fail(g, "DEV display callback", g->display_error);
     return 0;
 #else
@@ -516,8 +683,8 @@ int32_t kv_gxm_dev_swap_display_target(KvGxm *g, KvGxmTexture *t) {
     if (!t || !texture_owned(g, t) || !t->target || t->width != WIDTH
         || t->height != HEIGHT || t->pitch != STRIDE || t->bpp != 4)
         return KV_BAD_ARGUMENT;
-    sceGxmFinish(g->context);
-    CHECK(g, sceGxmDisplayQueueFinish());
+    perf_finish(g->context, KV_PERF_FINISH_DEV);
+    CHECK(g, perf_display_finish());
     SceGxmRenderTarget *previous = g->target;
     g->target = t->target;
     t->target = previous;
@@ -532,10 +699,10 @@ int32_t kv_gxm_dev_swap_display_surface(KvGxm *g, KvGxmTexture *t) {
 #ifdef KV_GXM_DEV_DIAGNOSTICS
     if (!t || !texture_owned(g, t) || !t->target || t->width != WIDTH
         || t->height != HEIGHT || t->pitch != STRIDE || t->bpp != 4 || t->srgb
-        || g->back == g->front || g->diagnostic_scanout
+        || g->back == g->front || g->diagnostic_scanout || t->pixels.page
         || t->pixels.size != g->display[g->back].size) return KV_BAD_ARGUMENT;
-    sceGxmFinish(g->context);
-    CHECK(g, sceGxmDisplayQueueFinish());
+    perf_finish(g->context, KV_PERF_FINISH_DEV);
+    CHECK(g, perf_display_finish());
     SceGxmColorSurface *display = &g->surfaces[g->back];
     if (!sceGxmColorSurfaceIsEnabled(display) || !sceGxmColorSurfaceIsEnabled(&t->surface)
         || sceGxmColorSurfaceGetData(display) != g->display[g->back].base
@@ -564,9 +731,11 @@ int32_t kv_gxm_dev_swap_display_surface(KvGxm *g, KvGxmTexture *t) {
 }
 int32_t kv_gxm_readback(KvGxm *g, uint8_t *rgba, uint32_t capacity) {
     if (!active(g) || g->scene_open || !g->stats.frames || !rgba || capacity < WIDTH * HEIGHT * 4) return KV_STATE;
-    sceGxmFinish(g->context);
-    CHECK(g, sceGxmDisplayQueueFinish());
+    perf_finish(g->context, KV_PERF_FINISH_READBACK);
+    CHECK(g, perf_display_finish());
+    const uint64_t copy_started = kv_perf_begin();
     memcpy(rgba, g->display[g->front].base, WIDTH * HEIGHT * 4);
+    kv_perf_end(KV_PERF_READBACK, copy_started, WIDTH * HEIGHT * 4, 0);
     return 0;
 }
 int32_t kv_gxm_stats(const KvGxm *g, KvGxmStats *out) {
@@ -588,6 +757,14 @@ int32_t kv_gxm_cdram_available(const KvGxm *g, uint32_t *out) {
     if (info.size_cdram < 0) return KV_STATE;
     const uint32_t kernel_available = (uint32_t)info.size_cdram;
     *out = policy_available < kernel_available ? policy_available : kernel_available;
+    if (kv_render_options() & KV_OPT_TEXTURE_POOL) {
+        /* A free slice is already physically mapped and charged to this owner.
+           Count the largest contiguous reusable span, not the sum of holes and
+           not any still-retiring allocation. A request fits one source or the other. */
+        for (const TexturePage *page = g->texture_pages; page; page = page->next)
+            for (const PoolSpan *span = page->spans; span; span = span->next)
+                if (span->available && span->size > *out) *out = span->size;
+    }
 #ifdef KV_GXM_DEV_DIAGNOSTICS
     if (*out < 4 * 1024 * 1024) {
         char line[192];
@@ -606,12 +783,12 @@ int32_t kv_gxm_destroy(KvGxm *g) {
     TRACE("destroy: enter");
     g->closing = 1; /* A partial teardown may only be retried, never drawn through. */
     if (g->scene_open) {
-        CHECK(g, sceGxmEndScene(g->context, NULL, NULL)); g->scene_open = 0;
+        CHECK(g, perf_end_scene(g->context, NULL, NULL)); g->scene_open = 0;
     }
     TRACE("destroy: before GPU finish");
-    if (g->context) sceGxmFinish(g->context);
+    if (g->context) perf_finish(g->context, KV_PERF_FINISH_CLOSE);
     TRACE("destroy: before display queue finish");
-    if (g->initialized) CHECK(g, sceGxmDisplayQueueFinish());
+    if (g->initialized) CHECK(g, perf_display_finish());
     TRACE("destroy: display queue finished");
     /* Stop scan-out before releasing a displayed allocation. */
     if (g->scanout_submitted) {
@@ -622,16 +799,17 @@ int32_t kv_gxm_destroy(KvGxm *g) {
         TRACE("destroy: scanout detached");
         g->scanout_submitted = 0;
     }
+    CHECK(g, retired_pixels_destroy(g));
     while (g->textures) {
         TRACE("destroy: before texture release");
         KvGxmTexture *t = g->textures;
         CHECK(g, texture_target_destroy(g, t));
         CHECK(g, block_free(g, &t->pixels)); g->textures = t->next; free(t);
     }
+    CHECK(g, pool_destroy(g));
     TRACE("destroy: textures released");
     CHECK(g, effects_destroy(g));
-    if (g->srgb_alpha_program) { CHECK(g, sceGxmShaderPatcherReleaseFragmentProgram(g->patcher, g->srgb_alpha_program)); g->srgb_alpha_program = NULL; }
-    if (g->srgb_opaque_program) { CHECK(g, sceGxmShaderPatcherReleaseFragmentProgram(g->patcher, g->srgb_opaque_program)); g->srgb_opaque_program = NULL; }
+    kv_runtime_shader_shutdown();
     if (g->alpha_program) { CHECK(g, sceGxmShaderPatcherReleaseFragmentProgram(g->patcher, g->alpha_program)); g->alpha_program = NULL; }
     if (g->opaque_program) { CHECK(g, sceGxmShaderPatcherReleaseFragmentProgram(g->patcher, g->opaque_program)); g->opaque_program = NULL; }
     if (g->vertex_program) { CHECK(g, sceGxmShaderPatcherReleaseVertexProgram(g->patcher, g->vertex_program)); g->vertex_program = NULL; }
@@ -651,6 +829,7 @@ int32_t kv_gxm_destroy(KvGxm *g) {
     Block *blocks[] = { &g->indices, &g->vertices, &g->patcher_usse, &g->vertex_usse,
         &g->patcher_buffer, &g->fragment_usse, &g->fragment_ring, &g->vertex_ring, &g->vdm };
     for (uint32_t i = 0; i < sizeof(blocks) / sizeof(blocks[0]); ++i) CHECK(g, block_free(g, blocks[i]));
+    for (uint32_t i = 0; i < BATCH_SLOTS; ++i) CHECK(g, block_free(g, &g->batches[i].vertices));
     free(g->context_host); g->context_host = NULL;
     TRACE("destroy: mapped blocks released");
     if (g->initialized) { CHECK(g, sceGxmTerminate()); g->initialized = 0; }

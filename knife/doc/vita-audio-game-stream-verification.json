@@ -20,7 +20,7 @@
     ]
   },
   "verification": {
-    "host_audio": "cargo test --offline --locked -p knife-audio --lib -- --test-threads=1, VITASDK=/opt/vitasdk, independent CARGO_TARGET_DIR=/mnt/d/AI-CODEX/knife-audio-probe-target; 13 passed",
+    "host_audio": "cargo test --offline --locked -p knife-audio --lib -- --test-threads=1, VITASDK=${VITASDK}, independent CARGO_TARGET_DIR=${WORK_ROOT}/knife-audio-probe-target; 13 passed",
     "host_sound": "cargo check --offline --locked --manifest-path probes/vita-game-sound-typecheck/Cargo.toml; passed",
     "vita_sound": "cargo +nightly-2026-05-28 check --offline --locked -Z build-std=std,panic_abort --manifest-path probes/vita-game-sound-typecheck/Cargo.toml --target armv7-sony-vita-newlibeabihf; passed",
     "game_syntax": "rustfmt +stable --emit stdout --edition 2024 knife/src/game.rs >/dev/null and sound.rs; passed",

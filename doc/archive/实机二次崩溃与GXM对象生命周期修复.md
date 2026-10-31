@@ -43,7 +43,7 @@ scene=1 pc=131
 | 当前特效输入 | 610 案例、1,830 断言，通过，5 个故意错误变体均被检出 | [vita-effects-inputs-host-tests.json](../vita-effects-inputs-host-tests.json) |
 | 当前呈现与清理 | 18 案例、418 断言，通过；错误变体检出 | [vita-gxm-present-host-tests.json](../vita-gxm-present-host-tests.json) |
 | 完整 Rust 渲染套件 | 64 passed、0 failed、0 ignored；44 个选定源文件测试期间身份未变 | [vita-render-host-tests.json](../vita-render-host-tests.json) |
-| ARMv7 正式版构建 | `wsl -d pocket-ubuntu -- bash tools/build-vita.sh game release` 成功；180 源文件和 9 产物身份核对 | [vita-game-release-build.json](../vita-game-release-build.json) |
+| ARMv7 正式版构建 | `wsl -d ${WSL_DISTRO} -- bash tools/build-vita.sh game release` 成功；180 源文件和 9 产物身份核对 | [vita-game-release-build.json](../vita-game-release-build.json) |
 | VPK 与内含 eboot/SFO | CRC/哈希一致，两套检查均为 0 错误 | [vita-270p-vpk-validation.json](../vita-270p-vpk-validation.json) |
 
 关键回归包括：禁止离屏同步对象申请时连续烘焙 96 张图片；只给一个额外临时 render target 时 96 张图片仍能完成；下一帧缓存命中不再烘焙；seal 失败后驻留/计费不提交并可验证重试；GPU 写入来源在释放 target 后继续保留。主机 mock 只验证调用关系、对象生命周期和错误处理，不能代替实机 GXM 驱动执行或像素验证。

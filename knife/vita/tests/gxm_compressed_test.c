@@ -4,6 +4,11 @@
 #define KV_GXM_BACKEND_SOURCE "../gxm_backend.c"
 #endif
 #include KV_GXM_BACKEND_SOURCE
+int sceGxmTextureSetData(SceGxmTexture *t, const void *data) { (void)t; (void)data; return 0; }
+
+static volatile unsigned int host_completion;
+volatile unsigned int *sceGxmGetNotificationRegion(void) { return &host_completion; }
+int sceGxmNotificationWait(const SceGxmNotification *n) { *n->address = n->value; return 0; }
 
 enum Fault { NONE, ALLOC, BASE, MAP, INIT, MIN, MAG, CLAMP_U, CLAMP_V, GAMMA };
 enum { ALIGNMENT = 256 * 1024, MAX_DATA = 4 * 1024 * 1024 };
@@ -229,7 +234,7 @@ static void valid(uint32_t w, uint32_t h, uint32_t fmt, uint32_t length, uint32_
 }
 static void failed_upload(enum Fault point, int rollback) {
     KvGxm g; reset(&g,"SDK fault/rollback retains exactly one cleanup owner");
-    setup_upload(8,8,0x87000000U,64,1,1); fault=point;
+    setup_upload(8,8,0x87000000U,64,0,1); fault=point;
     unmap_failure=rollback==1; free_failure=rollback==2;
     KvGxmTexture *out=(KvGxmTexture *)(void *)movie_frame;
     const int rc=upload(&g,64,&out);
@@ -239,7 +244,7 @@ static void failed_upload(enum Fault point, int rollback) {
     EXPECT(base_calls==(point>ALLOC) && map_calls==(point>BASE));
     EXPECT(init_calls==(point>MAP) && min_calls==(point>INIT));
     EXPECT(mag_calls==(point>MIN) && u_calls==(point>MAG));
-    EXPECT(v_calls==(point>CLAMP_U) && gamma_calls==(point>CLAMP_V));
+    EXPECT(v_calls==(point>CLAMP_U) && gamma_calls==0);
     if (rollback) {
         EXPECT(g.closing && g.textures && !g.textures->ready);
         if(g.textures) EXPECT(g.textures->owner==&g && g.textures->pixels.uid==41);
@@ -254,7 +259,7 @@ static void failed_upload(enum Fault point, int rollback) {
     }
 }
 static void budget(void) {
-    static const uint32_t used[] = {48U*1024*1024,48U*1024*1024-ALIGNMENT+1U,UINT32_MAX};
+    static const uint32_t used[] = {(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE),(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)-ALIGNMENT+1U,UINT32_MAX};
     for(unsigned i=0;i<3;++i) {
         KvGxm g; reset(&g,"rounded CDRAM admission rejects before SDK allocation");
         setup_upload(1,1,0x81000000U,32,0,0); g.stats.cdram_mapped_bytes=used[i];
@@ -267,10 +272,10 @@ static void budget(void) {
     KvGxmTexture *out=NULL;
     EXPECT(upload(&g,32,&out)==KV_BUDGET && !alloc_calls && !g.textures);
     reset(&g,"exact rounded budget boundary succeeds");
-    setup_upload(1,1,0x81000000U,32,0,0); g.stats.cdram_mapped_bytes=48U*1024*1024-ALIGNMENT;
+    setup_upload(1,1,0x81000000U,32,0,0); g.stats.cdram_mapped_bytes=(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)-ALIGNMENT;
     EXPECT(upload(&g,32,&out)==0);
-    if(out) { EXPECT(g.stats.cdram_mapped_bytes==48U*1024*1024); EXPECT(kv_gxm_texture_destroy(&g,out)==0); }
-    EXPECT(g.stats.cdram_mapped_bytes==48U*1024*1024-ALIGNMENT);
+    if(out) { EXPECT(g.stats.cdram_mapped_bytes==(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)); EXPECT(kv_gxm_texture_destroy(&g,out)==0); }
+    EXPECT(g.stats.cdram_mapped_bytes==(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)-ALIGNMENT);
 }
 int main(void) {
     /* Public encoded formats are literal SDK ABI values, not test-owned IDs. */
@@ -288,9 +293,10 @@ int main(void) {
         invalid(960,540,fmt,i==2 ? 960U*540U : 960U*540U/2U,0,0);
         invalid(8,8,fmt,i==2 ? 64U : 32U,2,0); invalid(8,8,fmt,i==2 ? 64U : 32U,0,2);
         valid(1,1,fmt,tiny,0,0);
-        valid(8,8,fmt,i==2 ? 64U : 32U,1,1);
+        invalid(8,8,fmt,i==2 ? 64U : 32U,1,1);
+        valid(8,8,fmt,i==2 ? 64U : 32U,0,1);
         valid(5,3,fmt,i==0 ? 32U : i==1 ? 16U : 32U,0,1);
-        valid(960,540,fmt,i==2 ? 1048576U : 524288U,1,0);
+        valid(960,540,fmt,i==2 ? 1048576U : 524288U,0,0);
         valid(960,461,fmt,i==2 ? 524288U : 262144U,0,1);
         valid(2048,2048,fmt,i==2 ? 4194304U : 2097152U,0,0);
     }
@@ -299,11 +305,21 @@ int main(void) {
     invalid(8,8,0x85000000U,UINT32_MAX,0,0);
     valid(1,9,0x81000000U,64,0,0);
     valid(9,1,0x85000000U,32,0,1);
-    for(enum Fault point=ALLOC;point<=GAMMA;++point) failed_upload(point,0);
+    for(enum Fault point=ALLOC;point<=CLAMP_V;++point) failed_upload(point,0);
     failed_upload(BASE,2); failed_upload(MAP,2);
-    failed_upload(INIT,1); failed_upload(MIN,2); failed_upload(GAMMA,1); failed_upload(GAMMA,2);
+    failed_upload(INIT,1); failed_upload(MIN,2); failed_upload(CLAMP_V,1); failed_upload(CLAMP_V,2);
     budget();
     printf("RESULT %s: %u cases, %u checks, %u failures; real C, actual SDK headers, host stubs\n",
         failures ? "FAIL" : "PASS",cases,checks,failures);
     return failures ? 1 : 0;
+}
+
+/* Deterministic clock for legacy timing sites; no device timing claim. */
+SceUInt64 sceKernelGetProcessTimeWide(void) { static SceUInt64 t; return ++t; }
+
+int sceGxmShaderPatcherCreateFragmentProgram(SceGxmShaderPatcher *patcher, SceGxmShaderPatcherId id,
+    SceGxmOutputRegisterFormat format, SceGxmMultisampleMode ms, const SceGxmBlendInfo *blend,
+    const SceGxmProgram *vs, SceGxmFragmentProgram **out) {
+    (void)patcher; (void)id; (void)format; (void)ms; (void)blend; (void)vs; (void)out;
+    return unexpected(); /* Rejected compressed operations must never reach this. */
 }

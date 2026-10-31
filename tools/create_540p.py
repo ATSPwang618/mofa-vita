@@ -14,7 +14,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / 'dist/Witch-on-the-Holy-Night-Windows-x64/assets'
 DEFAULT_OUT = ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-x64'
-DEFAULT_MOD = Path('D:/PSV/原版game收集/魔夜重制版-switch版/魔夜澄空汉化mod(12月27日更新)/010012A017F18000/romfs')
+DEFAULT_MOD = Path(os.environ['KNIFE_TRANSLATION_ROMFS']).expanduser() if os.environ.get('KNIFE_TRANSLATION_ROMFS') else None
 ARCHIVES = [('allpachdml', 0.5, 4), ('allpacml', 0.75, 4),
             ('jallpachd', 0.5, 1), ('jallpac', 0.75, 1)]
 
@@ -44,7 +44,7 @@ def private_copy(src: Path, dst: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, default=DEFAULT_SOURCE)
-    parser.add_argument('--mod', type=Path, default=DEFAULT_MOD)
+    parser.add_argument('--mod', type=Path, default=DEFAULT_MOD, required=DEFAULT_MOD is None)
     parser.add_argument('--out', type=Path, default=DEFAULT_OUT)
     parser.add_argument('--jobs', type=int, default=8)
     parser.add_argument('--pilot', type=Path, help='Reuse a verified allpachdml pilot conversion')

@@ -21,6 +21,21 @@ pub fn find_enabled(root: &Path) -> io::Result<Option<PathBuf>> {
     Ok(None)
 }
 
+/// An explicit 0 overrides the instrumented package's default. Read only at startup.
+pub fn console_enabled(root: &Path, default: bool) -> io::Result<bool> {
+    for path in [root.join("perf-enable.txt"), root.join("assets/perf-enable.txt")] {
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        };
+        let mut bytes = Vec::new();
+        file.take((MAX_FLAG_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+        return Ok(bytes.len() <= MAX_FLAG_BYTES && enabled(&bytes));
+    }
+    Ok(default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

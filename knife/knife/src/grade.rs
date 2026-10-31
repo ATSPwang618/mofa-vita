@@ -7,7 +7,28 @@
 //! tint layer, then the brightness / contrast stage (SNX2 / SNX3, `Bake`). Mode 1 (flag 2) is the colour
 //! fill, which knife draws as a layer fill instead (its colour still goes through that last stage).
 
+#[path = "grade_cache.rs"]
+mod cache;
+pub(crate) use cache::GradeKey;
+#[cfg(target_os = "vita")]
+pub(crate) fn trim_cache(need:usize) -> usize { cache::trim_lru(need) }
 const UNSET: f32 = -9.0;
+
+/// Vita's native pipeline blends encoded byte values in UNORM8 targets. The
+/// desktop renderer retains its Switch pre_alter/sRGB storage contract.
+pub(crate) const fn native_encoded_color() -> bool { cfg!(target_os = "vita") }
+
+fn input_level(byte: usize, raw: bool, srgb: bool, encoded: bool) -> f32 {
+    if encoded { return byte as f32; }
+    let s = byte as f32 / 255.0;
+    let l = if raw || !srgb { s } else if s <= 0.040_45 { s / 12.92 }
+        else { ((s + 0.055) / 1.055).powf(2.4) };
+    255.0 * if raw { l } else { l.powf(1.0 / 2.2) }
+}
+fn unorm_byte(level: f32) -> u8 { (level.clamp(0.0, 1.0) * 255.0).round() as u8 }
+fn output_byte(level: f32, encoded: bool) -> u8 {
+    if encoded { unorm_byte(level) } else { srgb_byte(level) }
+}
 
 #[rustfmt::skip]
 static TABLE: [[f32; 20]; 83] = [
@@ -199,6 +220,9 @@ struct Params {
 fn params(mode: i32) -> Option<Params> {
     let table = if crate::assets::witch() { &WITCH_TABLE } else { &TABLE };
     let e = table.get(usize::try_from(mode).ok()?)?;
+    Some(params_entry(e))
+}
+fn params_entry(e: &[f32; 20]) -> Params {
     let set = |v: f32| (v != UNSET).then_some(v);
     let mut p = Params {
         gain: [1.0; 3],
@@ -237,7 +261,7 @@ fn params(mode: i32) -> Option<Params> {
             p.tints.push((rgb, t[3].max(0.0) / 255.0, mode));
         }
     }
-    Some(p)
+    p
 }
 
 /// One tint layer on a 0..255 value; `t` is the tint channel (0..1), `a` its amount.
@@ -307,22 +331,18 @@ impl Bake {
         if self.raw { k + "#raw" } else { k }
     }
 
-    /// Apply to RGBA8 pixels in place (alpha untouched), leaving the result sRGB-encoded for an sRGB texture
-    /// (`Renderer::upload_baked`): shader 44 runs the whole bake in float and the altered texture (format 2822)
-    /// stores it encoded, so nothing rounds before that. `srgb`: the source samples through an sRGB view.
+    /// Apply STEC/SNX to RGBA8 in place, preserving alpha. Vita consumes and
+    /// returns native encoded UNORM8 values, without representation transfers.
+    /// Desktop retains pre_alter's sRGB view and sRGB output texture contract.
     pub fn apply(&self, px: &mut [u8], srgb: bool) {
-        // pre_alter's first step on a source byte, in 0..255 levels
-        let pre: [f32; 256] = std::array::from_fn(|x| {
-            let s = x as f32 / 255.0;
-            let l = if self.raw || !srgb {
-                s
-            } else if s <= 0.040_45 {
-                s / 12.92
-            } else {
-                ((s + 0.055) / 1.055).powf(2.4)
-            };
-            255.0 * if self.raw { l } else { l.powf(1.0 / 2.2) }
-        });
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::GRADE_CACHE)
+            && cache::apply(self, px, srgb) { return; }
+        self.apply_uncached(px, srgb);
+    }
+
+    fn apply_uncached(&self, px: &mut [u8], srgb: bool) {
+        let encoded = native_encoded_color();
+        let pre: [f32; 256] = std::array::from_fn(|x| input_level(x, self.raw, srgb, encoded));
         let p = params(self.grade).filter(|_| self.grade != 0);
         let last = |v: [f32; 3]| match &p {
             Some(p) => channels(p, v).map(|x| self.tone(x)),
@@ -338,11 +358,11 @@ impl Bake {
                 let k = (g as usize).min(lut.len() - 2);
                 let f = g - k as f32;
                 for c in 0..3 {
-                    q[c] = srgb_byte(lut[k][c] + (lut[k + 1][c] - lut[k][c]) * f);
+                    q[c] = output_byte(lut[k][c] + (lut[k + 1][c] - lut[k][c]) * f, encoded);
                 }
             }
         } else {
-            let lut: Vec<[u8; 3]> = pre.iter().map(|&x| last([x; 3]).map(srgb_byte)).collect();
+            let lut: Vec<[u8; 3]> = pre.iter().map(|&x| last([x; 3]).map(|l| output_byte(l, encoded))).collect();
             for q in px.as_chunks_mut::<4>().0 {
                 for c in 0..3 {
                     q[c] = lut[usize::from(q[c])][c];
@@ -420,17 +440,26 @@ mod tests {
     fn reference(bake: &Bake, px: &mut [u8]) {
         let p = params(bake.grade).unwrap();
         for q in px.as_chunks_mut::<4>().0 {
-            let mut v = [q[0], q[1], q[2]].map(|x| {
-                let s = f32::from(x) / 255.0;
-                let l = if s <= 0.040_45 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) };
-                l.powf(1.0 / 2.2) * 255.0
-            });
+            let mut v = [q[0], q[1], q[2]].map(|x|
+                input_level(x as usize, bake.raw, true, native_encoded_color()));
             if p.grey {
                 v = [(v[0] * 54.0 + v[1] * 183.0 + v[2] * 19.0) / 256.0; 3];
             }
-            let v = channels(&p, v).map(|x| srgb_byte(bake.tone(x)));
+            let v = channels(&p, v).map(|x| output_byte(bake.tone(x), native_encoded_color()));
             q[..3].copy_from_slice(&v);
         }
+    }
+
+    #[test]
+    fn encoded_input_output_preserves_all_bytes_and_alpha_domain() {
+        for byte in 0..=255usize {
+            assert_eq!(input_level(byte, false, true, true), byte as f32);
+            assert_eq!(input_level(byte, false, false, true), byte as f32);
+            assert_eq!(output_byte(byte as f32 / 255.0, true), byte as u8);
+        }
+        assert_eq!(unorm_byte(f32::NAN), 0);
+        assert_eq!(unorm_byte(-1.0), 0);
+        assert_eq!(unorm_byte(2.0), 255);
     }
 
     #[test]

@@ -1,0 +1,5223 @@
+{
+  "schema": "mofa-asset-copy-audit-v1",
+  "assets": "${ASSET_ROOT}",
+  "manifest_sha256": "c7ce4d216f147cec4693019b6a20b18dd6f47ef9fdf27a5c6cb23229e8be3e14",
+  "method": "full archive hashes; bounded NX inflation; KIMG/KATL/GXT metadata validation",
+  "model": "UI: initial atlas read + one successful ByteStage range job per member; excludes demand races",
+  "archives": [
+    {
+      "name": "jallpac",
+      "entries": 22156,
+      "missing": 0,
+      "image_entry_slots": 22148,
+      "distinct_stored_ranges": 17121,
+      "outer_slot_counts": {
+        "NXCX": 22148,
+        "mrgd": 8
+      },
+      "input_files": {
+        "jallpac.hed": {
+          "bytes": 177256,
+          "sha256": "66063e4f30657352e7890f5853c1fc23b91a64521995fbc824db889401c78fd5"
+        },
+        "jallpac.nam": {
+          "bytes": 709024,
+          "sha256": "c34b63ea3420a7bf7bac9d8e9331552e5e039627f4f3a2478625ceafd5ec52f4"
+        },
+        "jallpac.mrg": {
+          "bytes": 1342881792,
+          "sha256": "c8aadc9c10efd09667ac18b2b6f9daeea863213bc9d23ed8ba27ae0357994b1e"
+        }
+      },
+      "slot_summary": {
+        "images": 22148,
+        "codecs": {
+          "8": 13828,
+          "7": 14,
+          "2": 7993,
+          "1": 313
+        },
+        "formats": {
+          "dxt5": 12665,
+          "cpu_decode": 8320,
+          "dxt1": 1163
+        },
+        "png_color_types": {
+          "0": 14,
+          "6": 7918,
+          "4": 75
+        },
+        "gxt_allocation_buckets": {
+          "262144": 10185,
+          "1048576": 1315,
+          "524288": 2328
+        },
+        "envelope_bytes": 4296384736,
+        "rgba_bytes": 10571675496,
+        "gpu_payload_bytes": 7472219468,
+        "cdram_allocation_bytes": 10647240704,
+        "gxt_upload_bytes": 3465205376,
+        "gxt_zero_fill_bytes": 5269356544,
+        "gxt_sub_granule_count": 7430
+      },
+      "distinct_range_summary": {
+        "images": 17118,
+        "codecs": {
+          "8": 8829,
+          "7": 14,
+          "2": 7962,
+          "1": 313
+        },
+        "formats": {
+          "dxt5": 7668,
+          "cpu_decode": 8289,
+          "dxt1": 1161
+        },
+        "png_color_types": {
+          "0": 14,
+          "6": 7891,
+          "4": 71
+        },
+        "gxt_allocation_buckets": {
+          "262144": 5192,
+          "1048576": 1314,
+          "524288": 2323
+        },
+        "envelope_bytes": 4289159539,
+        "rgba_bytes": 10547896372,
+        "gpu_payload_bytes": 7453115772,
+        "cdram_allocation_bytes": 9315287040,
+        "gxt_upload_bytes": 3461095120,
+        "gxt_zero_fill_bytes": 3956801536,
+        "gxt_sub_granule_count": 2437
+      }
+    },
+    {
+      "name": "jallpachd",
+      "entries": 11414,
+      "missing": 0,
+      "image_entry_slots": 11406,
+      "distinct_stored_ranges": 11382,
+      "outer_slot_counts": {
+        "NXCX": 11406,
+        "mrgd": 8
+      },
+      "input_files": {
+        "jallpachd.hed": {
+          "bytes": 91320,
+          "sha256": "246d9dc8791fa97de3e1b47a4d9e3587f5fe1b0bbd9114fa13393569eb9c7ec1"
+        },
+        "jallpachd.nam": {
+          "bytes": 365280,
+          "sha256": "2c7e7f5f91cddd6bbb1235c4e5755e9e37ea704dcc7109272c29529f8186458f"
+        },
+        "jallpachd.mrg": {
+          "bytes": 1212215296,
+          "sha256": "df6f16335732436f6f24f0088a76cc1498fc8febaa6a81f6d6a55e049908068b"
+        }
+      },
+      "slot_summary": {
+        "images": 11406,
+        "codecs": {
+          "8": 7239,
+          "7": 14,
+          "2": 3868,
+          "1": 285
+        },
+        "formats": {
+          "dxt5": 5521,
+          "dxt1": 1718,
+          "cpu_decode": 4167
+        },
+        "png_color_types": {
+          "0": 14,
+          "6": 3830,
+          "4": 38
+        },
+        "gxt_allocation_buckets": {
+          "262144": 3167,
+          "524288": 2744,
+          "1048576": 1328
+        },
+        "envelope_bytes": 4235266840,
+        "rgba_bytes": 10590160984,
+        "gpu_payload_bytes": 6948843224,
+        "cdram_allocation_bytes": 7645167616,
+        "gxt_upload_bytes": 3566173264,
+        "gxt_zero_fill_bytes": 3661365248,
+        "gxt_sub_granule_count": 542
+      },
+      "distinct_range_summary": {
+        "images": 11379,
+        "codecs": {
+          "8": 7227,
+          "7": 14,
+          "2": 3853,
+          "1": 285
+        },
+        "formats": {
+          "dxt5": 5512,
+          "dxt1": 1715,
+          "cpu_decode": 4152
+        },
+        "png_color_types": {
+          "0": 14,
+          "6": 3817,
+          "4": 36
+        },
+        "gxt_allocation_buckets": {
+          "262144": 3163,
+          "524288": 2738,
+          "1048576": 1326
+        },
+        "envelope_bytes": 4227768849,
+        "rgba_bytes": 10566597288,
+        "gpu_payload_bytes": 6931126280,
+        "cdram_allocation_bytes": 7624458240,
+        "gxt_upload_bytes": 3560930320,
+        "gxt_zero_fill_bytes": 3655073792,
+        "gxt_sub_granule_count": 538
+      }
+    },
+    {
+      "name": "allui",
+      "entries": 70,
+      "missing": 36,
+      "image_entry_slots": 32,
+      "distinct_stored_ranges": 33,
+      "outer_slot_counts": {
+        "NXCX": 34
+      },
+      "input_files": {
+        "allui.hed": {
+          "bytes": 568,
+          "sha256": "455215c8e768d2d89b3748beaaf4ecb545193e3a156f8f638b8582ef5ba2ca6c"
+        },
+        "allui.nam": {
+          "bytes": 2272,
+          "sha256": "cceed947903dd3f8825746918484111e85117bae28e3dcca3c8d524273d7c334"
+        },
+        "allui.mrg": {
+          "bytes": 23900160,
+          "sha256": "f65a21c49ad5f0019bb5d3ad9b2e3f0a4b8a4fa08a3b6fe3ead3b4115df657bb"
+        }
+      },
+      "slot_summary": {
+        "images": 1043,
+        "codecs": {
+          "8": 1031,
+          "2": 12
+        },
+        "formats": {
+          "dxt5": 461,
+          "dxt1": 570,
+          "cpu_decode": 12
+        },
+        "png_color_types": {
+          "4": 12
+        },
+        "gxt_allocation_buckets": {
+          "262144": 836,
+          "524288": 135,
+          "1048576": 60
+        },
+        "envelope_bytes": 207489707,
+        "rgba_bytes": 501634448,
+        "gpu_payload_bytes": 210130320,
+        "cdram_allocation_bytes": 357564416,
+        "gxt_upload_bytes": 207290640,
+        "gxt_zero_fill_bytes": 352845824,
+        "gxt_sub_granule_count": 746
+      },
+      "distinct_range_summary": {
+        "images": 1041,
+        "codecs": {
+          "8": 1029,
+          "2": 12
+        },
+        "formats": {
+          "dxt5": 459,
+          "dxt1": 570,
+          "cpu_decode": 12
+        },
+        "png_color_types": {
+          "4": 12
+        },
+        "gxt_allocation_buckets": {
+          "262144": 834,
+          "524288": 135,
+          "1048576": 60
+        },
+        "envelope_bytes": 207485403,
+        "rgba_bytes": 501625168,
+        "gpu_payload_bytes": 210126208,
+        "cdram_allocation_bytes": 357040128,
+        "gxt_upload_bytes": 207286528,
+        "gxt_zero_fill_bytes": 352321536,
+        "gxt_sub_granule_count": 744
+      }
+    },
+    {
+      "name": "allpacml",
+      "entries": 167,
+      "missing": 0,
+      "image_entry_slots": 163,
+      "distinct_stored_ranges": 160,
+      "outer_slot_counts": {
+        "NXCX": 163,
+        "mrgd": 4
+      },
+      "input_files": {
+        "allpacml.hed": {
+          "bytes": 1344,
+          "sha256": "c541ef1da8bf319d9b547cc6a54da53751733adc879a390cf80ca379f081f0bd"
+        },
+        "allpacml.nam": {
+          "bytes": 5376,
+          "sha256": "a1136e4e33363b91e91569a0ffc0379ec11022fc1e1f3e55433406cec83bd2f9"
+        },
+        "allpacml.mrg": {
+          "bytes": 15542272,
+          "sha256": "7ca6943371d5f73e7f38775f5e8ba5fca4fd08c61dbd85d028f01d1347958c58"
+        }
+      },
+      "slot_summary": {
+        "images": 163,
+        "codecs": {
+          "8": 72,
+          "2": 91
+        },
+        "formats": {
+          "dxt5": 72,
+          "cpu_decode": 91
+        },
+        "png_color_types": {
+          "6": 63,
+          "4": 28
+        },
+        "gxt_allocation_buckets": {
+          "262144": 64,
+          "524288": 8
+        },
+        "envelope_bytes": 25354859,
+        "rgba_bytes": 224819744,
+        "gpu_payload_bytes": 216451240,
+        "cdram_allocation_bytes": 236716032,
+        "gxt_upload_bytes": 10470496,
+        "gxt_zero_fill_bytes": 20971520,
+        "gxt_sub_granule_count": 53
+      },
+      "distinct_range_summary": {
+        "images": 158,
+        "codecs": {
+          "8": 67,
+          "2": 91
+        },
+        "formats": {
+          "dxt5": 67,
+          "cpu_decode": 91
+        },
+        "png_color_types": {
+          "6": 63,
+          "4": 28
+        },
+        "gxt_allocation_buckets": {
+          "262144": 59,
+          "524288": 8
+        },
+        "envelope_bytes": 25354299,
+        "rgba_bytes": 224819424,
+        "gpu_payload_bytes": 216451160,
+        "cdram_allocation_bytes": 235405312,
+        "gxt_upload_bytes": 10470416,
+        "gxt_zero_fill_bytes": 19660800,
+        "gxt_sub_granule_count": 48
+      }
+    },
+    {
+      "name": "allpachdml",
+      "entries": 89,
+      "missing": 0,
+      "image_entry_slots": 85,
+      "distinct_stored_ranges": 83,
+      "outer_slot_counts": {
+        "NXCX": 85,
+        "mrgd": 4
+      },
+      "input_files": {
+        "allpachdml.hed": {
+          "bytes": 720,
+          "sha256": "4083d5d6a49d0a27419056145b638b0e3522db74547b79c748b2f46f3d56025c"
+        },
+        "allpachdml.nam": {
+          "bytes": 2880,
+          "sha256": "90436471255bc654d1f7d982089dbdf44ec22b0c676f93d57f2b6a3a95eed23f"
+        },
+        "allpachdml.mrg": {
+          "bytes": 13692928,
+          "sha256": "a6135f69ffd65f078ef562899d30628ff8253e8c7262cb5e18efa6dc2fa42c1f"
+        }
+      },
+      "slot_summary": {
+        "images": 85,
+        "codecs": {
+          "8": 5,
+          "2": 80
+        },
+        "formats": {
+          "dxt5": 5,
+          "cpu_decode": 80
+        },
+        "png_color_types": {
+          "6": 53,
+          "4": 27
+        },
+        "gxt_allocation_buckets": {
+          "262144": 5
+        },
+        "envelope_bytes": 13775717,
+        "rgba_bytes": 202694176,
+        "gpu_payload_bytes": 202693936,
+        "cdram_allocation_bytes": 212074496,
+        "gxt_upload_bytes": 80,
+        "gxt_zero_fill_bytes": 1310720,
+        "gxt_sub_granule_count": 5
+      },
+      "distinct_range_summary": {
+        "images": 81,
+        "codecs": {
+          "8": 1,
+          "2": 80
+        },
+        "formats": {
+          "dxt5": 1,
+          "cpu_decode": 80
+        },
+        "png_color_types": {
+          "6": 53,
+          "4": 27
+        },
+        "gxt_allocation_buckets": {
+          "262144": 1
+        },
+        "envelope_bytes": 13775269,
+        "rgba_bytes": 202693920,
+        "gpu_payload_bytes": 202693872,
+        "cdram_allocation_bytes": 211025920,
+        "gxt_upload_bytes": 16,
+        "gxt_zero_fill_bytes": 262144,
+        "gxt_sub_granule_count": 1
+      }
+    },
+    {
+      "name": "parts",
+      "entries": 2,
+      "missing": 0,
+      "image_entry_slots": 2,
+      "distinct_stored_ranges": 2,
+      "outer_slot_counts": {
+        "NXCX": 2
+      },
+      "input_files": {
+        "parts.hed": {
+          "bytes": 24,
+          "sha256": "c954b55e71b34525c74b6f1650bf66f5c50ba295c98c4720bd8f827cf878a4f6"
+        },
+        "parts.mrg": {
+          "bytes": 53248,
+          "sha256": "dd9ecf38609820a9b8d6e25d47eaf199aa23fd901288cf699e52739d9b1682b7"
+        }
+      },
+      "slot_summary": {
+        "images": 2,
+        "codecs": {
+          "8": 1,
+          "7": 1
+        },
+        "formats": {
+          "dxt1": 1,
+          "cpu_decode": 1
+        },
+        "png_color_types": {
+          "0": 1
+        },
+        "gxt_allocation_buckets": {
+          "524288": 1
+        },
+        "envelope_bytes": 567458,
+        "rgba_bytes": 4147200,
+        "gpu_payload_bytes": 2597888,
+        "cdram_allocation_bytes": 2621440,
+        "gxt_upload_bytes": 524288,
+        "gxt_zero_fill_bytes": 524288
+      },
+      "distinct_range_summary": {
+        "images": 2,
+        "codecs": {
+          "8": 1,
+          "7": 1
+        },
+        "formats": {
+          "dxt1": 1,
+          "cpu_decode": 1
+        },
+        "png_color_types": {
+          "0": 1
+        },
+        "gxt_allocation_buckets": {
+          "524288": 1
+        },
+        "envelope_bytes": 567458,
+        "rgba_bytes": 4147200,
+        "gpu_payload_bytes": 2597888,
+        "cdram_allocation_bytes": 2621440,
+        "gxt_upload_bytes": 524288,
+        "gxt_zero_fill_bytes": 524288
+      }
+    }
+  ],
+  "ui_atlases": [
+    {
+      "entry": "CONF_PARTS_EN.NXZ",
+      "index": 1,
+      "images": 26,
+      "codecs": {
+        "8": 26
+      },
+      "formats": {
+        "dxt5": 25,
+        "dxt1": 1
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 16,
+        "524288": 5,
+        "1048576": 5
+      },
+      "envelope_bytes": 9736656,
+      "rgba_bytes": 18748976,
+      "gpu_payload_bytes": 9734160,
+      "cdram_allocation_bytes": 12058624,
+      "gxt_upload_bytes": 9734160,
+      "gxt_zero_fill_bytes": 12058624,
+      "gxt_sub_granule_count": 11,
+      "stored_bytes": 636356,
+      "decoded_bytes": 9737149,
+      "scheduled_range_read_bytes": 16545256,
+      "scheduled_range_inflate_bytes": 253165874,
+      "examples": [
+        {
+          "name": "dummy",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "btn_base0_en",
+          "logical": [
+            1648,
+            384
+          ],
+          "physical": [
+            960,
+            224
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 860160,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "btn_base2_en",
+          "logical": [
+            940,
+            364
+          ],
+          "physical": [
+            940,
+            364
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1368640,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "btn_default_en",
+          "logical": [
+            608,
+            420
+          ],
+          "physical": [
+            608,
+            420
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1021440,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "CONF_PARTS_ZC.NXZ",
+      "index": 2,
+      "images": 26,
+      "codecs": {
+        "8": 26
+      },
+      "formats": {
+        "dxt5": 25,
+        "dxt1": 1
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 16,
+        "524288": 5,
+        "1048576": 5
+      },
+      "envelope_bytes": 9736656,
+      "rgba_bytes": 18748976,
+      "gpu_payload_bytes": 9734160,
+      "cdram_allocation_bytes": 12058624,
+      "gxt_upload_bytes": 9734160,
+      "gxt_zero_fill_bytes": 12058624,
+      "gxt_sub_granule_count": 11,
+      "stored_bytes": 631938,
+      "decoded_bytes": 9737149,
+      "scheduled_range_read_bytes": 16430388,
+      "scheduled_range_inflate_bytes": 253165874,
+      "examples": [
+        {
+          "name": "dummy",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "btn_base0_zc",
+          "logical": [
+            1648,
+            384
+          ],
+          "physical": [
+            960,
+            224
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 860160,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "btn_base2_zc",
+          "logical": [
+            940,
+            364
+          ],
+          "physical": [
+            940,
+            364
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1368640,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "btn_default_zc",
+          "logical": [
+            608,
+            420
+          ],
+          "physical": [
+            608,
+            420
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1021440,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "DISP_PARTS_EN.NXZ",
+      "index": 6,
+      "images": 50,
+      "codecs": {
+        "8": 50
+      },
+      "formats": {
+        "dxt5": 48,
+        "dxt1": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 22,
+        "524288": 20,
+        "1048576": 8
+      },
+      "envelope_bytes": 20542224,
+      "rgba_bytes": 45274880,
+      "gpu_payload_bytes": 20537424,
+      "cdram_allocation_bytes": 24641536,
+      "gxt_upload_bytes": 20537424,
+      "gxt_zero_fill_bytes": 24641536,
+      "gxt_sub_granule_count": 20,
+      "stored_bytes": 783395,
+      "decoded_bytes": 20543452,
+      "scheduled_range_read_bytes": 39169750,
+      "scheduled_range_inflate_bytes": 1027172600,
+      "examples": [
+        {
+          "name": "dummy00",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "conf_BG",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "lineBreak_a",
+          "logical": [
+            900,
+            124
+          ],
+          "physical": [
+            900,
+            124
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 446400,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "pageBreak_a",
+          "logical": [
+            1200,
+            120
+          ],
+          "physical": [
+            960,
+            96
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 368640,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "DISP_PARTS_ZC.NXZ",
+      "index": 7,
+      "images": 50,
+      "codecs": {
+        "8": 50
+      },
+      "formats": {
+        "dxt5": 48,
+        "dxt1": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 22,
+        "524288": 20,
+        "1048576": 8
+      },
+      "envelope_bytes": 20542224,
+      "rgba_bytes": 45274880,
+      "gpu_payload_bytes": 20537424,
+      "cdram_allocation_bytes": 24641536,
+      "gxt_upload_bytes": 20537424,
+      "gxt_zero_fill_bytes": 24641536,
+      "gxt_sub_granule_count": 20,
+      "stored_bytes": 784539,
+      "decoded_bytes": 20543452,
+      "scheduled_range_read_bytes": 39226950,
+      "scheduled_range_inflate_bytes": 1027172600,
+      "examples": [
+        {
+          "name": "dummy00",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "conf_BG",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "lineBreak_a",
+          "logical": [
+            900,
+            124
+          ],
+          "physical": [
+            900,
+            124
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 446400,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "pageBreak_a",
+          "logical": [
+            1200,
+            120
+          ],
+          "physical": [
+            960,
+            96
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 368640,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "MENU_PARTS_EN.NXZ",
+      "index": 11,
+      "images": 7,
+      "codecs": {
+        "8": 7
+      },
+      "formats": {
+        "dxt5": 6,
+        "dxt1": 1
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 3,
+        "262144": 4
+      },
+      "envelope_bytes": 2359968,
+      "rgba_bytes": 5169376,
+      "gpu_payload_bytes": 2359296,
+      "cdram_allocation_bytes": 2621440,
+      "gxt_upload_bytes": 2359296,
+      "gxt_zero_fill_bytes": 2621440,
+      "gxt_sub_granule_count": 2,
+      "stored_bytes": 191206,
+      "decoded_bytes": 2360111,
+      "scheduled_range_read_bytes": 1338442,
+      "scheduled_range_inflate_bytes": 16520777,
+      "examples": [
+        {
+          "name": "menu_btn_en",
+          "logical": [
+            1748,
+            840
+          ],
+          "physical": [
+            960,
+            461
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1770240,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "menu_window",
+          "logical": [
+            700,
+            1080
+          ],
+          "physical": [
+            350,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 756000,
+          "format": "dxt5",
+          "backing": [
+            512,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "menu_window_o",
+          "logical": [
+            700,
+            1080
+          ],
+          "physical": [
+            350,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 756000,
+          "format": "dxt1",
+          "backing": [
+            512,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "midasi_system_en",
+          "logical": [
+            560,
+            104
+          ],
+          "physical": [
+            560,
+            104
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 232960,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "MENU_PARTS_ZC.NXZ",
+      "index": 12,
+      "images": 7,
+      "codecs": {
+        "8": 7
+      },
+      "formats": {
+        "dxt5": 6,
+        "dxt1": 1
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 3,
+        "262144": 4
+      },
+      "envelope_bytes": 2359968,
+      "rgba_bytes": 5169376,
+      "gpu_payload_bytes": 2359296,
+      "cdram_allocation_bytes": 2621440,
+      "gxt_upload_bytes": 2359296,
+      "gxt_zero_fill_bytes": 2621440,
+      "gxt_sub_granule_count": 2,
+      "stored_bytes": 212622,
+      "decoded_bytes": 2360111,
+      "scheduled_range_read_bytes": 1488354,
+      "scheduled_range_inflate_bytes": 16520777,
+      "examples": [
+        {
+          "name": "menu_btn_zc",
+          "logical": [
+            1748,
+            840
+          ],
+          "physical": [
+            960,
+            461
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1770240,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "menu_window",
+          "logical": [
+            700,
+            1080
+          ],
+          "physical": [
+            350,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 756000,
+          "format": "dxt5",
+          "backing": [
+            512,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "menu_window_o",
+          "logical": [
+            700,
+            1080
+          ],
+          "physical": [
+            350,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 756000,
+          "format": "dxt1",
+          "backing": [
+            512,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "midasi_system_zc",
+          "logical": [
+            560,
+            104
+          ],
+          "physical": [
+            560,
+            104
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 232960,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "MODEPNL_PARTS_EN.NXZ",
+      "index": 16,
+      "images": 2,
+      "codecs": {
+        "8": 2
+      },
+      "formats": {
+        "dxt5": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 2
+      },
+      "envelope_bytes": 327872,
+      "rgba_bytes": 867840,
+      "gpu_payload_bytes": 327680,
+      "cdram_allocation_bytes": 524288,
+      "gxt_upload_bytes": 327680,
+      "gxt_zero_fill_bytes": 524288,
+      "gxt_sub_granule_count": 1,
+      "stored_bytes": 30057,
+      "decoded_bytes": 327933,
+      "scheduled_range_read_bytes": 60114,
+      "scheduled_range_inflate_bytes": 655866,
+      "examples": [
+        {
+          "name": "modepanel_window",
+          "logical": [
+            1920,
+            104
+          ],
+          "physical": [
+            960,
+            52
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 199680,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            64
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "mode_panel_btn_en",
+          "logical": [
+            1872,
+            340
+          ],
+          "physical": [
+            960,
+            174
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 668160,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "MODEPNL_PARTS_ZC.NXZ",
+      "index": 17,
+      "images": 2,
+      "codecs": {
+        "8": 2
+      },
+      "formats": {
+        "dxt5": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 2
+      },
+      "envelope_bytes": 327872,
+      "rgba_bytes": 867840,
+      "gpu_payload_bytes": 327680,
+      "cdram_allocation_bytes": 524288,
+      "gxt_upload_bytes": 327680,
+      "gxt_zero_fill_bytes": 524288,
+      "gxt_sub_granule_count": 1,
+      "stored_bytes": 31875,
+      "decoded_bytes": 327933,
+      "scheduled_range_read_bytes": 63750,
+      "scheduled_range_inflate_bytes": 655866,
+      "examples": [
+        {
+          "name": "modepanel_window",
+          "logical": [
+            1920,
+            104
+          ],
+          "physical": [
+            960,
+            52
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 199680,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            64
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "mode_panel_btn_zc",
+          "logical": [
+            1872,
+            340
+          ],
+          "physical": [
+            960,
+            174
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 668160,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "SAVE_PARTS_EN.NXZ",
+      "index": 21,
+      "images": 14,
+      "codecs": {
+        "8": 14
+      },
+      "formats": {
+        "dxt1": 2,
+        "dxt5": 12
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 4,
+        "262144": 10
+      },
+      "envelope_bytes": 3757376,
+      "rgba_bytes": 9776672,
+      "gpu_payload_bytes": 3756032,
+      "cdram_allocation_bytes": 4718592,
+      "gxt_upload_bytes": 3756032,
+      "gxt_zero_fill_bytes": 4718592,
+      "gxt_sub_granule_count": 5,
+      "stored_bytes": 199960,
+      "decoded_bytes": 3757651,
+      "scheduled_range_read_bytes": 2799440,
+      "scheduled_range_inflate_bytes": 52607114,
+      "examples": [
+        {
+          "name": "BG_load",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "BG_save",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "effect",
+          "logical": [
+            580,
+            196
+          ],
+          "physical": [
+            580,
+            196
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 454720,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "kusa1",
+          "logical": [
+            568,
+            408
+          ],
+          "physical": [
+            568,
+            408
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 926976,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "SAVE_PARTS_ZC.NXZ",
+      "index": 22,
+      "images": 14,
+      "codecs": {
+        "8": 14
+      },
+      "formats": {
+        "dxt1": 2,
+        "dxt5": 12
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 4,
+        "262144": 10
+      },
+      "envelope_bytes": 3757376,
+      "rgba_bytes": 9776672,
+      "gpu_payload_bytes": 3756032,
+      "cdram_allocation_bytes": 4718592,
+      "gxt_upload_bytes": 3756032,
+      "gxt_zero_fill_bytes": 4718592,
+      "gxt_sub_granule_count": 5,
+      "stored_bytes": 196749,
+      "decoded_bytes": 3757651,
+      "scheduled_range_read_bytes": 2754486,
+      "scheduled_range_inflate_bytes": 52607114,
+      "examples": [
+        {
+          "name": "BG_load",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "BG_save",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "effect",
+          "logical": [
+            580,
+            196
+          ],
+          "physical": [
+            580,
+            196
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 454720,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "kusa1",
+          "logical": [
+            568,
+            408
+          ],
+          "physical": [
+            568,
+            408
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 926976,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "TEATIME_PARTS_EN.NXZ",
+      "index": 26,
+      "images": 11,
+      "codecs": {
+        "8": 11
+      },
+      "formats": {
+        "dxt5": 11
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 11
+      },
+      "envelope_bytes": 2491424,
+      "rgba_bytes": 7333120,
+      "gpu_payload_bytes": 2490368,
+      "cdram_allocation_bytes": 2883584,
+      "gxt_upload_bytes": 2490368,
+      "gxt_zero_fill_bytes": 2883584,
+      "gxt_sub_granule_count": 3,
+      "stored_bytes": 203591,
+      "decoded_bytes": 2491715,
+      "scheduled_range_read_bytes": 2239501,
+      "scheduled_range_inflate_bytes": 27408865,
+      "examples": [
+        {
+          "name": "teatime_save_b_en",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "teatime_save_w_en",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "teatime_title_b_en",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "teatime_title_w_en",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "TEATIME_PARTS_ZC.NXZ",
+      "index": 27,
+      "images": 11,
+      "codecs": {
+        "8": 11
+      },
+      "formats": {
+        "dxt5": 11
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 11
+      },
+      "envelope_bytes": 2491424,
+      "rgba_bytes": 7333120,
+      "gpu_payload_bytes": 2490368,
+      "cdram_allocation_bytes": 2883584,
+      "gxt_upload_bytes": 2490368,
+      "gxt_zero_fill_bytes": 2883584,
+      "gxt_sub_granule_count": 3,
+      "stored_bytes": 204085,
+      "decoded_bytes": 2491715,
+      "scheduled_range_read_bytes": 2244935,
+      "scheduled_range_inflate_bytes": 27408865,
+      "examples": [
+        {
+          "name": "teatime_save_b_zc",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "teatime_save_w_zc",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "teatime_title_b_zc",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "teatime_title_w_zc",
+          "logical": [
+            440,
+            457
+          ],
+          "physical": [
+            440,
+            457
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 804320,
+          "format": "dxt5",
+          "backing": [
+            512,
+            512
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "TITLE_PARTS_EN.NXZ",
+      "index": 31,
+      "images": 14,
+      "codecs": {
+        "8": 14
+      },
+      "formats": {
+        "dxt1": 6,
+        "dxt5": 8
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 8,
+        "1048576": 2,
+        "262144": 4
+      },
+      "envelope_bytes": 6563152,
+      "rgba_bytes": 18333360,
+      "gpu_payload_bytes": 6561808,
+      "cdram_allocation_bytes": 7340032,
+      "gxt_upload_bytes": 6561808,
+      "gxt_zero_fill_bytes": 7340032,
+      "gxt_sub_granule_count": 4,
+      "stored_bytes": 764240,
+      "decoded_bytes": 6563442,
+      "scheduled_range_read_bytes": 10699360,
+      "scheduled_range_inflate_bytes": 91888188,
+      "examples": [
+        {
+          "name": "title_bg1",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "title_bg2",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "title_menu_en",
+          "logical": [
+            1224,
+            1104
+          ],
+          "physical": [
+            599,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1293840,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "title_titlelogo_en",
+          "logical": [
+            952,
+            303
+          ],
+          "physical": [
+            952,
+            303
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1153824,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "TITLE_PARTS_ZC.NXZ",
+      "index": 32,
+      "images": 14,
+      "codecs": {
+        "8": 14
+      },
+      "formats": {
+        "dxt1": 6,
+        "dxt5": 8
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 8,
+        "1048576": 2,
+        "262144": 4
+      },
+      "envelope_bytes": 6563152,
+      "rgba_bytes": 18333360,
+      "gpu_payload_bytes": 6561808,
+      "cdram_allocation_bytes": 7340032,
+      "gxt_upload_bytes": 6561808,
+      "gxt_zero_fill_bytes": 7340032,
+      "gxt_sub_granule_count": 4,
+      "stored_bytes": 754771,
+      "decoded_bytes": 6563442,
+      "scheduled_range_read_bytes": 10566794,
+      "scheduled_range_inflate_bytes": 91888188,
+      "examples": [
+        {
+          "name": "title_bg1",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "title_bg2",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "title_menu_zc",
+          "logical": [
+            1224,
+            1104
+          ],
+          "physical": [
+            599,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1293840,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "title_titlelogo_zc",
+          "logical": [
+            952,
+            303
+          ],
+          "physical": [
+            952,
+            303
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1153824,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "DIALOG_PARTS_EN.NXZ",
+      "index": 36,
+      "images": 2,
+      "codecs": {
+        "8": 2
+      },
+      "formats": {
+        "dxt5": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 1,
+        "262144": 1
+      },
+      "envelope_bytes": 655552,
+      "rgba_bytes": 1511424,
+      "gpu_payload_bytes": 655360,
+      "cdram_allocation_bytes": 786432,
+      "gxt_upload_bytes": 655360,
+      "gxt_zero_fill_bytes": 786432,
+      "gxt_sub_granule_count": 1,
+      "stored_bytes": 38922,
+      "decoded_bytes": 655603,
+      "scheduled_range_read_bytes": 77844,
+      "scheduled_range_inflate_bytes": 1311206,
+      "examples": [
+        {
+          "name": "dialog_win",
+          "logical": [
+            928,
+            336
+          ],
+          "physical": [
+            928,
+            336
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1247232,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "dialog_btn_en",
+          "logical": [
+            516,
+            128
+          ],
+          "physical": [
+            516,
+            128
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 264192,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "DIALOG_PARTS_ZC.NXZ",
+      "index": 37,
+      "images": 2,
+      "codecs": {
+        "8": 2
+      },
+      "formats": {
+        "dxt5": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 1,
+        "262144": 1
+      },
+      "envelope_bytes": 655552,
+      "rgba_bytes": 1511424,
+      "gpu_payload_bytes": 655360,
+      "cdram_allocation_bytes": 786432,
+      "gxt_upload_bytes": 655360,
+      "gxt_zero_fill_bytes": 786432,
+      "gxt_sub_granule_count": 1,
+      "stored_bytes": 36540,
+      "decoded_bytes": 655603,
+      "scheduled_range_read_bytes": 73080,
+      "scheduled_range_inflate_bytes": 1311206,
+      "examples": [
+        {
+          "name": "dialog_win",
+          "logical": [
+            928,
+            336
+          ],
+          "physical": [
+            928,
+            336
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 1247232,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "dialog_btn_zc",
+          "logical": [
+            516,
+            128
+          ],
+          "physical": [
+            516,
+            128
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 264192,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "MOUSE_PARTS_EN.NXZ",
+      "index": 41,
+      "images": 2,
+      "codecs": {
+        "8": 2
+      },
+      "formats": {
+        "dxt5": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 2
+      },
+      "envelope_bytes": 4304,
+      "rgba_bytes": 9280,
+      "gpu_payload_bytes": 4112,
+      "cdram_allocation_bytes": 524288,
+      "gxt_upload_bytes": 4112,
+      "gxt_zero_fill_bytes": 524288,
+      "gxt_sub_granule_count": 2,
+      "stored_bytes": 1168,
+      "decoded_bytes": 4348,
+      "scheduled_range_read_bytes": 2336,
+      "scheduled_range_inflate_bytes": 8696,
+      "examples": [
+        {
+          "name": "acursor01",
+          "logical": [
+            48,
+            48
+          ],
+          "physical": [
+            48,
+            48
+          ],
+          "codec": 8,
+          "envelope_bytes": 4192,
+          "encoded_payload_bytes": 4160,
+          "rgba_bytes": 9216,
+          "format": "dxt5",
+          "backing": [
+            64,
+            64
+          ],
+          "gpu_payload_bytes": 4096,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "dummy00",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "MOUSE_PARTS_ZC.NXZ",
+      "index": 42,
+      "images": 2,
+      "codecs": {
+        "8": 2
+      },
+      "formats": {
+        "dxt5": 2
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 2
+      },
+      "envelope_bytes": 4304,
+      "rgba_bytes": 9280,
+      "gpu_payload_bytes": 4112,
+      "cdram_allocation_bytes": 524288,
+      "gxt_upload_bytes": 4112,
+      "gxt_zero_fill_bytes": 524288,
+      "gxt_sub_granule_count": 2,
+      "stored_bytes": 1168,
+      "decoded_bytes": 4348,
+      "scheduled_range_read_bytes": 2336,
+      "scheduled_range_inflate_bytes": 8696,
+      "examples": [
+        {
+          "name": "acursor01",
+          "logical": [
+            48,
+            48
+          ],
+          "physical": [
+            48,
+            48
+          ],
+          "codec": 8,
+          "envelope_bytes": 4192,
+          "encoded_payload_bytes": 4160,
+          "rgba_bytes": 9216,
+          "format": "dxt5",
+          "backing": [
+            64,
+            64
+          ],
+          "gpu_payload_bytes": 4096,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "dummy00",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "ALART_PARTS.NXZ",
+      "index": 45,
+      "images": 1,
+      "codecs": {
+        "8": 1
+      },
+      "formats": {
+        "dxt1": 1
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 1
+      },
+      "envelope_bytes": 524384,
+      "rgba_bytes": 2073600,
+      "gpu_payload_bytes": 524288,
+      "cdram_allocation_bytes": 524288,
+      "gxt_upload_bytes": 524288,
+      "gxt_zero_fill_bytes": 524288,
+      "stored_bytes": 15379,
+      "decoded_bytes": 524409,
+      "scheduled_range_read_bytes": 15379,
+      "scheduled_range_inflate_bytes": 524409,
+      "examples": [
+        {
+          "name": "alart",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "BORDER_PARTS.NXZ",
+      "index": 46,
+      "images": 12,
+      "codecs": {
+        "2": 12
+      },
+      "formats": {
+        "cpu_decode": 12
+      },
+      "png_color_types": {
+        "4": 12
+      },
+      "gxt_allocation_buckets": {},
+      "envelope_bytes": 100091,
+      "rgba_bytes": 2839680,
+      "gpu_payload_bytes": 2839680,
+      "cdram_allocation_bytes": 4718592,
+      "stored_bytes": 98917,
+      "decoded_bytes": 100427,
+      "scheduled_range_read_bytes": 1187004,
+      "scheduled_range_inflate_bytes": 1205124,
+      "examples": [
+        {
+          "name": "alphagradation020",
+          "logical": [
+            20,
+            20
+          ],
+          "physical": [
+            20,
+            20
+          ],
+          "codec": 2,
+          "envelope_bytes": 413,
+          "encoded_payload_bytes": 381,
+          "rgba_bytes": 1600,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 1600,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 4,
+          "png_interlace": 0
+        },
+        {
+          "name": "alphagradation064",
+          "logical": [
+            64,
+            64
+          ],
+          "physical": [
+            64,
+            64
+          ],
+          "codec": 2,
+          "envelope_bytes": 1843,
+          "encoded_payload_bytes": 1811,
+          "rgba_bytes": 16384,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 16384,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 4,
+          "png_interlace": 0
+        },
+        {
+          "name": "alphagradation080",
+          "logical": [
+            80,
+            80
+          ],
+          "physical": [
+            80,
+            80
+          ],
+          "codec": 2,
+          "envelope_bytes": 2514,
+          "encoded_payload_bytes": 2482,
+          "rgba_bytes": 25600,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 25600,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 4,
+          "png_interlace": 0
+        },
+        {
+          "name": "alphagradation128",
+          "logical": [
+            128,
+            128
+          ],
+          "physical": [
+            128,
+            128
+          ],
+          "codec": 2,
+          "envelope_bytes": 5037,
+          "encoded_payload_bytes": 5005,
+          "rgba_bytes": 65536,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 4,
+          "png_interlace": 0
+        }
+      ]
+    },
+    {
+      "entry": "NOISE_PARTS.NXZ",
+      "index": 47,
+      "images": 4,
+      "codecs": {
+        "8": 4
+      },
+      "formats": {
+        "dxt1": 4
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 4
+      },
+      "envelope_bytes": 2097536,
+      "rgba_bytes": 8294400,
+      "gpu_payload_bytes": 2097152,
+      "cdram_allocation_bytes": 2097152,
+      "gxt_upload_bytes": 2097152,
+      "gxt_zero_fill_bytes": 2097152,
+      "stored_bytes": 869127,
+      "decoded_bytes": 2097608,
+      "scheduled_range_read_bytes": 3476508,
+      "scheduled_range_inflate_bytes": 8390432,
+      "examples": [
+        {
+          "name": "noise0",
+          "logical": [
+            1280,
+            720
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "noise1",
+          "logical": [
+            1280,
+            720
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "noisehd0",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "noisehd1",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        }
+      ]
+    },
+    {
+      "entry": "EFFECT_PARTS.NXZ",
+      "index": 48,
+      "images": 4,
+      "codecs": {
+        "8": 4
+      },
+      "formats": {
+        "dxt5": 4
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 4
+      },
+      "envelope_bytes": 119168,
+      "rgba_bytes": 303360,
+      "gpu_payload_bytes": 118784,
+      "cdram_allocation_bytes": 1048576,
+      "gxt_upload_bytes": 118784,
+      "gxt_zero_fill_bytes": 1048576,
+      "gxt_sub_granule_count": 4,
+      "stored_bytes": 30966,
+      "decoded_bytes": 119248,
+      "scheduled_range_read_bytes": 123864,
+      "scheduled_range_inflate_bytes": 476992,
+      "examples": [
+        {
+          "name": "FallNote0",
+          "logical": [
+            13512,
+            187
+          ],
+          "physical": [
+            960,
+            13
+          ],
+          "codec": 8,
+          "envelope_bytes": 16480,
+          "encoded_payload_bytes": 16448,
+          "rgba_bytes": 49920,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            16
+          ],
+          "gpu_payload_bytes": 16384,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "FallNote1",
+          "logical": [
+            4500,
+            112
+          ],
+          "physical": [
+            960,
+            24
+          ],
+          "codec": 8,
+          "envelope_bytes": 32864,
+          "encoded_payload_bytes": 32832,
+          "rgba_bytes": 92160,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            32
+          ],
+          "gpu_payload_bytes": 32768,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "FallNote2",
+          "logical": [
+            3600,
+            150
+          ],
+          "physical": [
+            960,
+            40
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 153600,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            64
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "FocusLine",
+          "logical": [
+            960,
+            2
+          ],
+          "physical": [
+            960,
+            2
+          ],
+          "codec": 8,
+          "envelope_bytes": 4192,
+          "encoded_payload_bytes": 4160,
+          "rgba_bytes": 7680,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            4
+          ],
+          "gpu_payload_bytes": 4096,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "CG_PARTS.NXZ",
+      "index": 49,
+      "images": 401,
+      "codecs": {
+        "8": 401
+      },
+      "formats": {
+        "dxt1": 401
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 401
+      },
+      "envelope_bytes": 26318432,
+      "rgba_bytes": 101881152,
+      "gpu_payload_bytes": 26279936,
+      "cdram_allocation_bytes": 105119744,
+      "gxt_upload_bytes": 26279936,
+      "gxt_zero_fill_bytes": 105119744,
+      "gxt_sub_granule_count": 401,
+      "stored_bytes": 6316685,
+      "decoded_bytes": 26325662,
+      "scheduled_range_read_bytes": 2532990685,
+      "scheduled_range_inflate_bytes": 10556590462,
+      "examples": [
+        {
+          "name": "th_img0122",
+          "logical": [
+            336,
+            189
+          ],
+          "physical": [
+            336,
+            189
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 254016,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "th_img0128",
+          "logical": [
+            336,
+            189
+          ],
+          "physical": [
+            336,
+            189
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 254016,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "th_img0153",
+          "logical": [
+            336,
+            189
+          ],
+          "physical": [
+            336,
+            189
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 254016,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "th_img0160",
+          "logical": [
+            336,
+            189
+          ],
+          "physical": [
+            336,
+            189
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 254016,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "EXTRA_PARTS_EN.NXZ",
+      "index": 51,
+      "images": 14,
+      "codecs": {
+        "8": 14
+      },
+      "formats": {
+        "dxt1": 1,
+        "dxt5": 13
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 3,
+        "262144": 11
+      },
+      "envelope_bytes": 3065152,
+      "rgba_bytes": 6712032,
+      "gpu_payload_bytes": 3063808,
+      "cdram_allocation_bytes": 4456448,
+      "gxt_upload_bytes": 3063808,
+      "gxt_zero_fill_bytes": 4456448,
+      "gxt_sub_granule_count": 8,
+      "stored_bytes": 188712,
+      "decoded_bytes": 3065423,
+      "scheduled_range_read_bytes": 2641968,
+      "scheduled_range_inflate_bytes": 42915922,
+      "examples": [
+        {
+          "name": "BG_load",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "kusa1",
+          "logical": [
+            568,
+            408
+          ],
+          "physical": [
+            568,
+            408
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 926976,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "kusa2",
+          "logical": [
+            280,
+            912
+          ],
+          "physical": [
+            166,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 358560,
+          "format": "dxt5",
+          "backing": [
+            256,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "save_page_btn_en",
+          "logical": [
+            1293,
+            264
+          ],
+          "physical": [
+            960,
+            196
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 752640,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "EXTRA_PARTS_ZC.NXZ",
+      "index": 52,
+      "images": 14,
+      "codecs": {
+        "8": 14
+      },
+      "formats": {
+        "dxt1": 1,
+        "dxt5": 13
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 3,
+        "262144": 11
+      },
+      "envelope_bytes": 3065152,
+      "rgba_bytes": 6712032,
+      "gpu_payload_bytes": 3063808,
+      "cdram_allocation_bytes": 4456448,
+      "gxt_upload_bytes": 3063808,
+      "gxt_zero_fill_bytes": 4456448,
+      "gxt_sub_granule_count": 8,
+      "stored_bytes": 176352,
+      "decoded_bytes": 3065423,
+      "scheduled_range_read_bytes": 2468928,
+      "scheduled_range_inflate_bytes": 42915922,
+      "examples": [
+        {
+          "name": "BG_load",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "kusa1",
+          "logical": [
+            568,
+            408
+          ],
+          "physical": [
+            568,
+            408
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 926976,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            512
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "kusa2",
+          "logical": [
+            280,
+            912
+          ],
+          "physical": [
+            166,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 358560,
+          "format": "dxt5",
+          "backing": [
+            256,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "save_page_btn_zc",
+          "logical": [
+            1293,
+            264
+          ],
+          "physical": [
+            960,
+            196
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 752640,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "SOUND_PARTS_EN.NXZ",
+      "index": 56,
+      "images": 17,
+      "codecs": {
+        "8": 17
+      },
+      "formats": {
+        "dxt5": 17
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 2,
+        "1048576": 14,
+        "524288": 1
+      },
+      "envelope_bytes": 15730272,
+      "rgba_bytes": 19572208,
+      "gpu_payload_bytes": 15728640,
+      "cdram_allocation_bytes": 15728640,
+      "gxt_upload_bytes": 15728640,
+      "gxt_zero_fill_bytes": 15728640,
+      "stored_bytes": 1043995,
+      "decoded_bytes": 15730793,
+      "scheduled_range_read_bytes": 17747915,
+      "scheduled_range_inflate_bytes": 267423481,
+      "examples": [
+        {
+          "name": "mu_btn_en",
+          "logical": [
+            1168,
+            200
+          ],
+          "physical": [
+            960,
+            164
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 629760,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "mu_bartext_composer_en",
+          "logical": [
+            616,
+            232
+          ],
+          "physical": [
+            616,
+            232
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 571648,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "mu_bartext1_en",
+          "logical": [
+            1584,
+            1072
+          ],
+          "physical": [
+            798,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1723680,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "mu_bartext2_en",
+          "logical": [
+            1224,
+            1072
+          ],
+          "physical": [
+            617,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1332720,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        }
+      ]
+    },
+    {
+      "entry": "SOUND_PARTS_ZC.NXZ",
+      "index": 57,
+      "images": 17,
+      "codecs": {
+        "8": 17
+      },
+      "formats": {
+        "dxt5": 17
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 2,
+        "1048576": 14,
+        "524288": 1
+      },
+      "envelope_bytes": 15730272,
+      "rgba_bytes": 19773088,
+      "gpu_payload_bytes": 15728640,
+      "cdram_allocation_bytes": 15728640,
+      "gxt_upload_bytes": 15728640,
+      "gxt_zero_fill_bytes": 15728640,
+      "stored_bytes": 965175,
+      "decoded_bytes": 15730793,
+      "scheduled_range_read_bytes": 16407975,
+      "scheduled_range_inflate_bytes": 267423481,
+      "examples": [
+        {
+          "name": "mu_btn_zc",
+          "logical": [
+            1168,
+            200
+          ],
+          "physical": [
+            960,
+            164
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 629760,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "mu_bartext_composer_zc",
+          "logical": [
+            616,
+            232
+          ],
+          "physical": [
+            616,
+            232
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 571648,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            256
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "mu_bartext1_zc",
+          "logical": [
+            1768,
+            1072
+          ],
+          "physical": [
+            891,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1924560,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "mu_bartext2_zc",
+          "logical": [
+            1224,
+            1072
+          ],
+          "physical": [
+            617,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1332720,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        }
+      ]
+    },
+    {
+      "entry": "ARCHIVE_PARTS_EN.NXZ",
+      "index": 61,
+      "images": 69,
+      "codecs": {
+        "8": 69
+      },
+      "formats": {
+        "dxt1": 1,
+        "dxt5": 68
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 20,
+        "1048576": 1,
+        "262144": 48
+      },
+      "envelope_bytes": 15927776,
+      "rgba_bytes": 35706688,
+      "gpu_payload_bytes": 15921152,
+      "cdram_allocation_bytes": 24117248,
+      "gxt_upload_bytes": 15921152,
+      "gxt_zero_fill_bytes": 24117248,
+      "gxt_sub_granule_count": 44,
+      "stored_bytes": 2375138,
+      "decoded_bytes": 15929827,
+      "scheduled_range_read_bytes": 163884522,
+      "scheduled_range_inflate_bytes": 1099158063,
+      "examples": [
+        {
+          "name": "archive_background",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "archive_�{�I�g",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 2073600,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "archive_title_en",
+          "logical": [
+            400,
+            108
+          ],
+          "physical": [
+            400,
+            108
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 172800,
+          "format": "dxt5",
+          "backing": [
+            512,
+            128
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "archive_back_en",
+          "logical": [
+            1168,
+            104
+          ],
+          "physical": [
+            960,
+            85
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 326400,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "ARCHIVE_PARTS_ZC.NXZ",
+      "index": 62,
+      "images": 69,
+      "codecs": {
+        "8": 69
+      },
+      "formats": {
+        "dxt1": 1,
+        "dxt5": 68
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "524288": 20,
+        "1048576": 1,
+        "262144": 48
+      },
+      "envelope_bytes": 15927776,
+      "rgba_bytes": 35706688,
+      "gpu_payload_bytes": 15921152,
+      "cdram_allocation_bytes": 24117248,
+      "gxt_upload_bytes": 15921152,
+      "gxt_zero_fill_bytes": 24117248,
+      "gxt_sub_granule_count": 44,
+      "stored_bytes": 2378652,
+      "decoded_bytes": 15929827,
+      "scheduled_range_read_bytes": 164126988,
+      "scheduled_range_inflate_bytes": 1099158063,
+      "examples": [
+        {
+          "name": "archive_background",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 524384,
+          "encoded_payload_bytes": 524352,
+          "rgba_bytes": 2073600,
+          "format": "dxt1",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 524288,
+          "cdram_allocation_bytes": 524288
+        },
+        {
+          "name": "archive_�{�I�g",
+          "logical": [
+            1920,
+            1080
+          ],
+          "physical": [
+            960,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 2073600,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "archive_title_zc",
+          "logical": [
+            400,
+            108
+          ],
+          "physical": [
+            400,
+            108
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 172800,
+          "format": "dxt5",
+          "backing": [
+            512,
+            128
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "archive_back_zc",
+          "logical": [
+            1168,
+            104
+          ],
+          "physical": [
+            960,
+            85
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 326400,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            128
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "ARCHTHUMB_PARTS.NXZ",
+      "index": 65,
+      "images": 136,
+      "codecs": {
+        "8": 136
+      },
+      "formats": {
+        "dxt1": 136
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 136
+      },
+      "envelope_bytes": 8925952,
+      "rgba_bytes": 37797120,
+      "gpu_payload_bytes": 8912896,
+      "cdram_allocation_bytes": 35651584,
+      "gxt_upload_bytes": 8912896,
+      "gxt_zero_fill_bytes": 35651584,
+      "gxt_sub_granule_count": 136,
+      "stored_bytes": 2936285,
+      "decoded_bytes": 8927517,
+      "scheduled_range_read_bytes": 399334760,
+      "scheduled_range_inflate_bytes": 1214142312,
+      "examples": [
+        {
+          "name": "1-0",
+          "logical": [
+            352,
+            198
+          ],
+          "physical": [
+            352,
+            198
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 278784,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "1-1",
+          "logical": [
+            352,
+            198
+          ],
+          "physical": [
+            352,
+            198
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 278784,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "1-2",
+          "logical": [
+            352,
+            198
+          ],
+          "physical": [
+            352,
+            198
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 278784,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "1-3",
+          "logical": [
+            352,
+            198
+          ],
+          "physical": [
+            352,
+            198
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 278784,
+          "format": "dxt1",
+          "backing": [
+            512,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "WIK_SEL_PARTS.NXZ",
+      "index": 66,
+      "images": 28,
+      "codecs": {
+        "8": 28
+      },
+      "formats": {
+        "dxt5": 28
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 28
+      },
+      "envelope_bytes": 7080576,
+      "rgba_bytes": 10212480,
+      "gpu_payload_bytes": 7077888,
+      "cdram_allocation_bytes": 7340032,
+      "gxt_upload_bytes": 7077888,
+      "gxt_zero_fill_bytes": 7340032,
+      "gxt_sub_granule_count": 2,
+      "stored_bytes": 757386,
+      "decoded_bytes": 7081134,
+      "scheduled_range_read_bytes": 21206808,
+      "scheduled_range_inflate_bytes": 198271752,
+      "examples": [
+        {
+          "name": "wik_sel00",
+          "logical": [
+            358,
+            1061
+          ],
+          "physical": [
+            182,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 393120,
+          "format": "dxt5",
+          "backing": [
+            256,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "wik_sel00_mono",
+          "logical": [
+            358,
+            1061
+          ],
+          "physical": [
+            182,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 393120,
+          "format": "dxt5",
+          "backing": [
+            256,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "wik_sel01",
+          "logical": [
+            225,
+            1006
+          ],
+          "physical": [
+            121,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 261360,
+          "format": "dxt5",
+          "backing": [
+            128,
+            1024
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "wik_sel01_mono",
+          "logical": [
+            225,
+            1006
+          ],
+          "physical": [
+            121,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 131168,
+          "encoded_payload_bytes": 131136,
+          "rgba_bytes": 261360,
+          "format": "dxt5",
+          "backing": [
+            128,
+            1024
+          ],
+          "gpu_payload_bytes": 131072,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "entry": "DUMMY.NXZ",
+      "index": 69,
+      "images": 1,
+      "codecs": {
+        "8": 1
+      },
+      "formats": {
+        "dxt5": 1
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "262144": 1
+      },
+      "envelope_bytes": 112,
+      "rgba_bytes": 64,
+      "gpu_payload_bytes": 16,
+      "cdram_allocation_bytes": 262144,
+      "gxt_upload_bytes": 16,
+      "gxt_zero_fill_bytes": 262144,
+      "gxt_sub_granule_count": 1,
+      "stored_bytes": 93,
+      "decoded_bytes": 137,
+      "scheduled_range_read_bytes": 93,
+      "scheduled_range_inflate_bytes": 137,
+      "examples": [
+        {
+          "name": "dummy",
+          "logical": [
+            4,
+            4
+          ],
+          "physical": [
+            4,
+            4
+          ],
+          "codec": 8,
+          "envelope_bytes": 112,
+          "encoded_payload_bytes": 80,
+          "rgba_bytes": 64,
+          "format": "dxt5",
+          "backing": [
+            4,
+            4
+          ],
+          "gpu_payload_bytes": 16,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    }
+  ],
+  "variant_family_examples": [
+    {
+      "archive": "jallpac",
+      "family": "SOU_N_01_08",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 35,
+      "codecs": {
+        "2": 32,
+        "8": 3
+      },
+      "formats": {
+        "cpu_decode": 32,
+        "dxt5": 3
+      },
+      "png_color_types": {
+        "6": 32
+      },
+      "gxt_allocation_buckets": {
+        "262144": 3
+      },
+      "envelope_bytes": 816282,
+      "rgba_bytes": 2646000,
+      "gpu_payload_bytes": 2615808,
+      "cdram_allocation_bytes": 9175040,
+      "gxt_upload_bytes": 196608,
+      "gxt_zero_fill_bytes": 786432,
+      "gxt_sub_granule_count": 3,
+      "examples": [
+        {
+          "name": "SOU_N_01_08_00.NXZ",
+          "logical": [
+            135,
+            140
+          ],
+          "physical": [
+            135,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 19234,
+          "encoded_payload_bytes": 19202,
+          "rgba_bytes": 75600,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 75600,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "SOU_N_01_08_01.NXZ",
+          "logical": [
+            135,
+            140
+          ],
+          "physical": [
+            135,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 19253,
+          "encoded_payload_bytes": 19221,
+          "rgba_bytes": 75600,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 75600,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "SOU_N_01_08_02.NXZ",
+          "logical": [
+            135,
+            140
+          ],
+          "physical": [
+            135,
+            140
+          ],
+          "codec": 8,
+          "envelope_bytes": 65632,
+          "encoded_payload_bytes": 65600,
+          "rgba_bytes": 75600,
+          "format": "dxt5",
+          "backing": [
+            256,
+            256
+          ],
+          "gpu_payload_bytes": 65536,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "KOJ_L_01_01",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 30,
+      "codecs": {
+        "2": 20,
+        "8": 10
+      },
+      "formats": {
+        "cpu_decode": 20,
+        "dxt5": 10
+      },
+      "png_color_types": {
+        "6": 20
+      },
+      "gxt_allocation_buckets": {
+        "262144": 10
+      },
+      "envelope_bytes": 418256,
+      "rgba_bytes": 940800,
+      "gpu_payload_bytes": 791040,
+      "cdram_allocation_bytes": 7864320,
+      "gxt_upload_bytes": 163840,
+      "gxt_zero_fill_bytes": 2621440,
+      "gxt_sub_granule_count": 10,
+      "examples": [
+        {
+          "name": "KOJ_L_01_01_00.NXZ",
+          "logical": [
+            56,
+            140
+          ],
+          "physical": [
+            56,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 12658,
+          "encoded_payload_bytes": 12626,
+          "rgba_bytes": 31360,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 31360,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "KOJ_L_01_01_01.NXZ",
+          "logical": [
+            56,
+            140
+          ],
+          "physical": [
+            56,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 12658,
+          "encoded_payload_bytes": 12626,
+          "rgba_bytes": 31360,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 31360,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "KOJ_L_01_01_02.NXZ",
+          "logical": [
+            56,
+            140
+          ],
+          "physical": [
+            56,
+            140
+          ],
+          "codec": 8,
+          "envelope_bytes": 16480,
+          "encoded_payload_bytes": 16448,
+          "rgba_bytes": 31360,
+          "format": "dxt5",
+          "backing": [
+            64,
+            256
+          ],
+          "gpu_payload_bytes": 16384,
+          "cdram_allocation_bytes": 262144
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "SOU_N_01_02",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 26,
+      "codecs": {
+        "2": 23,
+        "8": 3
+      },
+      "formats": {
+        "cpu_decode": 23,
+        "dxt5": 3
+      },
+      "png_color_types": {
+        "6": 23
+      },
+      "gxt_allocation_buckets": {
+        "262144": 3
+      },
+      "envelope_bytes": 514743,
+      "rgba_bytes": 1834560,
+      "gpu_payload_bytes": 1721184,
+      "cdram_allocation_bytes": 6815744,
+      "gxt_upload_bytes": 98304,
+      "gxt_zero_fill_bytes": 786432,
+      "gxt_sub_granule_count": 3,
+      "examples": [
+        {
+          "name": "SOU_N_01_02_00.NXZ",
+          "logical": [
+            126,
+            140
+          ],
+          "physical": [
+            126,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 18146,
+          "encoded_payload_bytes": 18114,
+          "rgba_bytes": 70560,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 70560,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "SOU_N_01_02_01.NXZ",
+          "logical": [
+            126,
+            140
+          ],
+          "physical": [
+            126,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 18197,
+          "encoded_payload_bytes": 18165,
+          "rgba_bytes": 70560,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 70560,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "SOU_N_01_02_02.NXZ",
+          "logical": [
+            126,
+            140
+          ],
+          "physical": [
+            126,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 18223,
+          "encoded_payload_bytes": 18191,
+          "rgba_bytes": 70560,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 70560,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "KOJ_A_01_07",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 25,
+      "codecs": {
+        "2": 17,
+        "8": 8
+      },
+      "formats": {
+        "cpu_decode": 17,
+        "dxt5": 8
+      },
+      "png_color_types": {
+        "6": 17
+      },
+      "gxt_allocation_buckets": {
+        "262144": 8
+      },
+      "envelope_bytes": 3527208,
+      "rgba_bytes": 8208000,
+      "gpu_payload_bytes": 7678592,
+      "cdram_allocation_bytes": 11010048,
+      "gxt_upload_bytes": 2097152,
+      "gxt_zero_fill_bytes": 2097152,
+      "examples": [
+        {
+          "name": "KOJ_A_01_07_00.NXZ",
+          "logical": [
+            167,
+            595
+          ],
+          "physical": [
+            152,
+            540
+          ],
+          "codec": 2,
+          "envelope_bytes": 84109,
+          "encoded_payload_bytes": 84077,
+          "rgba_bytes": 328320,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 328320,
+          "cdram_allocation_bytes": 524288,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "KOJ_A_01_07_01.NXZ",
+          "logical": [
+            167,
+            595
+          ],
+          "physical": [
+            152,
+            540
+          ],
+          "codec": 2,
+          "envelope_bytes": 84201,
+          "encoded_payload_bytes": 84169,
+          "rgba_bytes": 328320,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 328320,
+          "cdram_allocation_bytes": 524288,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "KOJ_A_01_07_02.NXZ",
+          "logical": [
+            167,
+            595
+          ],
+          "physical": [
+            152,
+            540
+          ],
+          "codec": 2,
+          "envelope_bytes": 84074,
+          "encoded_payload_bytes": 84042,
+          "rgba_bytes": 328320,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 328320,
+          "cdram_allocation_bytes": 524288,
+          "png_color_type": 6,
+          "png_interlace": 0
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "KOJ_A_01_01",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 23,
+      "codecs": {
+        "2": 16,
+        "8": 7
+      },
+      "formats": {
+        "cpu_decode": 16,
+        "dxt5": 7
+      },
+      "png_color_types": {
+        "6": 16
+      },
+      "gxt_allocation_buckets": {
+        "262144": 7
+      },
+      "envelope_bytes": 3219074,
+      "rgba_bytes": 6855840,
+      "gpu_payload_bytes": 6604288,
+      "cdram_allocation_bytes": 10223616,
+      "gxt_upload_bytes": 1835008,
+      "gxt_zero_fill_bytes": 1835008,
+      "examples": [
+        {
+          "name": "KOJ_A_01_01_00.NXZ",
+          "logical": [
+            150,
+            587
+          ],
+          "physical": [
+            138,
+            540
+          ],
+          "codec": 2,
+          "envelope_bytes": 86445,
+          "encoded_payload_bytes": 86413,
+          "rgba_bytes": 298080,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 298080,
+          "cdram_allocation_bytes": 524288,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "KOJ_A_01_01_01.NXZ",
+          "logical": [
+            150,
+            587
+          ],
+          "physical": [
+            138,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 262240,
+          "encoded_payload_bytes": 262208,
+          "rgba_bytes": 298080,
+          "format": "dxt5",
+          "backing": [
+            256,
+            1024
+          ],
+          "gpu_payload_bytes": 262144,
+          "cdram_allocation_bytes": 262144
+        },
+        {
+          "name": "KOJ_A_01_01_02.NXZ",
+          "logical": [
+            150,
+            587
+          ],
+          "physical": [
+            138,
+            540
+          ],
+          "codec": 2,
+          "envelope_bytes": 86520,
+          "encoded_payload_bytes": 86488,
+          "rgba_bytes": 298080,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 298080,
+          "cdram_allocation_bytes": 524288,
+          "png_color_type": 6,
+          "png_interlace": 0
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "SOU_N_01_09",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 22,
+      "codecs": {
+        "2": 21,
+        "8": 1
+      },
+      "formats": {
+        "cpu_decode": 21,
+        "dxt5": 1
+      },
+      "png_color_types": {
+        "6": 21
+      },
+      "gxt_allocation_buckets": {
+        "262144": 1
+      },
+      "envelope_bytes": 475842,
+      "rgba_bytes": 1687840,
+      "gpu_payload_bytes": 1676656,
+      "cdram_allocation_bytes": 5767168,
+      "gxt_upload_bytes": 65536,
+      "gxt_zero_fill_bytes": 262144,
+      "gxt_sub_granule_count": 1,
+      "examples": [
+        {
+          "name": "SOU_N_01_09_00.NXZ",
+          "logical": [
+            137,
+            140
+          ],
+          "physical": [
+            137,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 19549,
+          "encoded_payload_bytes": 19517,
+          "rgba_bytes": 76720,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 76720,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "SOU_N_01_09_01.NXZ",
+          "logical": [
+            137,
+            140
+          ],
+          "physical": [
+            137,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 19501,
+          "encoded_payload_bytes": 19469,
+          "rgba_bytes": 76720,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 76720,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "SOU_N_01_09_02.NXZ",
+          "logical": [
+            137,
+            140
+          ],
+          "physical": [
+            137,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 19721,
+          "encoded_payload_bytes": 19689,
+          "rgba_bytes": 76720,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 76720,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "IMG1671_20",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 21,
+      "codecs": {
+        "8": 21
+      },
+      "formats": {
+        "dxt5": 21
+      },
+      "png_color_types": {},
+      "gxt_allocation_buckets": {
+        "1048576": 21
+      },
+      "envelope_bytes": 22022112,
+      "rgba_bytes": 24982560,
+      "gpu_payload_bytes": 22020096,
+      "cdram_allocation_bytes": 22020096,
+      "gxt_upload_bytes": 22020096,
+      "gxt_zero_fill_bytes": 22020096,
+      "examples": [
+        {
+          "name": "IMG1671_20_00.NXZ",
+          "logical": [
+            1147,
+            1105
+          ],
+          "physical": [
+            560,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1209600,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "IMG1671_20_01.NXZ",
+          "logical": [
+            1147,
+            1105
+          ],
+          "physical": [
+            560,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1209600,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        },
+        {
+          "name": "IMG1671_20_02.NXZ",
+          "logical": [
+            1147,
+            1105
+          ],
+          "physical": [
+            560,
+            540
+          ],
+          "codec": 8,
+          "envelope_bytes": 1048672,
+          "encoded_payload_bytes": 1048640,
+          "rgba_bytes": 1209600,
+          "format": "dxt5",
+          "backing": [
+            1024,
+            1024
+          ],
+          "gpu_payload_bytes": 1048576,
+          "cdram_allocation_bytes": 1048576
+        }
+      ]
+    },
+    {
+      "archive": "jallpac",
+      "family": "AOK_N_12_02",
+      "scope": "name family only; not proof of a motion sequence or concurrent residency",
+      "images": 20,
+      "codecs": {
+        "2": 17,
+        "8": 3
+      },
+      "formats": {
+        "cpu_decode": 17,
+        "dxt5": 3
+      },
+      "png_color_types": {
+        "6": 17
+      },
+      "gxt_allocation_buckets": {
+        "262144": 3
+      },
+      "envelope_bytes": 597685,
+      "rgba_bytes": 1456000,
+      "gpu_payload_bytes": 1434208,
+      "cdram_allocation_bytes": 5242880,
+      "gxt_upload_bytes": 196608,
+      "gxt_zero_fill_bytes": 786432,
+      "gxt_sub_granule_count": 3,
+      "examples": [
+        {
+          "name": "AOK_N_12_02_00.NXZ",
+          "logical": [
+            130,
+            140
+          ],
+          "physical": [
+            130,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 23592,
+          "encoded_payload_bytes": 23560,
+          "rgba_bytes": 72800,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 72800,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "AOK_N_12_02_01.NXZ",
+          "logical": [
+            130,
+            140
+          ],
+          "physical": [
+            130,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 23649,
+          "encoded_payload_bytes": 23617,
+          "rgba_bytes": 72800,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 72800,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        },
+        {
+          "name": "AOK_N_12_02_02.NXZ",
+          "logical": [
+            130,
+            140
+          ],
+          "physical": [
+            130,
+            140
+          ],
+          "codec": 2,
+          "envelope_bytes": 23547,
+          "encoded_payload_bytes": 23515,
+          "rgba_bytes": 72800,
+          "format": "cpu_decode",
+          "gpu_payload_bytes": 72800,
+          "cdram_allocation_bytes": 262144,
+          "png_color_type": 6,
+          "png_interlace": 0
+        }
+      ]
+    }
+  ],
+  "raw_mask_examples": [
+    {
+      "archive": "jallpac",
+      "name": "RULE_03.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 147388,
+      "encoded_payload_bytes": 147356,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_02.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 5360,
+      "encoded_payload_bytes": 5328,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_04.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 36340,
+      "encoded_payload_bytes": 36308,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_01.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 5629,
+      "encoded_payload_bytes": 5597,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_05.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 108063,
+      "encoded_payload_bytes": 108031,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_06.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 118187,
+      "encoded_payload_bytes": 118155,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_07.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 106969,
+      "encoded_payload_bytes": 106937,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_08.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 376744,
+      "encoded_payload_bytes": 376712,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_09.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 113277,
+      "encoded_payload_bytes": 113245,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_10.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 409117,
+      "encoded_payload_bytes": 409085,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_11.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 76728,
+      "encoded_payload_bytes": 76696,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_12.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 18838,
+      "encoded_payload_bytes": 18806,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_13.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 100721,
+      "encoded_payload_bytes": 100689,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpac",
+      "name": "RULE_14.NXZ",
+      "logical": [
+        1280,
+        720
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 137872,
+      "encoded_payload_bytes": 137840,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_03.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 140683,
+      "encoded_payload_bytes": 140651,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_02.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 6621,
+      "encoded_payload_bytes": 6589,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_04.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 47541,
+      "encoded_payload_bytes": 47509,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_01.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 6552,
+      "encoded_payload_bytes": 6520,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_05.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 92752,
+      "encoded_payload_bytes": 92720,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_06.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 102648,
+      "encoded_payload_bytes": 102616,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_07.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 85665,
+      "encoded_payload_bytes": 85633,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_08.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 374844,
+      "encoded_payload_bytes": 374812,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_09.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 100870,
+      "encoded_payload_bytes": 100838,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_10.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 458320,
+      "encoded_payload_bytes": 458288,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_11.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 87219,
+      "encoded_payload_bytes": 87187,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_12.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 14469,
+      "encoded_payload_bytes": 14437,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_13.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 97476,
+      "encoded_payload_bytes": 97444,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "jallpachd",
+      "name": "RULE_14.NXZ",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 129529,
+      "encoded_payload_bytes": 129497,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    },
+    {
+      "archive": "parts",
+      "name": "",
+      "logical": [
+        1920,
+        1080
+      ],
+      "physical": [
+        960,
+        540
+      ],
+      "codec": 7,
+      "envelope_bytes": 43074,
+      "encoded_payload_bytes": 43042,
+      "rgba_bytes": 2073600,
+      "format": "cpu_decode",
+      "gpu_payload_bytes": 2073600,
+      "cdram_allocation_bytes": 2097152,
+      "png_color_type": 0,
+      "png_interlace": 0
+    }
+  ],
+  "slot_summary": {
+    "images": 34847,
+    "codecs": {
+      "8": 22176,
+      "7": 29,
+      "2": 12044,
+      "1": 598
+    },
+    "formats": {
+      "dxt5": 18724,
+      "cpu_decode": 12671,
+      "dxt1": 3452
+    },
+    "png_color_types": {
+      "0": 29,
+      "6": 11864,
+      "4": 180
+    },
+    "gxt_allocation_buckets": {
+      "262144": 14257,
+      "1048576": 2703,
+      "524288": 5216
+    },
+    "envelope_bytes": 8778839317,
+    "rgba_bytes": 22095132048,
+    "gpu_payload_bytes": 15052936076,
+    "cdram_allocation_bytes": 19101384704,
+    "gxt_upload_bytes": 7249664144,
+    "gxt_zero_fill_bytes": 9306374144,
+    "gxt_sub_granule_count": 8776
+  },
+  "distinct_range_summary": {
+    "images": 29779,
+    "codecs": {
+      "8": 17154,
+      "7": 29,
+      "2": 11998,
+      "1": 598
+    },
+    "formats": {
+      "dxt5": 13707,
+      "cpu_decode": 12625,
+      "dxt1": 3447
+    },
+    "png_color_types": {
+      "0": 29,
+      "6": 11824,
+      "4": 174
+    },
+    "gxt_allocation_buckets": {
+      "262144": 9249,
+      "1048576": 2700,
+      "524288": 5205
+    },
+    "envelope_bytes": 8764110817,
+    "rgba_bytes": 22047779372,
+    "gpu_payload_bytes": 15016111180,
+    "cdram_allocation_bytes": 17745838080,
+    "gxt_upload_bytes": 7240306688,
+    "gxt_zero_fill_bytes": 7984644096,
+    "gxt_sub_granule_count": 3768
+  },
+  "ui_schedule_total": {
+    "images": 1043,
+    "stored_bytes": 23856044,
+    "decoded_bytes": 207511036,
+    "scheduled_range_read_bytes": 3471396513,
+    "scheduled_range_inflate_bytes": 17740074924
+  }
+}

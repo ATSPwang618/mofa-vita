@@ -4,6 +4,9 @@
 
 typedef struct KvGxm KvGxm;
 typedef struct KvGxmTexture KvGxmTexture;
+enum KvSceneKind { KV_SCENE_OTHER = 0, KV_SCENE_STAGE = 1, KV_SCENE_GROUP_PIXEL = 2,
+    KV_SCENE_GROUP_MASK = 3, KV_SCENE_SCRATCH = 4, KV_SCENE_CANVAS = 5,
+    KV_SCENE_COPY_PS = 6, KV_SCENE_COPY_GROUP = 7, KV_SCENE_PRESENT = 8, KV_SCENE_BAKE = 9 };
 /* Same C ABI as knife_render_api::Vertex; positions are clip coordinates. */
 typedef struct KvEffectVertex {
     float position[2], uv[2], color[4], haze[2][4], soft[3][4];
@@ -34,6 +37,8 @@ typedef struct KvGxmStats {
    Caller owns encoded/decoded buffers; texture upload copies before returning. */
 /* On failed initialization, non-null *out is a retained cleanup-only owner. */
 int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t error_capacity);
+/* Optional runtime program passed compiler output/metadata checks at startup. */
+int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader);
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
     uint32_t height, uint32_t stride, KvGxmTexture **out);
 int32_t kv_gxm_texture_destroy(KvGxm *g, KvGxmTexture *texture);
@@ -75,6 +80,18 @@ int32_t kv_gxm_copy_texture(KvGxm *g, const KvGxmTexture *source, KvGxmTexture *
 int32_t kv_gxm_present_canvas(KvGxm *g, const KvGxmTexture *canvas);
 int32_t kv_gxm_timing(KvGxm *g, KvGxmTiming *out);
 int32_t kv_gxm_texture_read(KvGxm *g, const KvGxmTexture *texture, uint8_t *data, uint32_t capacity);
+/* Call once before a recorded batch, while no scene is open. Counts include
+   clear/copy/present basic quads; allocation is capped and safely segmented. */
+int32_t kv_gxm_begin_batch(KvGxm *g, uint32_t basic_quads, uint32_t effect_vertices);
+/* Before Begin/Copy, provide all sampled textures for this one scene. Metadata
+   is consumed synchronously; no pointer array is retained. NULL target=display.
+   Omitted plans retain conservative ordering. Draw validates missed hazards. */
+int32_t kv_gxm_scene_plan(KvGxm *g, KvGxmTexture *target,
+    const KvGxmTexture *const *reads, uint32_t count, uint32_t kind);
+/* Physical pool slack and retired owners remain included in cdram_available. */
+int32_t kv_gxm_texture_charge(uint32_t payload_bytes, uint32_t *out);
+/* Explicit memory-pressure reclamation; wait=0 only polls completed owners. */
+int32_t kv_gxm_reclaim(KvGxm *g, uint32_t wait);
 int32_t kv_gxm_begin(KvGxm *g, const float clear[4]);
 /* rect={x,y,width,height}; uv={left,top,right,bottom}; texture=NULL uses white. */
 int32_t kv_gxm_draw_quad(KvGxm *g, const KvGxmTexture *texture,

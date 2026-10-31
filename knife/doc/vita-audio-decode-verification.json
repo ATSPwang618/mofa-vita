@@ -9,7 +9,7 @@
     "vita/tests/run_audio_decode.sh"
   ],
   "installedLibraries": {
-    "sdk": "/opt/vitasdk/arm-vita-eabi",
+    "sdk": "${VITASDK}/arm-vita-eabi",
     "headers": [
       "opus/opusfile.h",
       "ogg/ogg.h"
@@ -33,7 +33,7 @@
     "ownership": "C closes FILE and frees decoder via kv_audio_close; memory input remains borrowed; Rust never adopts a C allocation and handle is !Send/!Sync"
   },
   "verification": {
-    "command": "wsl bash -lc \"cd /mnt/d/AI-CODEX/SWITCH-魔法使之夜/knife && bash vita/tests/run_audio_decode.sh\"",
+    "command": "wsl bash -lc \"cd ${PROJECT_ROOT}/knife && bash vita/tests/run_audio_decode.sh\"",
     "host": "PASS C fixture mono/stereo, CRC/truncated/midstream corruption, allocation failures via malloc/calloc wrappers, EOF/seek/tell/file/memory under ASan+UBSan leak detection",
     "rust": "PASS 2 Rust tests including true C FFI file and memory fixtures",
     "arm": "PASS arm-vita-eabi-gcc -Wall -Wextra -Werror static executable ELF ARM EABI5 linked with opusfile/opus/ogg/m; kv_audio_open_file present",

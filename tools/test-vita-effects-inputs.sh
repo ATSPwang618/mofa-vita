@@ -12,7 +12,7 @@ mkdir -p "$build/green/shaders/generated" "$logs"
 
 # Read the same immutable inputs for every variant, retaining the real include
 # chain rather than extracting effect_inputs into an alternate implementation.
-for source in gxm_backend.c gxm_backend.h effects_backend.inc movie_gxm.inc jpeg_hw.h image_decode.h \
+for source in perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc jpeg_hw.h image_decode.h \
     shaders/generated/shaders.h shaders/generated/effects.h; do
     cp "$project/knife/vita/$source" "$build/green/$source"
 done
@@ -95,8 +95,8 @@ PY
         fi
         cp "$build/$variant.log" "$logs/effects-inputs-$variant.log"
     done
-    grep -qF 'FAIL precondition.shader.16: expected status -1, got 0' "$build/red-enums.log"
-    grep -qF 'FAIL precondition.blend.9: expected status -1, got 0' "$build/red-enums.log"
+    grep -qF 'FAIL precondition.shader.26: expected status -1, got 0' "$build/red-enums.log"
+    grep -qF 'FAIL precondition.blend.10: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL finite.params.0.infinity: expected status -1, got 0' "$build/red-finite.log"
     grep -qF 'FAIL rule.flags.shader.9.value.4: expected status -1, got 0' "$build/red-packed.log"
     grep -qF 'FAIL blur.phase.3: expected status -1, got 0' "$build/red-packed.log"
@@ -168,7 +168,7 @@ receipt = {
     "schema": "knife-vita-effects-inputs-host-v1",
     "created_utc": datetime.now(timezone.utc).isoformat(),
     "result": "pass-host-production-inputs-and-five-mutation-controls",
-    "command": "wsl.exe -d pocket-ubuntu -- env PATH=/opt/vitasdk/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin bash <project>/tools/test-vita-effects-inputs.sh",
+    "command": "bash tools/test-vita-effects-inputs.sh",
     "build_directory": str(build),
     "source": "Actual effect_inputs in an immutable snapshot of knife/vita/effects_backend.inc, included through the complete production gxm_backend.c",
     "host": {"architecture": subprocess.check_output(["uname", "-m"], text=True).strip(),
@@ -180,7 +180,7 @@ receipt = {
     "mutations": json.loads((build / "mutations.json").read_text()),
     "sdk_stubs": [],
     "coverage": [
-        "Null pointers, triangle count and maximum count; invalid enum upper boundary and UINT32_MAX; all 144 legal shader/blend combinations.",
+        "Null pointers, triangle count and maximum count; invalid enum upper boundary and UINT32_MAX; all legal legacy and optional shader/blend combinations.",
         "NaN, positive infinity and negative infinity in every parameter and every float of all three vertices; finite extrema outside packed fields.",
         "Maximum vertex allocation and a non-finite field in its last vertex; vertex and parameter byte immutability checked for every case.",
         "Unequal haze on either later vertex in every haze field; valid shared haze; RimText levels and 24-bit packed colors.",

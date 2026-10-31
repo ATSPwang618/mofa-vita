@@ -22,7 +22,8 @@ from verify_540p_assets import stored
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-x64/assets'
 OUT = ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64'
-FFMPEG = Path('C:/Program Files/ffmpeg/bin/ffmpeg.exe')
+from tool_paths import tool_path
+FFMPEG = tool_path('ffmpeg', 'KNIFE_FFMPEG')
 FFPROBE = FFMPEG.with_name('ffprobe.exe')
 ARCHIVES = [('allpachdml', 4), ('allpacml', 4), ('jallpachd', 1), ('jallpac', 1), ('allui', 1), ('parts', 1)]
 PROFILE = 'png-jpeg-540p-v1'

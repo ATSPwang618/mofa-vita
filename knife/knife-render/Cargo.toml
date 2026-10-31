@@ -5,6 +5,7 @@ edition = "2024"
 license = "MPL-2.0"
 
 [dependencies]
+knife-perf = { path = "../knife-perf" }
 knife-render-api = { path = "../knife-render-api" }
 anyhow = { workspace = true }
 tracing = { workspace = true }

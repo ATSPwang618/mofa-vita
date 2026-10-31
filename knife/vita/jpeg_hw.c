@@ -1,4 +1,5 @@
 #include "jpeg_hw.h"
+#include "perf_audit.h"
 #include "jpeg_hw_driver.h"
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -142,7 +143,9 @@ int kv_jpeg_hw_try(const uint8_t *jpeg, uint32_t bytes, KvDecodedImage *out, uin
     if (initialized < 0) { INC(jpeg_fallback_init); goto cleanup; }
     uint32_t stream_bytes = ALIGN_CDRAM(bytes);
     if (!block_create(&stream, stream_bytes)) { INC(jpeg_fallback_alloc); goto cleanup; }
+    uint64_t copy_started = kv_perf_begin();
     memcpy(stream.base, jpeg, bytes);
+    kv_perf_end(KV_PERF_JPEG_STREAM_COPY, copy_started, bytes, stream_bytes);
     KvJpegHwInfo info = {0};
     rc = kv_jpeg_driver_info(stream.base, bytes, &info);
     if (rc < 0) goto driver_failure;
@@ -159,20 +162,26 @@ int kv_jpeg_hw_try(const uint8_t *jpeg, uint32_t bytes, KvDecodedImage *out, uin
     }
     if (!block_create(&work, work_bytes)) { INC(jpeg_fallback_alloc); goto cleanup; }
     uint8_t *yuv = work.base, *rgba = yuv + csc_offset;
+    uint64_t engine_started = kv_perf_begin();
     rc = kv_jpeg_driver_decode(stream.base, bytes, yuv, info.output_size,
         info.coeff_size ? yuv + info.output_size : NULL, info.coeff_size);
+    kv_perf_end(KV_PERF_JPEG_HW_DECODE, engine_started, info.output_size, rc < 0);
     if (rc < 0) goto driver_failure;
     uint32_t packed = (info.pitch[0].x << 16) | info.pitch[0].y;
     if ((uint32_t)rc != packed) {
         record_contract(&info, 128); INC(jpeg_fallback_contract); goto cleanup;
     }
     block_release(&stream);
+    engine_started = kv_perf_begin();
     rc = kv_jpeg_driver_csc(rgba, yuv, packed, info.pitch[0].x, info.color_space & 65535);
     if (rc < 0) goto driver_failure;
+    kv_perf_end(KV_PERF_JPEG_HW_CSC, engine_started, rgba_bytes, rc < 0);
     pixels = malloc(rgba_bytes);
     if (!pixels) { INC(jpeg_fallback_alloc); goto cleanup; }
+    copy_started = kv_perf_begin();
     for (uint32_t y = 0; y < profile.height; ++y)
         memcpy(pixels + y * profile.width * 4, rgba + y * info.pitch[0].x * 4, profile.width * 4);
+    kv_perf_end(KV_PERF_JPEG_RGBA_COPY, copy_started, rgba_bytes, 0);
     *out = (KvDecodedImage){profile.width, profile.height, profile.width*4, rgba_bytes, pixels};
     pixels = NULL; INC(jpeg_hardware_ok); success = 1; goto cleanup;
 driver_failure:

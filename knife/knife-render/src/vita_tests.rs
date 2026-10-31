@@ -1,6 +1,15 @@
 use super::test_backend::{Control, Event};
 use super::*;
 
+#[path = "../../knife/src/game/text_cache.rs"]
+mod text_cache;
+#[path = "../../knife/src/game/stage_prefix.rs"]
+mod stage_prefix;
+#[path = "../../knife/src/game/group_cache.rs"]
+mod group_cache;
+#[path = "../../knife/src/game/group_batch.rs"]
+mod group_batch;
+
 /// Bytes one scene target occupies after the 256 KiB CDRAM granule, in either variant.
 fn scene_bytes() -> usize {
     let pixels = RENDER_W as usize * RENDER_H as usize * 4;
@@ -269,7 +278,7 @@ fn fused_group_composite_records_one_draw_without_scratch_or_copy_for_native_ble
     {
         let mut enc = r.encoder();
         r.try_group_composite(&mut enc, &canvas, &pixel, &mask, blend, 0.37).unwrap();
-        assert_eq!(enc.commands.len(), 3);
+        assert_eq!(enc.commands.len(), 2, "Begin+Draw stays open until present");
         assert_eq!(r.device.call(|g| g.available_cdram()).unwrap(), headroom);
         r.try_present(enc, &canvas).unwrap();
     }
@@ -305,7 +314,7 @@ fn fused_ps_group_uses_only_the_existing_per_draw_backdrop_and_keeps_the_mask_se
     {
         r.try_group_composite(&mut enc, &canvas, &pixel, &mask, Blend::Ps(op), 0.37).unwrap();
     }
-    assert_eq!(enc.commands.len(), 24 * 4);
+    assert_eq!(enc.commands.len(), 24 * 4 - 1, "only following copies close the previous pass");
     assert_eq!(headroom - r.device.call(|g| g.available_cdram()).unwrap(), scene_bytes());
     r.try_present(enc, &canvas).unwrap();
     let trace = control.borrow();
@@ -360,8 +369,8 @@ fn baked_ui_cache_does_not_consume_one_render_target_per_image() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
     let baseline = r.device.call(|g| Ok(g.live_render_targets())).unwrap();
-    // Only one extra target is available for the entire preparation pass.
-    control.borrow_mut().render_target_limit = Some(baseline + 1);
+    // Immutable decoded images require no extra render-target attachment.
+    control.borrow_mut().render_target_limit = Some(baseline);
     let images = (0..96).map(|i| r.defer_altered([2, 2], [2, 2],
         Arc::from([2, i as u8]), &format!("ui-{i}"), decode_deferred_test).unwrap()).collect::<Vec<_>>();
     submit_deferred(&mut r, &canvas, &images).unwrap();
@@ -377,7 +386,7 @@ fn baked_ui_cache_does_not_consume_one_render_target_per_image() {
             assert!(images.iter().any(|image| image.native.resident_id().unwrap().0 == *id));
         }
     }
-    assert_eq!(sealed, images.len());
+    assert_eq!(sealed, 0, "native uploads never attach a framebuffer");
     drop(trace);
     let before = control.borrow().events.len();
     submit_deferred(&mut r, &canvas, &images).unwrap();
@@ -386,25 +395,22 @@ fn baked_ui_cache_does_not_consume_one_render_target_per_image() {
 }
 
 #[test]
-fn attachment_release_failure_does_not_publish_baked_pixels_or_cache_charge() {
+fn native_image_cache_needs_no_attachment_or_seal_operation() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
     let baseline = r.device.call(|g| Ok(g.live_render_targets())).unwrap();
-    let image = r.defer_altered([2, 2], [2, 2], Arc::from([2, 73]), "seal-failure", decode_deferred_test).unwrap();
+    let image = r.defer_altered([2, 2], [2, 2], Arc::from([2, 73]), "native-source", decode_deferred_test).unwrap();
+    control.borrow_mut().render_target_limit = Some(baseline);
     control.borrow_mut().fail_next_seal = true;
-    let error = submit_deferred(&mut r, &canvas, &[image.clone()]).unwrap_err();
-    assert!(format!("{error:#}").contains("sealing deferred atlas seal-failure"));
-    assert!(image.native.resident_id().is_err());
-    assert_eq!(r.device.resident_deferred_bytes.get(), 0);
-    assert_eq!(r.device.call(|g| Ok(g.live_render_targets())).unwrap(), baseline);
-    assert!(control.borrow().events.iter().any(|event| matches!(event, Event::End)));
-    assert!(!control.borrow().events.iter().any(|event| matches!(event, Event::Seal(_))));
-    // A transient failure in this double can be retried; the native SDK failure
-    // tests separately ensure an uncertain teardown retains a closing C owner.
+    control.borrow_mut().events.clear();
     submit_deferred(&mut r, &canvas, &[image.clone()]).unwrap();
     assert!(image.native.resident_id().is_ok());
     assert_eq!(r.device.resident_deferred_bytes.get(), CDRAM_GRANULE);
     assert_eq!(r.device.call(|g| Ok(g.live_render_targets())).unwrap(), baseline);
+    let trace = control.borrow();
+    assert!(trace.fail_next_seal, "unrelated seal injection remains unused");
+    assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Create { srgb: false, target: false, .. })).count(), 1);
+    assert!(!trace.events.iter().any(|e| matches!(e, Event::Seal(_) | Event::Draw { shader: EffectShader::Alter, .. })));
 }
 
 #[test]
@@ -425,7 +431,7 @@ fn deferred_resident_charge_lasts_until_the_final_encoder_reference_is_released(
 }
 
 #[test]
-fn failed_uploads_and_bakes_never_commit_resident_cache_bytes() {
+fn failed_upload_keeps_zero_charge_but_failed_game_draw_keeps_the_uploaded_owner() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
     let bytes = gxt_fixture([4, 4], 0x8500_0000);
@@ -436,7 +442,8 @@ fn failed_uploads_and_bakes_never_commit_resident_cache_bytes() {
     let rgba = r.defer_altered([2, 2], [2, 2], Arc::from([2, 12]), "failed-bake", decode_deferred_test).unwrap();
     control.borrow_mut().fail_next_draw = true;
     assert!(submit_deferred(&mut r, &canvas, &[rgba.clone()]).is_err());
-    assert_eq!(r.device.resident_deferred_bytes.get(), 0);
+    assert_eq!(r.device.resident_deferred_bytes.get(), CDRAM_GRANULE);
+    assert!(rgba.native.resident_id().is_ok(), "game draw failure must not discard a successful upload");
     submit_deferred(&mut r, &canvas, &[rgba.clone(), compressed.clone()]).unwrap();
     assert_eq!(r.device.resident_deferred_bytes.get(), 2 * CDRAM_GRANULE);
     drop((rgba, compressed));
@@ -462,12 +469,12 @@ fn frame_admission_reclaims_idle_cg_without_redecoding_or_submitting_partial_gam
         Quad::rect(texture.clone(), [0.0, 0.0, 2.0, 2.0], [1.0; 4]),
     ]).unwrap();
     let available = r.device.call(|g| g.available_cdram()).unwrap();
-    control.borrow_mut().external_cdram_bytes = available - CDRAM_GRANULE;
+    control.borrow_mut().external_cdram_bytes = available;
     control.borrow_mut().events.clear();
     let mut admissions = 0;
     r.try_present_with_admission(encoder, &canvas, |reserve| {
         admissions += 1;
-        assert!(reserve().is_err(), "the existing idle CG blocks the source + target peak");
+        assert!(reserve().is_err(), "the existing idle CG blocks the single native allocation");
         assert!(control.borrow().events.is_empty(), "no partial frame or temporary upload before admission");
         drop(idle.take());
         reserve()
@@ -477,7 +484,7 @@ fn frame_admission_reclaims_idle_cg_without_redecoding_or_submitting_partial_gam
     assert!(active.tex.native.resident_id().is_ok());
     let trace = control.borrow();
     assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Destroy(id) if *id == idle_id)).count(), 1);
-    assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Draw { shader: EffectShader::Alter, .. })).count(), 1);
+    assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Draw { shader: EffectShader::Alter, .. })).count(), 0);
     assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Present(_))).count(), 1);
     assert!(matches!(trace.events.first(), Some(Event::Destroy(id)) if *id == idle_id));
 }
@@ -540,7 +547,7 @@ fn gxt_deferred_upload_is_lazy_immutable_and_skips_decode_and_alter() {
         assert_eq!(r.device.encoded_bytes.get(), 0);
         let trace = control.borrow();
         assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::CreateCompressed {
-            payload_bytes, srgb: true, linear: true, size: [4, 4], .. } if *payload_bytes == payload)).count(), 1);
+            payload_bytes, srgb: false, linear: true, size: [4, 4], .. } if *payload_bytes == payload)).count(), 1);
         assert!(!trace.events.iter().any(|e| matches!(e, Event::Create { .. }
             | Event::Draw { shader: EffectShader::Alter, .. })));
         drop(trace);
@@ -586,8 +593,8 @@ fn compressed_and_rgba_preparation_share_headroom_without_an_unneeded_bake_peak(
     let available = r.device.call(|g| g.available_cdram()).unwrap();
     control.borrow_mut().external_cdram_bytes = available - 3 * CDRAM_GRANULE;
     control.borrow_mut().events.clear();
-    // RGBA's temporary source must retire before the larger compressed image
-    // occupies its final storage. Submission still follows this draw order.
+    // The2-block compressed payload and1-block RGBA payload fit exactly,
+    // without an Alter temporary. Submission retains the original draw order.
     submit_deferred(&mut r, &canvas, &[compressed.clone(), rgba.clone()]).unwrap();
     assert_eq!(r.device.call(|g| g.available_cdram()).unwrap(), 0);
     let trace = control.borrow();
@@ -660,9 +667,8 @@ fn deferred_menu_batch_fits_native_peak_without_changing_draw_order() {
     let available = r.device.call(|g| g.available_cdram()).unwrap();
     {
         let mut trace = control.borrow_mut();
-        // Match the menu case: all destinations fit, but small-first uploads
-        // leave less than the large atlas's simultaneous source + target peak.
-        trace.external_cdram_bytes = available - 14 * CDRAM_GRANULE;
+        // Exactly the three new native images fit:1+1+7blocks, no double peak.
+        trace.external_cdram_bytes = available - 9 * CDRAM_GRANULE;
         trace.events.clear();
     }
     let frame = [small_a.clone(), small_b.clone(), large.clone(), pinned.clone()];
@@ -674,12 +680,12 @@ fn deferred_menu_batch_fits_native_peak_without_changing_draw_order() {
         Event::Draw { shader: EffectShader::Sprite, textures, .. } => textures[0],
         _ => None,
     }).collect();
-    assert_eq!(drawn, expected, "baking may be scheduled independently of game draw order");
+    assert_eq!(drawn, expected, "uploads may be scheduled independently of game draw order");
     assert!(!trace.events.iter().any(|event| matches!(event, Event::Destroy(id) if *id == pinned_id)));
 }
 
 #[test]
-fn deferred_native_headroom_includes_bake_peak_and_protects_all_frame_textures() {
+fn deferred_native_headroom_reserves_single_upload_and_protects_all_frame_textures() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
     let make = |n| r.defer_altered([2, 2], [2, 2], Arc::from([2, n]), "lazy", decode_deferred_test).unwrap();
@@ -691,11 +697,11 @@ fn deferred_native_headroom_includes_bake_peak_and_protects_all_frame_textures()
     let old_a = a.native.resident_id().unwrap().0;
     let old_b = b.native.resident_id().unwrap().0;
     let used = 48 * 1024 * 1024 - r.device.call(|g| g.available_cdram()).unwrap();
-    // Only one block remains. Final C fits, but its source + destination need
-    // two. A is older than B but the complete next frame requires A.
+    // No block remains. A is older than B but the complete next frame
+    // requires A, so B must retire before the single allocation for C.
     {
         let mut trace = control.borrow_mut();
-        trace.cdram_limit = Some(used + CDRAM_GRANULE);
+        trace.cdram_limit = Some(used);
         trace.events.clear();
     }
     submit_deferred(&mut r, &canvas, &[a.clone(), c.clone()]).unwrap();
@@ -705,7 +711,7 @@ fn deferred_native_headroom_includes_bake_peak_and_protects_all_frame_textures()
     let trace = control.borrow();
     let retired = trace.events.iter().position(|e| matches!(e, Event::Destroy(id) if *id == old_b)).unwrap();
     let allocation = trace.events.iter().position(|e| matches!(e, Event::Create { .. })).unwrap();
-    assert!(retired < allocation, "native peak must be reserved before the source allocation");
+    assert!(retired < allocation, "native peak must be reserved before the native allocation");
 }
 
 #[test]
@@ -718,16 +724,16 @@ fn deferred_native_headroom_failure_has_no_partial_bake_or_game_submission() {
     let available = r.device.call(|g| g.available_cdram()).unwrap();
     {
         let mut trace = control.borrow_mut();
-        // Other native owners consume all but one allocation. Renderer policy
+        // Other native owners consume all remaining space. Renderer policy
         // itself still has room, and no deferred texture may be evicted.
-        trace.external_cdram_bytes = available - CDRAM_GRANULE;
+        trace.external_cdram_bytes = available;
         trace.events.clear();
     }
     let error = submit_deferred(&mut r, &canvas, &[a.clone(), b.clone()]).unwrap_err();
     assert!(format!("{error:#}").contains("CDRAM"));
     assert!(a.native.resident_id().is_ok());
     assert!(b.native.resident_id().is_err());
-    assert!(control.borrow().events.is_empty(), "insufficient bake peak must fail before GPU allocation or passes");
+    assert!(control.borrow().events.is_empty(), "insufficient native headroom must fail before GPU allocation or passes");
 }
 
 #[test]
@@ -769,20 +775,21 @@ fn ordinary_rgba_and_r8_account_for_pitch_before_memblock_rounding() {
 }
 
 #[test]
-fn immediate_alter_checks_combined_peak_before_allocating_its_source() {
+fn immediate_native_encoded_upload_fits_one_allocation_instead_of_a_double_bake_peak() {
     let (r, control) = setup();
     let available = r.device.call(|g| g.available_cdram()).unwrap();
-    // The real IMG2328 case: a 900x540 source and destination cost 2 MiB
-    // each. Three MiB fits the source alone but can never finish the bake.
     control.borrow_mut().external_cdram_bytes = available - 3 * 1024 * 1024;
     let pixels = vec![120; 900 * 540 * 4];
-    let error = r.try_upload_altered(900, 540, Upload::Rgba8(&pixels), true, "IMG2328").err().unwrap();
-    assert!(format!("{error:#}").contains("CDRAM"));
-    assert!(control.borrow().events.is_empty(), "an impossible source + target peak must allocate neither");
+    let texture = r.try_upload_altered(900, 540, Upload::Rgba8(&pixels), true, "IMG2328").unwrap();
+    assert!(!texture.native.srgb && !texture.native.render_target);
+    assert_eq!(r.device.call(|g| g.available_cdram()).unwrap(), 1024 * 1024);
+    let trace = control.borrow();
+    assert_eq!(trace.events.len(), 1);
+    assert!(matches!(trace.events[0], Event::Create { size: [900, 540], srgb: false, target: false, .. }));
 }
 
 #[test]
-fn immediate_alter_reclaims_before_starting_and_accounts_for_r8_source() {
+fn immediate_r8_upload_uses_one_block_and_does_not_evict_an_idle_image() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
     let idle = r.defer_altered([2, 2], [2, 2], Arc::from([2, 12]), "idle", decode_deferred_test).unwrap();
@@ -790,15 +797,14 @@ fn immediate_alter_reclaims_before_starting_and_accounts_for_r8_source() {
     let available = r.device.call(|g| g.available_cdram()).unwrap();
     control.borrow_mut().external_cdram_bytes = available - 2 * CDRAM_GRANULE;
     control.borrow_mut().events.clear();
-    // R8 source fits one block; pitched RGBA target needs two. Reclaim one
-    // block first. Counting two RGBA allocations would reject a valid bake.
+    // R8 needs one pitched block; no RGBA target or Alter pass exists.
     let pixels = vec![128; 257 * 255];
     let texture = r.try_upload_altered(257, 255, Upload::R8(&pixels), true, "R8-peak").unwrap();
     assert_eq!(texture.physical_size(), [257, 255]);
-    assert!(idle.native.resident_id().is_err());
+    assert!(idle.native.resident_id().is_ok());
     let trace = control.borrow();
-    assert!(matches!(trace.events[0], Event::Destroy(_)), "retirement must precede source allocation");
-    assert!(matches!(trace.events[1], Event::Create { format: TextureFormat::R8, .. }));
+    assert_eq!(trace.events.len(), 1);
+    assert!(matches!(trace.events[0], Event::Create { format: TextureFormat::R8, srgb: false, target: false, .. }));
 }
 
 #[test]
@@ -904,7 +910,7 @@ fn adopted_raw_and_cpu_baked_cg_reload_without_an_alter_pass() {
         control.borrow_mut().events.clear();
         submit_deferred(&mut r, &canvas, &[image.clone()]).unwrap();
         assert!(control.borrow().events.iter().any(|e| matches!(e,
-            Event::Create { srgb: actual, target: false, .. } if *actual == srgb)));
+            Event::Create { srgb: actual, target: false, .. } if !*actual)));
         assert!(!control.borrow().events.iter().any(|e| matches!(e,
             Event::Draw { shader: EffectShader::Alter, .. })));
         assert_eq!(r.device.call(|g| g.read_texture(&image.native.resident_id().unwrap())).unwrap(), pixels);
@@ -986,8 +992,8 @@ fn deferred_images_allocate_only_when_submitted_and_remain_reusable() {
         r.try_present(encoder, &canvas).unwrap();
     }
     let events = &control.borrow().events;
-    assert_eq!(events.iter().filter(|e| matches!(e, Event::Create { .. })).count(), 2);
-    assert_eq!(events.iter().filter(|e| matches!(e, Event::Draw { shader: EffectShader::Alter, .. })).count(), 1);
+    assert_eq!(events.iter().filter(|e| matches!(e, Event::Create { .. })).count(), 1);
+    assert_eq!(events.iter().filter(|e| matches!(e, Event::Draw { shader: EffectShader::Alter, .. })).count(), 0);
 }
 
 #[test]
@@ -1021,7 +1027,7 @@ fn deferred_cache_evicts_inactive_resources_but_pins_the_whole_frame() {
 }
 
 #[test]
-fn deferred_decode_and_bake_failures_roll_back_before_game_render_pass() {
+fn deferred_decode_failure_precedes_submission_and_game_draw_failure_retains_upload() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
     let texture = r.defer_altered([2, 2], [2, 2], Arc::from([2, 12]), "lazy", decode_deferred_test).unwrap();
@@ -1030,7 +1036,8 @@ fn deferred_decode_and_bake_failures_roll_back_before_game_render_pass() {
     r.try_draw(&mut encoder, &canvas, None, &[quad.clone()]).unwrap();
     control.borrow_mut().fail_next_draw = true;
     assert!(r.try_present(encoder, &canvas).is_err());
-    assert!(texture.native.resident_id().is_err());
+    assert!(texture.native.resident_id().is_ok());
+    assert_eq!(r.device.resident_deferred_bytes.get(), CDRAM_GRANULE);
     assert!(control.borrow().active.is_none());
     control.borrow_mut().events.clear();
     let mut encoder = r.encoder();
@@ -1343,6 +1350,8 @@ fn vita_fullscreen_is_native_540p_with_original_script_coordinates() {
     let target = r.create_scene_target(CANVAS_W, CANVAS_H, "native scene");
     #[cfg(feature = "assets-540p")]
     assert_eq!([RENDER_W, RENDER_H], [960, 540]);
+    #[cfg(feature = "assets-540p")]
+    assert_eq!(performance_dimensions(), ([960, 540], [960, 540]));
     #[cfg(not(feature = "assets-540p"))]
     assert_eq!([RENDER_W, RENDER_H], [480, 270]);
     assert_eq!(target.tex.uv_extent(), [1920.0, 1080.0]);
@@ -1572,24 +1581,11 @@ fn transition_blur_rule_and_alter_keep_bindings_color_space_and_density() {
     let altered = r
         .try_upload_altered(1, 1, Upload::Rgba8(&[10, 20, 30, 255]), true, "alter")
         .unwrap();
-    assert!(altered.native.srgb && altered.native.render_target);
-    assert_eq!(commands(&control), ["begin", "draw", "end"]);
-    assert!(control.borrow().events.iter().any(|e| matches!(
-        e,
-        Event::Draw {
-            shader: EffectShader::Alter,
-            blend: EffectBlend::Opaque,
-            ..
-        }
-    )));
-    assert!(control.borrow().events.iter().any(|e| matches!(
-        e,
-        Event::Create {
-            srgb: true,
-            target: false,
-            ..
-        }
-    )));
+    assert!(!altered.native.srgb && !altered.native.render_target);
+    assert!(commands(&control).is_empty(), "native image upload has no bake pass");
+    let trace = control.borrow();
+    assert_eq!(trace.events.len(), 1);
+    assert!(matches!(trace.events[0], Event::Create { srgb: false, target: false, .. }));
 }
 
 #[test]
@@ -1715,13 +1711,10 @@ fn readback_layout_errors_and_frame_budget_fail_without_partial_submission() {
 }
 
 #[test]
-fn output_curve_matches_desktop_levels() {
-    assert_eq!(
-        [0, 8, 12, 21, 63, 255].map(output_level),
-        [0, 2, 4, 13, 61, 255]
-    );
+fn native_encoded_output_and_target_levels_are_identity_for_every_byte() {
     for v in 0..=255 {
-        assert_eq!(target_level(v), crate::desktop::target_level(v));
+        assert_eq!(output_level(v), v);
+        assert_eq!(target_level(v), v);
     }
 }
 
@@ -1731,7 +1724,7 @@ fn r8_ignores_srgb_hints_and_numeric_overflow_never_records_a_partial_pass() {
     let altered = r
         .try_upload_altered(1, 1, Upload::R8(&[128]), true, "coverage")
         .unwrap();
-    assert!(altered.native.srgb);
+    assert!(!altered.native.srgb && !altered.native.render_target);
     assert!(control.borrow().events.iter().any(|e| matches!(
         e,
         Event::Create {
@@ -1815,4 +1808,701 @@ fn identical_draws_in_one_run_are_coalesced() {
         _ => None,
     });
     assert_eq!(vertices, Some(12), "two quads of six vertices");
+}
+
+#[test]
+fn ready_gxt_keeps_worker_owner_on_failure_and_releases_after_first_commit() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "ready-gxt-canvas");
+    let bytes = gxt_fixture([4, 4], 0x8500_0000);
+    let calls = Rc::new(Cell::new(0));
+    let load = { let calls = calls.clone(); let bytes = bytes.clone(); Rc::new(move || {
+        calls.set(calls.get() + 1); Ok(bytes.clone())
+    }) };
+    let size = bytes.capacity();
+    let view = crate::ByteView::owned(bytes);
+    let tex = r.defer_gxt_ready([8, 8], [4, 4], view, "ready-test", load, extract_test_gxt).unwrap();
+    assert_eq!(r.device.encoded_bytes.get(), size);
+    control.borrow_mut().fail_next_compressed_create = true;
+    assert!(submit_deferred(&mut r, &canvas, &[tex.clone()]).is_err());
+    assert_eq!(calls.get(), 0, "worker payload must avoid archive reload even on retry");
+    assert_eq!(r.device.encoded_bytes.get(), size, "failed upload retains CPU owner");
+    submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+    assert_eq!(r.device.encoded_bytes.get(), 0, "successful commit releases owner charge");
+    assert_eq!(calls.get(), 0);
+    submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+    assert_eq!(calls.get(), 0, "resident frame does not reload");
+    let id = tex.native.id.borrow_mut().take().unwrap();
+    r.device.retire(&id);
+    tex.native.release_resident_charge().unwrap();
+    submit_deferred(&mut r, &canvas, &[tex]).unwrap();
+    assert_eq!(calls.get(), 1, "only a true GPU eviction reloads the locator");
+}
+
+#[test]
+fn stage_signature_tracks_render_inputs_and_successful_pixel_mutations() {
+    let (r, _) = setup();
+    let tex = r.create_writable(4, 4, false, "signature pixels");
+    let original = Quad::rect(tex.clone(), [0., 0., 4., 4.], [1.; 4]);
+    let signature = original.render_signature();
+    let exact_key = original.render_key();
+    let cases: Vec<(&str, Box<dyn Fn(&mut Quad)>)> = vec![
+        ("uv", Box::new(|q| q.uv[2][0] = 0.9)),
+        ("blend", Box::new(|q| q.blend = Blend::Add)),
+        ("shade", Box::new(|q| q.shade = Shade::Nega)),
+        ("haze", Box::new(|q| q.haze[0][2] = 0.3)),
+        ("clip", Box::new(|q| q.clip = Some(q.pos))),
+        ("mask mode", Box::new(|q| q.masked = true)),
+        ("soft", Box::new(|q| q.soft = Some(SoftClip { inner: [0., 0., 1., 1.],
+            pivot: [0., 0.], rot: 0.2, radius: 2., row: 0, texels: 4, fill: 0.5 }))),
+    ];
+    for (name, mutate) in cases {
+        let mut changed = original.clone(); mutate(&mut changed);
+        assert_ne!(signature, changed.render_signature(), "{name}");
+        assert_ne!(exact_key, changed.render_key(), "exact {name}");
+    }
+    let mut ruled = original.clone();
+    ruled.rule = Some(RuleMask::new(r.white.clone(), 0.5));
+    let ruled_signature = ruled.render_signature();
+    let ruled_key = ruled.render_key();
+    ruled.rule.as_mut().unwrap().soft = 7.;
+    assert_ne!(ruled_signature, ruled.render_signature());
+    assert_ne!(ruled_key, ruled.render_key());
+    ruled.rule.as_mut().unwrap().soft = 128.;
+    ruled.rule.as_mut().unwrap().flip = 1;
+    assert_ne!(ruled_signature, ruled.render_signature());
+    assert_ne!(ruled_key, ruled.render_key());
+    assert!(r.try_write_region(&tex, [4, 0, 1, 1], 4, &[255; 4]).is_err());
+    assert_eq!(signature, original.render_signature(), "rejected update changes no pixels");
+    assert_eq!(exact_key, original.render_key(), "rejected update changes no exact key");
+    r.try_write_region(&tex, [0, 0, 1, 1], 4, &[255; 4]).unwrap();
+    assert_ne!(signature, original.render_signature(), "same handle, new pixels");
+    assert_ne!(exact_key, original.render_key(), "same handle, new pixel generation");
+}
+
+#[test]
+fn ps19_fetch_routing_requires_the_actual_entry_capability() {
+    assert_eq!(select_ps_fetch(PsOp::Normal, false, true, false, false, false), Some(EffectShader::PsFetch19));
+    assert_eq!(select_ps_fetch(PsOp::Normal, true, false, false, false, false), Some(EffectShader::PsFetch));
+    assert_eq!(select_ps_fetch(PsOp::Normal, true, true, false, false, false), Some(EffectShader::PsFetch19));
+    assert_eq!(select_ps_fetch(PsOp::Normal, false, false, false, false, false), None);
+    assert_eq!(select_ps_fetch(PsOp::Add, false, true, false, false, false), None);
+    assert_eq!(select_ps_fetch(PsOp::Add, true, true, false, false, false), Some(EffectShader::PsFetch));
+}
+
+#[test]
+fn ps_specialised_routes_require_capabilities_and_keep_group_fallbacks() {
+    assert_eq!(select_ps_fetch(PsOp::HardLight, false, false, true, false, false), Some(EffectShader::PsFetch11));
+    assert_eq!(select_ps_fetch(PsOp::Overlay, false, false, false, true, false), Some(EffectShader::PsFetch13));
+    assert_eq!(select_ps_fetch(PsOp::HardLight, true, false, false, true, false), Some(EffectShader::PsFetch));
+    assert_eq!(select_ps_fetch(PsOp::Overlay, false, true, true, false, false), None);
+    assert_eq!(select_ps_fetch(PsOp::Darken, false, false, false, false, true), Some(EffectShader::PsFetch2));
+    assert_eq!(select_ps_fetch(PsOp::Darken, true, false, false, false, true), Some(EffectShader::PsFetch2));
+    assert_eq!(select_ps_fetch(PsOp::Darken, true, false, false, false, false), Some(EffectShader::PsFetch));
+    assert_eq!(select_ps_fetch(PsOp::Darken, false, false, false, false, false), None);
+    assert_eq!(select_group_ps_fetch(PsOp::Normal, true, true, true), Some(EffectShader::PsGroup19));
+    assert_eq!(select_group_ps_fetch(PsOp::Normal, true, true, false), Some(EffectShader::PsFetch19));
+    assert_eq!(select_group_ps_fetch(PsOp::Normal, true, false, false), Some(EffectShader::PsFetch));
+    assert_eq!(select_group_ps_fetch(PsOp::Normal, false, false, false), None);
+    assert_eq!(select_group_ps_fetch(PsOp::HardLight, true, true, true), Some(EffectShader::PsFetch));
+    assert_eq!(select_group_ps_fetch(PsOp::Overlay, false, false, true), None);
+    assert_eq!(select_group_ps_fetch(PsOp::Darken, true, false, false), Some(EffectShader::PsFetch));
+}
+
+#[test]
+fn darken2_recording_uses_only_the_plain_source_and_falls_back_before_omitting_snapshot() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    let (mut r, control) = setup();
+    let target = r.create_target(2, 2, "darken target");
+    let mut q = Quad::rect(r.white.clone(), [0., 0., 2., 2.], [0.4, 0.5, 0.6, 0.7]);
+    q.blend = Blend::Ps(PsOp::Darken);
+    for (capabilities, shade, expected, snapshot) in [
+        (1u32 << 25, Shade::Sprite, EffectShader::PsFetch2, false),
+        ((1 << 25) | (1 << 17), Shade::Sprite, EffectShader::PsFetch2, false),
+        ((1 << 25) | (1 << 17), Shade::NoAlpha, EffectShader::PsFetch, false),
+        (1 << 25, Shade::Fill, EffectShader::Ps, true),
+        (1 << 17, Shade::Sprite, EffectShader::PsFetch, false),
+        (0, Shade::Sprite, EffectShader::Ps, true),
+    ] {
+        control.borrow_mut().shader_capabilities = capabilities;
+        q.shade = shade;
+        let mut encoder = r.encoder();
+        r.try_draw(&mut encoder, &target, None, &[q.clone()]).unwrap();
+        assert!(encoder.commands.iter().any(|c| matches!(c,
+            Command::Draw { shader, blend: EffectBlend::Opaque, params, .. }
+                if *shader == expected && params[0] == 2.0)),
+            "caps={capabilities:x} shade={shade:?} expected={expected:?}");
+        assert_eq!(encoder.commands.iter().any(|c| matches!(c, Command::Copy { .. })), snapshot);
+    }
+}
+
+fn stage_prefix_frame(r: &Renderer, shift: f32) -> Vec<Quad> {
+    let full = [0., 0., CANVAS_W as f32, CANVAS_H as f32];
+    let mut quads = [Blend::Alpha, Blend::Ps(PsOp::Overlay), Blend::Ps(PsOp::HardLight),
+        Blend::Ps(PsOp::Overlay), Blend::Ps(PsOp::Darken)].into_iter()
+        .map(|blend| Quad { blend, ..Quad::rect(r.white.clone(), full, [0.4, 0.6, 0.8, 0.7]) })
+        .collect::<Vec<_>>();
+    for position in &mut quads[2].pos { position[0] += shift; }
+    quads
+}
+
+#[test]
+fn stage_prefix_build_and_hit_preserve_clear_and_destination_dependent_suffix_order() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    let (mut r, control) = setup();
+    control.borrow_mut().shader_capabilities = (1 << 20) | (1 << 21) | (1 << 25);
+    let stage = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix stage");
+    let clear = [0.2, 0.3, 0.4, 1.0];
+    let mut cache = stage_prefix::Cache::default();
+    let mut first = stage_prefix_frame(&r, 0.);
+    let original = first.iter().map(Quad::render_key).collect::<Vec<_>>();
+    let mut enc = r.encoder();
+    assert!(!cache.apply(&mut r, &mut enc, &stage, clear, &mut first));
+    assert!(enc.commands.is_empty() && cache.bytes() == 0);
+    assert_eq!(first.iter().map(Quad::render_key).collect::<Vec<_>>(), original);
+
+    let mut second = stage_prefix_frame(&r, 1.);
+    let suffix = second[2..].iter().map(Quad::render_key).collect::<Vec<_>>();
+    assert!(cache.apply(&mut r, &mut enc, &stage, clear, &mut second));
+    assert_eq!(second.len(), 4);
+    assert_eq!(second[1..].iter().map(Quad::render_key).collect::<Vec<_>>(), suffix);
+    assert_eq!((second[0].shade, second[0].blend, second[0].color),
+        (Shade::NoAlpha, Blend::Opaque, [1.; 4]));
+    assert_eq!(second[0].tex.physical_size(), stage.tex.physical_size());
+    let cached = second[0].tex.clone();
+    assert!(enc.commands.iter().any(|c| matches!(c, Command::Begin { target, clear: Some(c) }
+        if Rc::ptr_eq(target, &cached.native) && *c == clear)));
+    let producer = enc.commands.iter().filter_map(|c| match c {
+        Command::Draw { shader, .. } => Some(*shader), _ => None,
+    }).collect::<Vec<_>>();
+    assert_eq!(producer, [EffectShader::Sprite, EffectShader::PsFetch13]);
+    r.try_draw(&mut enc, &stage, Some(clear), &second).unwrap();
+    let commands = std::mem::take(&mut enc.commands);
+    let stage_begin = commands.iter().position(|c| matches!(c, Command::Begin { target, .. }
+        if Rc::ptr_eq(target, &stage.tex.native))).unwrap();
+    let suffix_draws = commands[stage_begin..].iter().filter_map(|c| match c {
+        Command::Draw { shader, .. } => Some(*shader), _ => None,
+    }).collect::<Vec<_>>();
+    assert_eq!(suffix_draws, [EffectShader::NoAlpha, EffectShader::PsFetch11,
+        EffectShader::PsFetch13, EffectShader::PsFetch2]);
+
+    let mut third = stage_prefix_frame(&r, 2.);
+    let mut hit_enc = r.encoder();
+    assert!(cache.apply(&mut r, &mut hit_enc, &stage, clear, &mut third));
+    assert!(Arc::ptr_eq(&third[0].tex, &cached));
+    assert!(hit_enc.commands.is_empty(), "a hit must not rebuild the prefix");
+    assert_eq!(third[1].blend, Blend::Ps(PsOp::HardLight));
+    assert_eq!(third[2].blend, Blend::Ps(PsOp::Overlay));
+    assert_eq!(third[3].blend, Blend::Ps(PsOp::Darken));
+}
+
+#[test]
+fn stage_prefix_cached_version_source_generation_and_clear_changes_invalidate() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    let (mut r, control) = setup();
+    control.borrow_mut().shader_capabilities = 1 << 21;
+    let stage = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix invalidation stage");
+    let mut cache = stage_prefix::Cache::default();
+    let clear = [0., 0., 0., 1.];
+    for shift in [0., 1.] {
+        let mut enc = r.encoder();
+        let mut frame = stage_prefix_frame(&r, shift);
+        cache.apply(&mut r, &mut enc, &stage, clear, &mut frame);
+    }
+    let mut quads = stage_prefix_frame(&r, 2.);
+    let mut enc = r.encoder();
+    assert!(cache.apply(&mut r, &mut enc, &stage, clear, &mut quads));
+    assert!(enc.commands.is_empty());
+    let cached_target = RenderTarget { tex: quads[0].tex.clone() };
+    let before = cached_target.tex.render_identity();
+    let mut mutation = r.encoder();
+    r.try_draw(&mut mutation, &cached_target, Some([1.; 4]), &[]).unwrap();
+    assert_ne!(before, cached_target.tex.render_identity());
+    let mut mutated = stage_prefix_frame(&r, 3.);
+    assert!(cache.apply(&mut r, &mut enc, &stage, clear, &mut mutated));
+    assert!(enc.commands.iter().any(|c| matches!(c, Command::Draw { .. })),
+        "externally changed cached pixels require rebuilding");
+    let mut changed_clear = stage_prefix_frame(&r, 4.);
+    let new_clear = [1., 1., 1., 1.];
+    let mut enc = r.encoder();
+    assert!(cache.apply(&mut r, &mut enc, &stage, new_clear, &mut changed_clear));
+    assert!(enc.commands.iter().any(|c| matches!(c, Command::Begin { clear: Some(c), .. }
+        if *c == new_clear)));
+    r.try_write_region(&r.white, [0, 0, 1, 1], 4, &[1, 2, 3, 255]).unwrap();
+    let mut new_source = stage_prefix_frame(&r, 5.);
+    let mut enc = r.encoder();
+    assert!(!cache.apply(&mut r, &mut enc, &stage, new_clear, &mut new_source));
+    assert!(enc.commands.is_empty(), "changed source must not reuse the old prefix");
+    let mut settled_source = stage_prefix_frame(&r, 6.);
+    assert!(cache.apply(&mut r, &mut enc, &stage, new_clear, &mut settled_source));
+    assert!(enc.commands.iter().any(|c| matches!(c, Command::Draw { .. })));
+}
+
+#[test]
+fn stage_prefix_live_target_aliases_nonopaque_alpha_and_unsupported_blends_bypass() {
+    let (mut r, _) = setup();
+    let stage = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix alias stage");
+    let other = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix live source");
+    for kind in 0..5 {
+        let mut cache = stage_prefix::Cache::default();
+        for shift in [0., 1.] {
+            let mut quads = stage_prefix_frame(&r, shift);
+            let mut clear = [0., 0., 0., 1.];
+            match kind {
+                0 => quads[0].tex = stage.tex.clone(),
+                1 => quads[4].tex = other.tex.clone(),
+                2 => quads[0].blend = Blend::Over,
+                3 => clear[3] = 0.,
+                _ => quads[1].masked = true,
+            }
+            let original = quads.iter().map(Quad::render_key).collect::<Vec<_>>();
+            let mut enc = r.encoder();
+            assert!(!cache.apply(&mut r, &mut enc, &stage, clear, &mut quads));
+            assert!(enc.commands.is_empty() && cache.bytes() == 0);
+            assert_eq!(quads.iter().map(Quad::render_key).collect::<Vec<_>>(), original);
+        }
+    }
+}
+
+#[test]
+fn stage_prefix_pressure_bypass_and_trim_keep_recorded_texture_ownership_safe() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    let (mut r, control) = setup();
+    control.borrow_mut().shader_capabilities = (1 << 20) | (1 << 21) | (1 << 25);
+    let stage = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix pressure stage");
+    let mut cache = stage_prefix::Cache::default();
+    let mut first = stage_prefix_frame(&r, 0.);
+    let mut first_enc = r.encoder();
+    assert!(!cache.apply(&mut r, &mut first_enc, &stage, [0., 0., 0., 1.], &mut first));
+    let available = r.vita_cache_headroom().unwrap();
+    control.borrow_mut().external_cdram_bytes = available - 1024 * 1024;
+    let mut pressure = stage_prefix_frame(&r, 1.);
+    let mut enc = r.encoder();
+    assert!(!cache.apply(&mut r, &mut enc, &stage, [0., 0., 0., 1.], &mut pressure));
+    assert!(enc.commands.is_empty() && cache.bytes() == 0 && pressure.len() == 5);
+    control.borrow_mut().external_cdram_bytes = 0;
+    let mut ready = Vec::new();
+    for shift in 2..=5 {
+        ready = stage_prefix_frame(&r, shift as f32);
+        let admitted = cache.apply(&mut r, &mut enc, &stage, [0., 0., 0., 1.], &mut ready);
+        assert_eq!(admitted, shift == 5, "bounded retry avoids repeated pressure churn");
+    }
+    let id = ready[0].tex.native.resident_id().unwrap().0;
+    r.try_draw(&mut enc, &stage, Some([0., 0., 0., 1.]), &ready).unwrap();
+    drop(ready);
+    cache.clear();
+    assert!(!control.borrow().events.iter().any(|e| matches!(e, Event::Destroy(v) if *v == id)));
+    r.try_present(enc, &stage).unwrap();
+    assert!(control.borrow().events.iter().any(|e| matches!(e, Event::Destroy(v) if *v == id)));
+}
+
+#[test]
+fn optional_gpu_cache_admission_reclaims_only_cold_unpinned_residency_with_one_mib_spare() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    let (mut r, control) = setup();
+    let stage = r.create_scene_target(CANVAS_W, CANVAS_H, "optional admission stage");
+    let bytes = gxt_fixture([4,4], 0x8500_0000);
+    let images: Vec<_> = (0..11).map(|_| defer_test_gxt(&r, &bytes, {
+        let bytes=bytes.clone();Rc::new(move||Ok(bytes.clone()))
+    }).unwrap()).collect();
+    submit_deferred(&mut r, &stage, &images).unwrap();
+    submit_deferred(&mut r, &stage, &images[..1]).unwrap(); // latest submitted hot set
+    let mut enc = r.encoder();
+    let full=[0.,0.,CANVAS_W as f32,CANVAS_H as f32];
+    r.try_draw(&mut enc,&stage,None,&[Quad::rect(images[2].clone(),full,[1.;4])]).unwrap();
+    let upcoming=[Quad::rect(images[1].clone(),full,[1.;4])];
+    let available=r.vita_cache_headroom().unwrap();
+    control.borrow_mut().external_cdram_bytes=available-1024*1024;
+    let charge=r.vita_target_allocation_bytes(&stage).unwrap();
+    assert!(r.vita_prepare_cache_allocation(&enc,&upcoming,charge).unwrap());
+    for source in &images[..3] { assert!(source.native.resident_id().is_ok()); }
+    let evicted=images[3..].iter().filter(|source| source.native.resident_id().is_err()).count();
+    assert!(evicted>0 && evicted<=8);
+    let _prefix=r.try_create_scene_target(CANVAS_W,CANVAS_H,"admitted prefix").unwrap();
+    assert!(r.vita_cache_headroom().unwrap()>=knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES);
+    assert!(r.vita_cache_headroom().unwrap()<knife_perf::memory_budget::GPU_PRESSURE_HEADROOM,
+        "the duplicate 8MiB internal gate must not block this bounded cache");
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum QuantizedSurface {
+    External(usize),
+    Clear([u32;4]),
+    Draw { previous:Box<QuantizedSurface>, shader:u32, blend:u32,
+        inputs:[Option<Box<QuantizedSurface>>;4], params:[u32;8], vertices:Vec<u32> },
+}
+/// A structural pixel-operation oracle: each real Draw is a separate UCHAR4
+/// quantization node. Resolve sampled RTs to their contents at that exact draw,
+/// so changing order, dropping a clear/mask or overwriting a retained producer
+/// changes the graph. EndScene stores the already quantized target unchanged.
+fn quantized_graph(commands:&[Command], state:&mut HashMap<usize,QuantizedSurface>) {
+    let mut target=None;
+    for c in commands {
+        match c {
+            Command::Begin {target:t,clear}=>{
+                let id=Rc::as_ptr(t)as usize;target=Some(id);
+                if let Some(clear)=clear {state.insert(id,QuantizedSurface::Clear(clear.map(f32::to_bits)));}
+            }
+            Command::End=>target=None,
+            Command::Copy {..}=>panic!("eligible native-fetch path must need no snapshot copies"),
+            Command::Draw {vertices,shader,blend,textures,params}=>{
+                let id=target.expect("draw owns an open target");
+                let inputs=textures.each_ref().map(|t|t.as_ref().map(|t|{
+                    let id=Rc::as_ptr(t)as usize;
+                    Box::new(state.get(&id).cloned().unwrap_or(QuantizedSurface::External(id)))
+                }));
+                let words=vertices.iter().flat_map(|v|v.pos.iter().chain(v.uv.iter())
+                    .chain(v.color.iter()).chain(v.haze.iter().flatten()).chain(v.soft.iter().flatten()))
+                    .map(|v|v.to_bits()).collect();
+                let old=state.remove(&id).unwrap_or(QuantizedSurface::External(id));
+                state.insert(id,QuantizedSurface::Draw {previous:Box::new(old),shader:*shader as u32,
+                    blend:*blend as u32,inputs,params:params.map(f32::to_bits),vertices:words});
+            }
+        }
+    }
+}
+
+fn group_batch_frame(r:&Renderer,phase:f32)->Vec<group_batch::Draw> {
+    let full=[0.,0.,CANVAS_W as f32,CANVAS_H as f32];
+    let mut out=Vec::new();
+    for group in 0..3 {
+        let color=[0.21+group as f32*0.07,0.43,0.68,0.49];
+        let stage=Quad {blend:Blend::Ps(PsOp::Normal),
+            ..Quad::rect(r.white.clone(),full,color)};
+        out.push(group_batch::Draw::Stage(stage));
+        let mut pixel=Quad {shade:Shade::NoAlpha,blend:Blend::Ps(PsOp::Normal),
+            ..Quad::rect(r.white.clone(),full,color)};
+        pixel.color[0]+=phase*(group+1)as f32*0.01;
+        out.push(group_batch::Draw::Pixel {quad:pixel,clear:true});
+        let mut mask=Quad::rect(r.white.clone(),full,[0.31,0.53,0.77,0.61]);
+        mask.blend=Blend::Over;
+        mask.color[3]+=group as f32*0.04;
+        out.push(group_batch::Draw::Mask {quad:mask,clear:true});
+        out.push(group_batch::Draw::Composite {blend:[Blend::Alpha,Blend::Ps(PsOp::Normal),Blend::Over][group],
+            alpha:0.57+group as f32*0.08});
+    }
+    out
+}
+
+fn record_original_group_stream(r:&mut Renderer,enc:&mut CommandEncoder,stage:&RenderTarget,
+    pair:&[RenderTarget;2],scratch:&RenderTarget,draws:Vec<group_batch::Draw>) {
+    let mut run=Vec::new();let mut pending:[Vec<Quad>;2]=[Vec::new(),Vec::new()];let mut clear=Some([0.,0.,0.,1.]);
+    for draw in draws {
+        match draw {
+            group_batch::Draw::Stage(q)=>run.push(q),
+            group_batch::Draw::Pixel {quad,clear:c}=>{assert!(c);pending[0].push(quad);}
+            group_batch::Draw::Mask {quad,clear:c}=>{assert!(c);pending[1].push(quad);}
+            group_batch::Draw::Composite {blend,alpha}=>{
+                for k in 0..2 {r.try_draw(enc,&pair[k],Some([0.;4]),&std::mem::take(&mut pending[k])).unwrap();}
+                r.try_draw(enc,stage,clear.take(),&std::mem::take(&mut run)).unwrap();
+                r.try_group_composite_via_scratch(enc,stage,&pair[0],&pair[1],scratch,blend,alpha).unwrap();
+            }
+        }
+    }
+    r.try_draw(enc,stage,clear,&run).unwrap();
+}
+
+#[test]
+fn retained_group_batch_preserves_every_rgba8_node_and_dynamic_pair_while_reducing_stage_passes() {
+    let _options=OptimizationScope::set(knife_perf::optimizations::GROUP_FUSED|knife_perf::optimizations::PS_FETCH);
+    let (mut r,control)=setup();
+    control.borrow_mut().shader_capabilities=(1<<15)|(1<<19)|(1<<23);
+    let stage=r.create_scene_target(CANVAS_W,CANVAS_H,"retained stage");
+    let scratch=r.create_scene_target(CANVAS_W,CANVAS_H,"retained scratch");
+    let old_pair=["old pixel","old mask"].map(|s|r.create_scene_target(CANVAS_W,CANVAS_H,s));
+    let mut pair=["group pixel","group mask"].map(|s|r.create_scene_target(CANVAS_W,CANVAS_H,s));
+    let mut cache=group_cache::Cache::default();
+    let mut old_state=HashMap::new();let mut new_state=HashMap::new();
+    let mut prior=None;
+    for phase in [0.,1.,2.] {
+        cache.begin_frame();
+        let mut old=r.encoder();
+        let original=group_batch_frame(&r,phase);
+        record_original_group_stream(&mut r,&mut old,&stage,&old_pair,&scratch,original);
+        assert_eq!(r.vita_target_passes(&old,&stage).unwrap(),3);
+        quantized_graph(&old.commands,&mut old_state);
+        let mut new=r.encoder();
+        let frame=group_batch_frame(&r,phase);
+        assert!(group_batch::render(&mut r,&mut new,&stage,&mut pair,&scratch,&mut cache,[0.,0.,0.,1.],frame,|_,_|{}));
+        assert_eq!(r.vita_target_passes(&new,&stage).unwrap(),1);
+        let old_draws=old.commands.iter().filter(|c|matches!(c,Command::Draw {..})).count();
+        let new_draws=new.commands.iter().filter(|c|matches!(c,Command::Draw {..})).count();
+        if phase==0. {assert_eq!(new_draws,old_draws,"pass batching must not add producer work");}
+        assert!(new_draws<=old_draws);
+        quantized_graph(&new.commands,&mut new_state);
+        let id=Rc::as_ptr(&stage.tex.native)as usize;
+        assert_eq!(old_state[&id],new_state[&id]);
+        for k in 0..2 {assert_eq!(old_state[&(Rc::as_ptr(&old_pair[k].tex.native)as usize)],
+            new_state[&(Rc::as_ptr(&pair[k].tex.native)as usize)]);}
+        if let Some(prior)=prior {assert_ne!(new_state[&id],prior,"live motion must keep changing results");}
+        prior=Some(new_state[&id].clone());
+        assert!(cache.bytes()<=knife_perf::memory_budget::GPU_GROUP_BYTES);
+    }
+}
+
+#[test]
+fn retained_group_batch_rejects_alias_inheritance_tail_and_admission_before_producer_recording() {
+    let _options=OptimizationScope::set(knife_perf::optimizations::GROUP_FUSED|knife_perf::optimizations::PS_FETCH);
+    let (mut r,control)=setup();control.borrow_mut().shader_capabilities=(1<<15)|(1<<19)|(1<<23);
+    let stage=r.create_scene_target(CANVAS_W,CANVAS_H,"batch rejected stage");
+    let scratch=r.create_scene_target(CANVAS_W,CANVAS_H,"batch rejected scratch");
+    let mut pair=["group pixel","group mask"].map(|s|r.create_scene_target(CANVAS_W,CANVAS_H,s));
+    for kind in 0..6 {
+        let mut cache=group_cache::Cache::default();let mut frame=group_batch_frame(&r,0.);
+        match kind {
+            0=>{if let group_batch::Draw::Pixel {clear,..}=&mut frame[1] {*clear=false;}},
+            1=>{if let group_batch::Draw::Pixel {quad,..}=&mut frame[1] {quad.tex=stage.tex.clone();}},
+            2=>{if let group_batch::Draw::Mask {quad,..}=&mut frame[2] {
+                quad.rule=Some(RuleMask::new(pair[0].tex.clone(),0.));}},
+            3=>frame.push(group_batch::Draw::Pixel {quad:Quad::rect(r.white.clone(),[0.,0.,2.,2.],[1.;4]),clear:false}),
+            4=>control.borrow_mut().shader_capabilities=0,
+            _=>{let available=r.vita_cache_headroom().unwrap();control.borrow_mut().external_cdram_bytes=available-1024*1024;},
+        }
+        let mut enc=r.encoder();
+        assert!(!group_batch::render(&mut r,&mut enc,&stage,&mut pair,&scratch,&mut cache,[0.,0.,0.,1.],frame,|_,_|{}));
+        assert!(enc.commands.is_empty(),"rejected optional path records no half-produced frame");
+        control.borrow_mut().shader_capabilities=(1<<15)|(1<<19)|(1<<23);
+        control.borrow_mut().external_cdram_bytes=0;
+    }
+}
+
+#[test]
+fn plain_ps_source_rejects_every_effect_that_the_entry_omits() {
+    let (r, _) = setup();
+    let original = Quad::rect(r.white.clone(), [0., 0., 2., 2.], [0.3, 0.6, 0.9, 0.5]);
+    assert!(plain_ps_source(&original));
+    for shade in [Shade::Fill, Shade::NoAlpha, Shade::ForceAlpha, Shade::Mono,
+        Shade::Nega, Shade::Text, Shade::RimText] {
+        let mut q = original.clone(); q.shade = shade;
+        assert!(!plain_ps_source(&q), "{shade:?}");
+    }
+    for row in 0..2 { for column in 0..4 {
+        let mut q = original.clone(); q.haze[row][column] = 0.1;
+        assert!(!plain_ps_source(&q), "haze/premultiply {row}/{column}");
+    } }
+    let mut q = original.clone(); q.masked = true;
+    assert!(!plain_ps_source(&q));
+    q = original.clone(); q.rule = Some(RuleMask::new(r.white.clone(), 0.0));
+    assert!(!plain_ps_source(&q));
+    q = original.clone(); q.soft = Some(SoftClip { inner: [0., 0., 1., 1.],
+        pivot: [0., 0.], rot: 0., radius: 1., row: 0, texels: 4, fill: 0. });
+    assert!(!plain_ps_source(&q));
+    // Geometric scissor/UV/tint stay valid: those inputs are still consumed.
+    q = original; q.clip = Some([[0.,0.],[1.,0.],[1.,1.],[0.,1.]]);
+    q.uv = [[0.2,0.1],[0.8,0.1],[0.8,0.9],[0.2,0.9]];
+    assert!(plain_ps_source(&q));
+}
+
+#[test]
+fn scene_plan_contains_all_unique_draw_inputs_and_copy_source() {
+    let (r, control) = setup();
+    let dst = r.create_target(2, 2, "planned target");
+    let src = r.create_target(2, 2, "planned source");
+    let aux = r.create_target(2, 2, "planned aux");
+    let mut encoder = r.encoder();
+    encoder.commands.push(Command::Begin { target: dst.tex.native.clone(), clear: None });
+    encoder.commands.push(Command::Draw { vertices: vec![Vertex { pos: [0.0; 2], uv: [0.0; 2], color: [1.0; 4], haze: [[0.0; 4]; 2], soft: [[0.0; 4]; 3] }; 6], shader: EffectShader::Sprite,
+        blend: EffectBlend::Alpha, textures: [Some(src.tex.native.clone()), Some(aux.tex.native.clone()), Some(src.tex.native.clone()), None], params: [0.0; 8] });
+    encoder.commands.push(Command::End);
+    encoder.commands.push(Command::Copy { src: dst.tex.native.clone(), dst: src.tex.native.clone(), metric: Metric::CopyPs });
+    let expected_dst = dst.tex.native.resident_id().unwrap().0;
+    let expected_src = src.tex.native.resident_id().unwrap().0;
+    let expected_aux = aux.tex.native.resident_id().unwrap().0;
+    let mut admission = |operation: &mut dyn FnMut() -> Result<()>| operation();
+    execute_with_admission(&r.device, &encoder.commands, &mut admission).unwrap();
+    let c = control.borrow();
+    assert_eq!(c.scene_plans[c.scene_plans.len()-2], (Some(expected_dst), vec![expected_src, expected_aux], 0));
+    assert_eq!(c.scene_plans.last().unwrap(), &(Some(expected_src), vec![expected_dst], 6));
+}
+
+#[test]
+fn cached_baked_residency_reload_skips_encoded_loader_and_decoder() {
+    let (mut r,control)=setup();let canvas=r.create_target(2,2,"canvas-test");
+    r.device.deferred_budget.set(CDRAM_GRANULE);
+    let pixels=[41;16];let cached_calls=Rc::new(Cell::new(0));
+    let cached={let calls=cached_calls.clone();Rc::new(move||{
+        calls.set(calls.get()+1);Some((2u32,2u32,crate::PixelOwner::from(pixels.to_vec()),true))
+    }) as CachedImageReload};
+    let first=r.try_upload_baked(2,2,&pixels,"cached-bake").unwrap();
+    let image=r.adopt_image_reload_cached(first,1,"cached-bake",false,
+        Rc::new(||anyhow::bail!("cached reload must not read encoded bytes")),
+        Rc::new(|_|anyhow::bail!("cached reload must not decode or grade")),Some(cached)).unwrap();
+    r.set_image_rebuild_us(&image,999_000).unwrap();
+    assert_eq!(cached_calls.get(),0,"initial worker result is reused as uploaded");
+    let other=r.defer_altered([2,2],[2,2],Arc::from([2,12]),"other",decode_deferred_test).unwrap();
+    submit_deferred(&mut r,&canvas,&[other]).unwrap();assert!(image.native.id.borrow().is_none());
+    control.borrow_mut().events.clear();submit_deferred(&mut r,&canvas,&[image.clone()]).unwrap();
+    assert_eq!(cached_calls.get(),1);
+    assert!(!control.borrow().events.iter().any(|e|matches!(e,Event::Draw{shader:EffectShader::Alter,..})));
+    assert_eq!(r.device.call(|g|g.read_texture(&image.native.resident_id().unwrap())).unwrap(),pixels);
+    assert!(image.native.rebuild_us.get()<999_000,"real cheap reload replaces original bake estimate");
+}
+
+#[test]
+fn indexed_gxt_registration_is_io_free_and_first_use_checks_full_source() {
+    let (mut r,_) = setup();let canvas=r.create_target(2,2,"indexed-canvas");
+    let bytes=gxt_fixture([4,4],0x8500_0000);let calls=Rc::new(Cell::new(0));
+    let load={let calls=calls.clone();let bytes=bytes.clone();Rc::new(move||{
+        calls.set(calls.get()+1);Ok(crate::ByteView::owned(bytes.clone()))
+    })};
+    let metadata=IndexedGxtMetadata{layout:0xa000_0000,format:0x8500_0000,payload_bytes:8};
+    let image=r.defer_gxt_indexed([8,8],[4,4],bytes.len(),metadata,"indexed",load,extract_test_gxt).unwrap();
+    assert_eq!(calls.get(),0,"metadata registration must not inflate/read payload");
+    submit_deferred(&mut r,&canvas,&[image.clone()]).unwrap();
+    submit_deferred(&mut r,&canvas,&[image]).unwrap();assert_eq!(calls.get(),1);
+    assert!(GxtDescriptor::from_indexed([4,4],IndexedGxtMetadata{payload_bytes:16,..metadata}).is_err());
+    let load=Rc::new(move||Ok(crate::ByteView::owned(bytes.clone())));
+    // DXT1/DXT5 both have 16-byte aligned storage here. A plausible indexed
+    // envelope must still fail the full loaded descriptor comparison.
+    let changed=r.defer_gxt_indexed([8,8],[4,4],80,
+        IndexedGxtMetadata{format:0x8700_0000,payload_bytes:16,..metadata},"changed",load,extract_test_gxt).unwrap();
+    assert!(submit_deferred(&mut r,&canvas,&[changed]).is_err());
+}
+
+// Actual facade routes use the process-wide feature selection. Run this suite
+// with --test-threads=1; restore even when an assertion unwinds.
+struct OptimizationScope(u32);
+impl OptimizationScope {
+    fn set(mask: u32) -> Self {
+        let previous = knife_perf::optimizations::mask();
+        knife_perf::optimizations::set(mask);
+        Self(previous)
+    }
+}
+impl Drop for OptimizationScope {
+    fn drop(&mut self) { knife_perf::optimizations::set(self.0); }
+}
+
+#[test]
+fn plain_sprite22_actual_route_requires_capability_and_complete_plain_inputs() {
+    let (mut r, control) = setup();
+    let target = r.create_target(4, 4, "plain-route");
+    let source = r.upload(2, 2, Upload::Rgba8(&[127; 16]), "source");
+    for kind in 0..8 {
+        let mut q = Quad::rect(source.clone(), [0.0, 0.0, 2.0, 2.0], [0.7; 4]);
+        match kind {
+            1 => q.shade = Shade::Nega,
+            2 => q.haze[0][0] = 0.2,
+            3 => q.haze[0][3] = 1.0,
+            4 => q.soft = Some(SoftClip { inner: [0., 0., 2., 2.], pivot: [0., 0.],
+                rot: 0., radius: 1., row: 0, texels: 4, fill: 0. }),
+            5 => q.rule = Some(RuleMask::new(r.white.clone(), 0.5)),
+            6 => q.masked = true,
+            7 => { q.clip = Some(q.pos); q.haze[0][3] = -0.0; },
+            _ => {},
+        }
+        control.borrow_mut().shader_capabilities = 1 << 22;
+        control.borrow_mut().events.clear();
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, Some([0.; 4]), &[q]).unwrap();
+        r.try_present(enc, &target).unwrap();
+        let trace = control.borrow();
+        let shader = trace.events.iter().find_map(|e| match e {
+            Event::Draw { shader, .. } => Some(*shader), _ => None,
+        }).unwrap();
+        assert_eq!(shader == EffectShader::PlainSprite, kind == 0 || kind == 7, "case {kind}");
+    }
+    control.borrow_mut().shader_capabilities = 0;
+    control.borrow_mut().events.clear();
+    let mut enc = r.encoder();
+    r.try_draw(&mut enc, &target, None,
+        &[Quad::rect(source, [0., 0., 2., 2.], [1.; 4])]).unwrap();
+    r.try_present(enc, &target).unwrap();
+    assert!(control.borrow().events.iter().any(|e| matches!(e,
+        Event::Draw { shader: EffectShader::Sprite, .. })));
+}
+
+#[test]
+fn plain_ps19_23_actual_route_preserves_complex_and_capability_fallbacks() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    let (mut r, control) = setup();
+    let target = r.create_target(4, 4, "plain-ps-route");
+    for kind in 0..9 {
+        let mut q = Quad { blend: Blend::Ps(PsOp::Normal),
+            ..Quad::rect(r.white.clone(), [0., 0., 2., 2.], [0.7; 4]) };
+        match kind {
+            1 => q.shade = Shade::Fill,
+            2 => q.haze[0][0] = 0.2,
+            3 => q.haze[0][3] = 1.0,
+            4 => q.soft = Some(SoftClip { inner: [0., 0., 2., 2.], pivot: [0., 0.],
+                rot: 0., radius: 1., row: 0, texels: 4, fill: 0. }),
+            5 => q.rule = Some(RuleMask::new(r.white.clone(), 0.5)),
+            6 => q.masked = true,
+            7 => q.blend = Blend::Ps(PsOp::Add),
+            8 => q.shade = Shade::NoAlpha,
+            _ => {},
+        }
+        control.borrow_mut().shader_capabilities = 1 << 23;
+        control.borrow_mut().events.clear();
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, None, &[q]).unwrap();
+        r.try_present(enc, &target).unwrap();
+        let trace = control.borrow();
+        let draw = trace.events.iter().find_map(|e| match e {
+            Event::Draw { shader, blend, params, .. } => Some((*shader, *blend, *params)), _ => None,
+        }).unwrap();
+        if matches!(kind, 0 | 1 | 8) {
+            assert_eq!(draw.0, EffectShader::PsPlain19);
+            assert_eq!(draw.1, EffectBlend::Opaque);
+            assert_eq!(draw.2, [19., u32::from(kind == 1) as f32, 4., 4., -1., 0., u32::from(kind == 8) as f32, 0.]);
+            assert!(!trace.events.iter().any(|e| matches!(e, Event::Copy { .. })));
+        } else {
+            assert_eq!(draw.0, EffectShader::Ps, "case {kind}");
+            assert!(trace.events.iter().any(|e| matches!(e, Event::Copy { .. })));
+        }
+    }
+    control.borrow_mut().shader_capabilities = 0;
+    let mut enc = r.encoder();
+    r.try_draw(&mut enc, &target, None, &[Quad { blend: Blend::Ps(PsOp::Normal),
+        ..Quad::rect(r.white.clone(), [0., 0., 2., 2.], [1.; 4]) }]).unwrap();
+    assert!(enc.commands.iter().any(|e| matches!(e, Command::Copy { .. })));
+    assert!(enc.commands.iter().any(|e| matches!(e,
+        Command::Draw { shader: EffectShader::Ps, .. })));
+}
+
+#[test]
+fn fused_groups_append_to_one_stage_begin_and_keep_newly_opened_pass_owned() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::GROUP_FUSED);
+    for with_initial_clear in [false, true] {
+        let (mut r, control) = setup();
+        let stage = r.create_target(4, 4, "stage");
+        let pixel = r.create_target(4, 4, "pixel");
+        let mask = r.create_target(4, 4, "mask");
+        let scratch = r.create_target(4, 4, "scratch");
+        let stage_id = stage.tex.native.resident_id().unwrap().0;
+        control.borrow_mut().shader_capabilities = 1 << 15;
+        control.borrow_mut().events.clear();
+        let mut enc = r.encoder();
+        if with_initial_clear { r.try_draw(&mut enc, &stage, Some([0.; 4]), &[]).unwrap(); }
+        for alpha in [0.3, 0.7] {
+            r.try_group_composite_via_scratch(&mut enc, &stage, &pixel, &mask,
+                &scratch, Blend::Alpha, alpha).unwrap();
+        }
+        assert_eq!(enc.commands.iter().filter(|c| matches!(c, Command::Begin { .. })).count(), 1);
+        assert!(!enc.commands.iter().any(|c| matches!(c, Command::End | Command::Copy { .. })));
+        assert!(enc.open.as_ref().is_some_and(|t| Rc::ptr_eq(t, &stage.tex.native)));
+        r.try_present(enc, &stage).unwrap();
+        {
+            let trace = control.borrow();
+            assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Begin { id, .. } if *id == stage_id)).count(), 1);
+            assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::End)).count(), 1);
+            let groups: Vec<_> = trace.events.iter().filter_map(|e| match e {
+                Event::Draw { shader: EffectShader::GroupComposite, vertices, .. } => Some(vertices),
+                _ => None,
+            }).collect();
+            assert_eq!(groups.len(), 1, "compatible groups batch without losing their geometry");
+            assert_eq!(groups[0].len(), 12);
+            assert!(groups[0][..6].iter().all(|v| v.color[3].to_bits() == 0.3f32.to_bits()));
+            assert!(groups[0][6..].iter().all(|v| v.color[3].to_bits() == 0.7f32.to_bits()));
+        }
+        // A subsequent producer must close the newly opened stage pass, then
+        // a later composite must reopen it without a nested Begin.
+        let mut enc = r.encoder();
+        r.try_group_composite(&mut enc, &stage, &pixel, &mask, Blend::Alpha, 0.3).unwrap();
+        r.try_draw(&mut enc, &pixel, None,
+            &[Quad::rect(r.white.clone(), [0., 0., 2., 2.], [1.; 4])]).unwrap();
+        r.try_group_composite(&mut enc, &stage, &pixel, &mask, Blend::Alpha, 0.7).unwrap();
+        r.try_present(enc, &stage).unwrap();
+        assert!(control.borrow().active.is_none());
+    }
 }

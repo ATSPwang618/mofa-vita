@@ -14,6 +14,9 @@ pub enum Encoding {
     /// Vita-only GXT with the default Alter colour transform already applied.
     /// The payload keeps straight alpha and is sampled as sRGB exactly once.
     GxtAlterSrgb = 8,
+    /// Vita native encoded bytes in GPU-compressed blocks; sampled as UNORM.
+    /// This is a distinct asset ABI: legacy codec8 carries pre-Alter colours.
+    GxtNativeUnorm = 9,
 }
 
 #[derive(Debug)]
@@ -45,6 +48,7 @@ pub fn parse(data: &[u8]) -> Result<Image<'_>> {
         4 => Encoding::Bc7Unorm,
         7 => Encoding::PngUnorm,
         8 => Encoding::GxtAlterSrgb,
+        9 => Encoding::GxtNativeUnorm,
         _ => anyhow::bail!("unsupported KIMG encoding"),
     };
     let len = word(28) as usize;
@@ -73,7 +77,7 @@ pub fn encode(logical: [u32; 2], size: [u32; 2], encoding: Encoding, payload: &[
 
 impl Image<'_> {
     pub fn is_srgb(&self) -> bool {
-        !matches!(self.encoding, Encoding::Bc7Unorm | Encoding::PngUnorm)
+        !matches!(self.encoding, Encoding::Bc7Unorm | Encoding::PngUnorm | Encoding::GxtNativeUnorm)
     }
 
     /// A BC7 image can use the existing GPU path, or its CPU decoder for colour grading / language strips.
@@ -183,6 +187,16 @@ mod tests {
         // The Vita GXT parser validates this payload before GPU allocation;
         // KIMG is only the common dimensions/container framing.
         assert!(parse(&bytes[..bytes.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn native_gxt_has_distinct_unorm_colour_contract() {
+        let mut bytes = fixture();
+        bytes[24..28].copy_from_slice(&9u32.to_le_bytes());
+        let image = parse(&bytes).unwrap();
+        assert_eq!(image.encoding, Encoding::GxtNativeUnorm);
+        assert!(!image.is_srgb()); assert!(image.texture().is_none());
+        assert!(std::ptr::eq(image.payload.as_ptr(), bytes[HEADER_SIZE..].as_ptr()));
     }
 
     #[test]

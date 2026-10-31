@@ -7,17 +7,20 @@ host_cc=${CC:-cc}
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 build="$project/.work/vita/gxm-viewport/$run_id"
 mkdir -p "$build/backend/shaders/generated" "$project/doc/logs/vita"
-for source in gxm_backend.c gxm_backend.h jpeg_hw.h image_decode.h effects_backend.inc movie_gxm.inc shaders/generated/shaders.h shaders/generated/effects.h; do
+for source in perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h jpeg_hw.h image_decode.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc shaders/generated/shaders.h shaders/generated/effects.h; do
     cp "$project/knife/vita/$source" "$build/backend/$source"
 done
 cp "$project/knife/vita/tests/gxm_viewport_test.c" "$build/test.c"
 cp "${BASH_SOURCE[0]}" "$build/runner.sh"
+"$host_cc" -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined \
+    -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+    -c "$build/backend/perf_audit.c" -o "$build/perf_audit.o"
 command=("$host_cc" -std=c11 -Wall -Wextra -Werror -g -O2 -fstrict-aliasing
     -fsanitize=address,undefined -fno-omit-frame-pointer
     -ffunction-sections -fdata-sections -Wl,--gc-sections
     -idirafter "$vita_sdk/arm-vita-eabi/include"
     "-DKV_GXM_BACKEND_SOURCE=\"$build/backend/gxm_backend.c\""
-    -MD -MF "$build/test.d" "$build/test.c" -lm -o "$build/test")
+    -MD -MF "$build/test.d" "$build/test.c" "$build/perf_audit.o" -lm -o "$build/test")
 printf '%q ' "${command[@]}" > "$build/command.txt"
 printf '\n' >> "$build/command.txt"
 "${command[@]}"

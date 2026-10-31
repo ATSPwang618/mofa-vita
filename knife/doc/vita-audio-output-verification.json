@@ -15,7 +15,7 @@
     "vita/tests/run_audio_output.sh"
   ],
   "sdk": {
-    "header": "/opt/vitasdk/arm-vita-eabi/include/psp2/audioout.h",
+    "header": "${VITASDK}/arm-vita-eabi/include/psp2/audioout.h",
     "stub": "libSceAudio_stub.a",
     "interface": "sceAudioOutOpenPort(MAIN,960,48000,STEREO), sceAudioOutOutput, sceAudioOutSetVolume, sceAudioOutReleasePort; output(NULL) drains"
   },
@@ -59,7 +59,7 @@
     }
   },
   "verification": {
-    "command": "wsl bash -lc \"cd /mnt/d/AI-CODEX/SWITCH-魔法使之夜/knife && bash vita/tests/run_audio_output.sh\"",
+    "command": "wsl bash -lc \"cd ${PROJECT_ROOT}/knife && bash vita/tests/run_audio_output.sh\"",
     "host": "PASS Rust two lifecycle/failure tests with ASan+UBSan C SDK mock; full real libopusfile decoder fixture and mocked AudioOut output probe; leak detection enabled",
     "arm": "PASS complete C decoder+output+SDK SceAudio stub static ARM EABI5 ELF link with opusfile, opus, ogg and m; did not execute",
     "vitaRuntime": "not executed; AudioOut return values do not establish audible sound",
@@ -73,7 +73,7 @@
       ]
     },
     "latestRegression": {
-      "command": "wsl bash -lc \"cd /mnt/d/AI-CODEX/SWITCH-魔法使之夜/knife && bash vita/tests/run_audio_output.sh && bash vita/tests/run_audio_decode.sh\"",
+      "command": "wsl bash -lc \"cd ${PROJECT_ROOT}/knife && bash vita/tests/run_audio_output.sh && bash vita/tests/run_audio_decode.sh\"",
       "result": "PASS AudioOut Rust two host tests, full probe with 144000 source frames, 32 EOF, 36 seeks, 150 content blocks, ARM static ELF; PASS decoder mono/stereo fault and Rust FFI tests, ARM static ELF",
       "outputObserved": {
         "sourceFrames": 144000,

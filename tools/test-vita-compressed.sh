@@ -19,7 +19,7 @@ from pathlib import Path
 import re, shutil, sys
 project, build = map(Path, sys.argv[1:])
 root = project / 'knife/vita'
-pending = [root / 'gxm_backend.c', root / 'gxm_backend.h']
+pending = [root / 'gxm_backend.c', root / 'gxm_backend.h', root / 'perf_audit.c']
 seen = set()
 while pending:
     source = pending.pop()
@@ -67,11 +67,14 @@ PY
         -idirafter "$vita_sdk/arm-vita-eabi/include")
     variants=(red)
     if [[ $mode == --green ]]; then variants+=(green); fi
+    "$host_cc" -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined \
+        -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+        -c "$build/backend/perf_audit.c" -o "$build/perf_audit.o"
     for variant in "${variants[@]}"; do
         backend="$build/backend/gxm_backend.c"
         [[ $variant != red ]] || backend="$build/backend/gxm_backend.red.c"
         command=("$host_cc" "${flags[@]}" "-DKV_GXM_BACKEND_SOURCE=\"$backend\""
-            -MD -MF "$build/$variant.d" "$build/gxm_compressed_test.c"
+            -MD -MF "$build/$variant.d" "$build/gxm_compressed_test.c" "$build/perf_audit.o"
             "-Wl,-Map,$build/$variant.map" -o "$build/compressed-$variant")
         printf '%q ' "${command[@]}" > "$build/$variant.command"
         printf '\n' >> "$build/$variant.command"
@@ -125,7 +128,7 @@ receipt = {'schema': 'knife-vita-compressed-host-v1',
     'results': results, 'sanitizers': ['AddressSanitizer','UndefinedBehaviorSanitizer','LeakSanitizer'],
     'coverage': ['Owner/scene/pointer/format/dimension/length/flags rejection before SDK allocation',
         'Hand-calculated min-block, irregular-axis, NX540 and maximum-dimension lengths',
-        'Logical descriptor dimensions, clamp/filter/gamma, synchronous payload copy and complete zero padding',
+        'Logical descriptor dimensions, clamp/filter, explicit gamma-request rejection, payload copy and complete zero padding',
         'Every retained allocation/descriptor SDK fault; rollback failure leaves reachable closing owner',
         '256KiB rounded CDRAM rejection and exact boundary; compressed CPU update/read/copy and movie rebind rejection'],
     'limitations': ['Host CPU tests with external SDK calls stubbed: no GPU, compressed texel decoding, Vita, or Vita3K execution.',

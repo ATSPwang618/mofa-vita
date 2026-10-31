@@ -38,7 +38,8 @@ from verify_540p_assets import decoded, stored  # noqa: E402
 SOURCE = ROOT / "dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/assets"
 BASE = ROOT / "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets"
 OUTPUT = ROOT / "dist/Witch-on-the-Holy-Night-Chengkong-540p-DXT/assets"
-SDK = Path("D:/unity/PSVITA/sdk/host_tools/bin/psp2gxt.exe")
+from tool_paths import tool_path
+SDK = tool_path("psp2gxt", "KNIFE_VITA_GXT")
 # Entries that must keep their original encoding:
 #  * the soft-clip gradient atlas is read back on the CPU to build the LUT
 #  * every image a scene applies STEC / SNX2 / SNX3 to (codec8 rejects a bake)

@@ -8,10 +8,20 @@ Set-StrictMode -Version Latest
 # Compile only the authored Cg source with the user's existing local tool.
 # Neither the compiler nor any Sony module is copied into the project.
 if ([string]::IsNullOrWhiteSpace($Compiler)) {
-    $Compiler = 'D:/unity/PSVITA/sdk/host_tools/bin/psp2cgc.exe'
+    foreach ($name in @('psp2cgc', 'psp2cgc.exe')) {
+        $command = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue
+        if ($command) { $Compiler = $command.Source; break }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($Compiler)) {
+    throw 'psp2cgc was not found. Set KNIFE_VITA_CGC, pass -Compiler, or add psp2cgc to PATH.'
+}
+if (-not (Test-Path -LiteralPath $Compiler -PathType Leaf)) {
+    $command = Get-Command $Compiler -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $command) { throw "Shader compiler was not found: $Compiler. Set KNIFE_VITA_CGC or pass -Compiler with its executable path." }
+    $Compiler = $command.Source
 }
 $compilerPath = (Get-Item -LiteralPath $Compiler).FullName
-if (-not [IO.File]::Exists($compilerPath)) { throw 'Compiler must be a regular file' }
 $root = (Get-Item -LiteralPath $PSScriptRoot).Parent.FullName
 $source = Join-Path $root 'knife/vita/shaders/effects.cg'
 $wgsl = Join-Path $root 'knife/knife-render/src/shader.wgsl'
@@ -264,10 +274,15 @@ if (-not [string]::IsNullOrWhiteSpace($VerifyWslDistribution)) {
     $wslPathLines = @(& wsl.exe -d $VerifyWslDistribution --exec wslpath -a $checkPath 2>&1)
     if ($LASTEXITCODE -ne 0 -or $wslPathLines.Count -ne 1) { throw 'Cannot resolve the header-check source in WSL' }
     $wslCheckPath = [string]$wslPathLines[0]
+    $wslSdkLines = @(& wsl.exe -d $VerifyWslDistribution --exec printenv VITASDK 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $wslSdkLines.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$wslSdkLines[0])) {
+        throw 'Set VITASDK in the selected WSL environment before requesting header verification.'
+    }
+    $wslCompiler = ([string]$wslSdkLines[0]).TrimEnd('/') + '/bin/arm-vita-eabi-gcc'
     $headerCommands = @(
         @('gcc','-std=c11','-Wall','-Wextra','-Werror',$wslCheckPath,'-o',($wslCheckPath + '.host')),
         @(($wslCheckPath + '.host')),
-        @('/opt/vitasdk/bin/arm-vita-eabi-gcc','-std=c11','-Wall','-Wextra','-Werror','-mcpu=cortex-a9','-c',$wslCheckPath,'-o',($wslCheckPath + '.arm.o'))
+        @($wslCompiler,'-std=c11','-Wall','-Wextra','-Werror','-mcpu=cortex-a9','-c',$wslCheckPath,'-o',($wslCheckPath + '.arm.o'))
     )
     foreach ($command in $headerCommands) {
         Log ('WSL ' + $VerifyWslDistribution + ': ' + ($command -join ' '))

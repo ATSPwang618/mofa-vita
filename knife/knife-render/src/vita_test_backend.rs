@@ -29,6 +29,14 @@ pub enum EffectShader {
     Ps,
     GroupComposite,
     SpriteMask,
+    PsFetch,
+    PsFetch19,
+    PsGroup19,
+    PsFetch11,
+    PsFetch13,
+    PlainSprite,
+    PsPlain19,
+    PsFetch2 = 25,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -41,6 +49,7 @@ pub enum EffectBlend {
     Over,
     Footprint,
     MaskAlpha,
+    CoverageOver,
 }
 #[derive(Clone)]
 pub struct TextureId(pub usize);
@@ -95,7 +104,10 @@ pub enum Event {
 #[derive(Default)]
 pub struct Trace {
     pub events: Vec<Event>,
+    pub scene_plans: Vec<(Option<usize>, Vec<usize>, u32)>,
     pub fail_next_draw: bool,
+    /// Explicit runtime compiler/patch capabilities; unavailable by default.
+    pub shader_capabilities: u32,
     pub wrong_readback_length: bool,
     pub active: Option<usize>,
     /// Optional native allocation ceiling, including ordinary targets/fonts.
@@ -127,6 +139,19 @@ pub struct Gxm {
 }
 
 impl Gxm {
+    pub fn begin_batch(&mut self, _basic_quads: usize, _effect_vertices: usize) -> Result<(), String> { Ok(()) }
+    pub fn reclaim_retired(&mut self, _wait: bool) -> Result<(), String> { Ok(()) }
+    pub fn texture_charge(bytes: u32) -> Result<u32, String> {
+        let granule = if knife_perf::optimizations::enabled(knife_perf::optimizations::TEXTURE_POOL) { 64 } else { 256 * 1024 };
+        bytes.checked_add(granule - 1).map(|v| v & !(granule - 1)).ok_or("texture charge overflow".into())
+    }
+    pub fn plan_scene(&mut self, target: Option<&TextureId>, reads: &[TextureId], kind: u32) -> Result<(), String> {
+        self.control.borrow_mut().scene_plans.push((target.map(|t| t.0), reads.iter().map(|t| t.0).collect(), kind));
+        Ok(())
+    }
+    pub fn shader_available(&self, shader: u32) -> Result<bool, String> {
+        Ok(shader < 32 && self.control.borrow().shader_capabilities & (1u32 << shader) != 0)
+    }
     pub fn live_render_targets(&self) -> usize {
         self.textures.values().filter(|texture| texture.target).count()
     }
@@ -165,8 +190,7 @@ impl Gxm {
         if stride < row || (srgb && bpp != 4) || (render_target && bpp != 4) {
             return Err("mock texture format".into());
         }
-        let charge = ((((width as usize + 7) & !7) * height as usize * bpp as usize)
-            + 256 * 1024 - 1) & !(256 * 1024 - 1);
+        let charge = Self::texture_charge(((width + 7) & !7) * height * bpp)? as usize;
         if charge > self.available_cdram()? {
             return Err("mock native CDRAM allocation budget exceeded".into());
         }
@@ -210,7 +234,7 @@ impl Gxm {
     pub fn create_gxt_texture(&mut self, file: &[u8], srgb: bool, linear: bool) -> Result<TextureId, String> {
         let gxt = GxtTexture::parse(file).map_err(|e| e.to_string())?;
         let payload_bytes = gxt.data.len();
-        let allocation_bytes = (payload_bytes + 256 * 1024 - 1) & !(256 * 1024 - 1);
+        let allocation_bytes = Self::texture_charge(u32::try_from(payload_bytes).map_err(|_| "GXT allocation overflow")?)? as usize;
         if allocation_bytes > self.available_cdram()? {
             return Err("mock compressed CDRAM allocation budget exceeded".into());
         }
@@ -332,6 +356,27 @@ impl Gxm {
         }
         if vertices.iter().any(|v| v.haze != vertices[0].haze) {
             return Err("mock per-quad uniforms differ".into());
+        }
+        if matches!(shader, EffectShader::PlainSprite | EffectShader::PsPlain19 | EffectShader::PsFetch2) {
+            if control.shader_capabilities & (1u32 << shader as u32) == 0 {
+                return Err("mock unavailable plain shader".into());
+            }
+            if vertices.iter().any(|v| v.haze.iter().flatten().chain(v.soft.iter().flatten()).any(|x| *x != 0.0)) {
+                return Err("mock plain shader cannot discard haze/soft".into());
+            }
+            if shader == EffectShader::PlainSprite && params != [0.0; 8] {
+                return Err("mock plain sprite params".into());
+            }
+            if shader == EffectShader::PsPlain19 && (blend != EffectBlend::Opaque || params[0] != 19.0
+                || (params[1] != 0.0 && params[1] != 1.0) || params[2] <= 0.0 || params[3] <= 0.0 || params[4] >= 0.0
+                || (params[6] != 0.0 && params[6] != 1.0) || params[7] != 0.0) {
+                return Err("mock plain PS19 ABI".into());
+            }
+            if shader == EffectShader::PsFetch2 && (blend != EffectBlend::Opaque || params[0] != 2.0
+                || params[1] != 0.0 || params[2] <= 0.0 || params[3] <= 0.0 || params[4] >= 0.0
+                || params[6] != 0.0 || params[7] != 0.0) {
+                return Err("mock plain PS2 ABI".into());
+            }
         }
         control.events.push(Event::Draw {
             shader,

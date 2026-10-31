@@ -37,7 +37,7 @@ a66a1318a147a901c7f76e9868e04f0551131f1128bb8dc591c242402de79d41
 
 场景、组 pixel/mask 和 UI 合成固定 **960×540**，最终居中输出到 960×544 屏幕，上下各留 2 像素。脚本保留 1920×1080 坐标，局部图片和图集使用各自尺寸。程序不读取 `scene-mode.txt`。主 newlib 堆上限为 256 MiB，各缓存按需使用；这不等于显存预算。
 
-启动出现 `ASSETS REQUIRED`、`WRONG FILE SIZE` 或 `WRONG ASSET VERSION` 时，核对素材完整性与清单版本。更新素材还需同步引擎内嵌 profile、图集索引及音频文件索引，步骤见 [更新素材元数据](doc/03-构建与工具链.md#更新素材元数据)。
+启动出现 `ASSETS REQUIRED`、`WRONG FILE SIZE` 或 `WRONG ASSET VERSION` 时，核对素材完整性与清单版本。更新素材还需同步引擎内嵌 profile、图集索引及音频文件索引，步骤见 [更新素材元数据](doc/03-构建与工具链.md#83-更新素材元数据)。
 
 ## 操作
 
@@ -62,10 +62,12 @@ a66a1318a147a901c7f76e9868e04f0551131f1128bb8dc591c242402de79d41
 | [knife/](knife/) | Rust 工作区：游戏、格式解析、渲染、音频与 Vita 平台层 |
 | [knife/vita/](knife/vita/) | GXM C 后端、Cg 源码、生成着色器和系统图片 |
 | [tools/](tools/) | 本地构建、打包与素材处理脚本 |
+| [doc/](doc/README.md) | 技术文档索引：架构、渲染、资源、优化记录、构建、性能、限制、素材 |
 | [构建与工具链](doc/03-构建与工具链.md) | 跨电脑构建、依赖与维护步骤 |
+| [优化记录与实测数据](doc/05-优化记录与实测数据.md) | 20 项优化开关、历史真机对照与验证状态（960×540 终版尚未实测） |
 | `release/`、`.work/`、`dist/` | 本机产物、缓存和自备素材，不入库 |
 
-历次逆向分析、实机性能基线与修复依据见[历史文档归档](doc/archive/README.md)。
+文档入口见 [doc/README.md](doc/README.md)。历史文档快照已从工作树清理，可从 git 提交 `a670193` 的 `doc/archive/` 取回；机器可读证据保留在 [doc/evidence/](doc/evidence/)。
 
 ## 许可
 

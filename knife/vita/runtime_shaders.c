@@ -25,7 +25,7 @@ enum { CACHE_ABI = 5, MAX_PROGRAM = 1024 * 1024, MIN_PROGRAM = 156 };
 #include "diagnostic_log.h"
 static struct {
     int attempted;
-    SceGxmProgram *programs[27];
+    SceGxmProgram *programs[48];
 } runtime;
 #ifndef KV_SHADER_CACHE_HOST_TEST
 static SceShaccCgSourceFile source;
@@ -44,14 +44,23 @@ _Static_assert(sizeof(CacheHeader) == 168, "shader cache header ABI");
 #endif
 static const char *const cache_root = KV_SHADER_CACHE_ROOT;
 static const char *validation_reason;
-static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25; }
+static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || (shader >= 32 && shader < 48); }
 /* ID24 is a checked text-cache capability, never a shader entry. Source SHA
    changes invalidate prior Cg binaries without changing their metadata ABI. */
-static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 23, 25, 15, 19, 20, 21, 18, 17 };
+static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 15, 19, 20, 21, 18, 17,
+    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47 };
 static int runtime_shader_id(uint32_t shader) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
         if (runtime_shader_ids[i] == shader) return 1;
     return 0;
+}
+static uint32_t runtime_entry_abi(uint32_t shader) {
+    if (shader >= 32 && shader < 48) {
+        const uint32_t ops[4] = {2, 11, 13, 19};
+        // Cache identity includes the exact compile-time material macros.
+        return KNIFE_RUNTIME_ENTRY_ABI | ops[(shader-32)/4] << 8 | ops[(shader-32)%4] << 16;
+    }
+    return KNIFE_RUNTIME_ENTRY_ABI;
 }
 static const char *entry_for(uint32_t shader) {
     switch (shader) {
@@ -66,7 +75,8 @@ static const char *entry_for(uint32_t shader) {
         case 26: return "fs_forcealpha_plain";
         case 23: return "fs_ps19_plain_fetch";
         case 25: return "fs_ps2_fetch";
-        default: return NULL;
+        case 28: return "fs_rim_text_batched";
+        default: return shader >= 32 && shader < 48 ? "fs_ps_chain2_fetch" : NULL;
     }
 }
 static int runtime_any(void) {
@@ -143,8 +153,9 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     }
     if (!(sampler_bits & 1) || (shader == 15 && !(sampler_bits & 2))
         || (shader == 19 && !(sampler_bits & 4))) REJECT("required_sampler_missing");
+    if (shader >= 32 && shader < 48 && sampler_bits != 5u) REJECT("chain2_requires_two_sources");
     if (shader == 19 && (sampler_bits & ~5u)) REJECT("group19_unexpected_sampler");
-    if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25 || shader == 26)
+    if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25 || shader == 26 || shader == 28)
         && (sampler_bits & ~1u)) REJECT("plain_ps_unexpected_sampler");
     if (sceGxmProgramCheck((const SceGxmProgram *)program) < 0) REJECT("sceGxmProgramCheck");
     return 1;
@@ -162,7 +173,7 @@ static SceGxmProgram *read_cache(uint32_t shader) {
     CacheHeader header;
     int ok = fread(&header, 1, sizeof(header), file) == sizeof(header)
         && !memcmp(header.magic, "KVGXP05", 8) && header.abi == CACHE_ABI && header.shader == shader
-        && header.entry_abi == KNIFE_RUNTIME_ENTRY_ABI
+        && header.entry_abi == runtime_entry_abi(shader)
         && header.compiler_policy == KV_SHADER_COMPILER_POLICY && !header.reserved
         && !memcmp(header.source_sha256, KNIFE_RUNTIME_SOURCE_SHA256, 64)
         && !memcmp(header.compiler_sha256, KNIFE_RUNTIME_COMPILER_SHA256, 64)
@@ -187,7 +198,7 @@ static void write_cache(uint32_t shader, const void *program, uint32_t bytes) {
     sceIoMkdir(cache_root, 0777);
     char path[320], temporary[328]; path_for(path, sizeof(path), shader);
     snprintf(temporary, sizeof(temporary), "%s.tmp", path);
-    CacheHeader header = { .magic = "KVGXP05", .abi = CACHE_ABI, .shader = shader, .entry_abi = KNIFE_RUNTIME_ENTRY_ABI,
+    CacheHeader header = { .magic = "KVGXP05", .abi = CACHE_ABI, .shader = shader, .entry_abi = runtime_entry_abi(shader),
         .compiler_policy = KV_SHADER_COMPILER_POLICY,
         .bytes = bytes, .checksum = checksum(program, bytes) };
     memcpy(header.source_sha256, KNIFE_RUNTIME_SOURCE_SHA256, 64);
@@ -271,9 +282,16 @@ static SceGxmProgram *compile_shader(uint32_t shader) {
     options.warningLevel = 3;
     options.warningsAsErrors = 1;
     options.performanceWarnings = 0;
-    const char *defines[] = { "KNIFE_RUNTIME_NATIVE_FETCH=1", "KNIFE_RUNTIME_PS_SPECIALIZED=1" };
+    const char *defines[4] = { "KNIFE_RUNTIME_NATIVE_FETCH=1", "KNIFE_RUNTIME_PS_SPECIALIZED=1", NULL, NULL };
+    char chain_a[32], chain_b[32];
     // Non-fetch entries never parse native declarations. Each failure is local.
     options.macroDefinitionCount = fetch_shader(shader) ? (shader >= 19 ? 2 : 1) : 0;
+    if (shader >= 32 && shader < 48) {
+        const uint32_t ops[4] = {2, 11, 13, 19};
+        snprintf(chain_a,sizeof(chain_a),"KNIFE_CHAIN_OP_A=%u",(unsigned)ops[(shader-32)/4]);
+        snprintf(chain_b,sizeof(chain_b),"KNIFE_CHAIN_OP_B=%u",(unsigned)ops[(shader-32)%4]);
+        defines[2]=chain_a; defines[3]=chain_b; options.macroDefinitionCount=4;
+    }
     options.macroDefinitions = defines;
     SceShaccCgCallbackList callbacks;
     compiler.initialize_callbacks(&callbacks, SCE_SHACCCG_TRIVIAL);
@@ -411,9 +429,9 @@ int kv_runtime_shader_initialize(void) {
     memset(&compiler, 0, sizeof(compiler));
     const int stopped = sceKernelStopUnloadModule(module, 0, NULL, 0, NULL, NULL);
     KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=compiler_release uid=%08x rc=%08x\n", (unsigned)module, (unsigned)stopped);
-    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=programs text_passthrough11=%d plain_sprite=%d plain_ps19=%d ps2=%d plain_forcealpha=%d ps19_group=%d ps11=%d ps13=%d ps19=%d generic=%d group=%d source=%.16s\n",
+    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=programs text_passthrough11=%d plain_sprite=%d plain_ps19=%d ps2=%d plain_forcealpha=%d rim_batched=%d ps19_group=%d ps11=%d ps13=%d ps19=%d generic=%d group=%d source=%.16s\n",
         runtime.programs[11] != NULL, runtime.programs[22] != NULL, runtime.programs[23] != NULL,
-        runtime.programs[25] != NULL, runtime.programs[26] != NULL,
+        runtime.programs[25] != NULL, runtime.programs[26] != NULL, runtime.programs[28] != NULL,
         runtime.programs[19] != NULL, runtime.programs[20] != NULL, runtime.programs[21] != NULL,
         runtime.programs[18] != NULL, runtime.programs[17] != NULL, runtime.programs[15] != NULL, KNIFE_RUNTIME_SOURCE_SHA256);
     return runtime_any();

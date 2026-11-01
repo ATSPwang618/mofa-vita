@@ -1,7 +1,7 @@
 //! Bounded admission of cached images under external GPU pressure.
 //! Independent of the Vita renderer so the policy can be tested on a host.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -57,45 +57,10 @@ impl ImageCachePolicy {
     }
 }
 
-#[derive(Default)]
-pub struct PrefetchWindow {
-    claimed: HashSet<String>,
-    window: HashSet<String>,
-}
-
-impl PrefetchWindow {
-    pub fn retain_window(&mut self, keys: &HashSet<String>) {
-        const MAX_WINDOW: usize = 24;
-        // The caller normally supplies the next 24 script commands. Cap any
-        // unexpected larger set in stable order rather than growing forever.
-        if keys.len() <= MAX_WINDOW {
-            self.window.clone_from(keys);
-        } else {
-            let mut ordered: Vec<_> = keys.iter().collect();
-            ordered.sort_unstable();
-            self.window = ordered.into_iter().take(MAX_WINDOW).cloned().collect();
-        }
-        self.claimed.retain(|key| self.window.contains(key));
-    }
-
-    /// Whether a completed decode still belongs to the current command window.
-    pub fn accepts(&self, key: &str) -> bool {
-        self.window.contains(key)
-    }
-
-    pub fn claim(&mut self, key: &str) -> bool {
-        self.window.contains(key) && self.claimed.insert(key.to_owned())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::rc::Rc;
-
-    fn keyset(keys: &[&str]) -> HashSet<String> {
-        keys.iter().map(|s| s.to_string()).collect()
-    }
 
     #[test]
     fn no_pressure_keeps_every_cached_entry_and_probes_once() {
@@ -264,72 +229,4 @@ mod tests {
         assert!(p.last_use.contains_key("live"));
     }
 
-    #[test]
-    fn completed_decode_in_current_window_is_accepted_without_a_claim() {
-        let mut window = PrefetchWindow::default();
-        window.retain_window(&keyset(&["wanted", "later"]));
-        assert!(window.accepts("wanted"));
-        assert!(window.accepts("later"));
-    }
-
-    #[test]
-    fn completed_decode_from_departed_window_is_rejected() {
-        let mut window = PrefetchWindow::default();
-        window.retain_window(&keyset(&["stale", "still"]));
-        assert!(window.claim("stale"));
-        window.retain_window(&keyset(&["still", "new"]));
-        assert!(!window.accepts("stale"));
-        assert!(window.accepts("still"));
-        assert!(window.accepts("new"));
-    }
-
-    #[test]
-    fn seek_clears_window_before_completions_are_drained() {
-        let mut window = PrefetchWindow::default();
-        window.retain_window(&keyset(&["previous"]));
-        window.retain_window(&HashSet::new());
-        assert!(!window.accepts("previous"));
-        assert!(!window.claim("previous"));
-        window.retain_window(&keyset(&["previous"]));
-        assert!(window.accepts("previous"));
-        assert!(window.claim("previous"));
-    }
-
-    #[test]
-    fn window_claim_survives_cache_eviction_until_key_leaves_then_reenters() {
-        let mut window = PrefetchWindow::default();
-        window.retain_window(&keyset(&["a", "b"]));
-        assert!(window.claim("a"));
-        assert!(!window.claim("a")); // cache eviction must not reset this claim
-        window.retain_window(&keyset(&["a", "c"]));
-        assert!(!window.claim("a"));
-        assert!(!window.claim("outside"));
-        window.retain_window(&keyset(&["c"]));
-        window.retain_window(&keyset(&["a", "c"]));
-        assert!(window.claim("a"));
-        assert_eq!(window.claimed.len(), 1);
-    }
-
-    #[test]
-    fn unexpected_oversized_window_is_capped_deterministically() {
-        let mut window = PrefetchWindow::default();
-        let many: HashSet<_> = (0..100).map(|i| format!("item{i:03}")).collect();
-        window.retain_window(&many);
-        assert_eq!(window.window.len(), 24);
-        assert!(window.claim("item000"));
-        assert!(window.claim("item023"));
-        assert!(!window.claim("item024"));
-    }
-    #[test]
-    fn window_is_bounded_by_current_keys_and_drops_old_claims() {
-        let mut window = PrefetchWindow::default();
-        window.retain_window(&keyset(&["one", "two"]));
-        assert!(window.claim("one"));
-        assert!(window.claim("two"));
-        window.retain_window(&keyset(&["two"]));
-        assert_eq!(window.window.len(), 1);
-        assert_eq!(window.claimed.len(), 1);
-        assert!(!window.claim("one"));
-        assert!(!window.claim("two"));
-    }
 }

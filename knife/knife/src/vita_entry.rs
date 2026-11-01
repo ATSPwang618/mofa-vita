@@ -79,10 +79,10 @@ impl PerfLog {
             "\"scene_size\":[{},{}],\"composite_size\":[{},{}],\"resolution_source\":\"code\",\"color_contract\":\"encoded-unorm8-uchar4\",\"asset_gxt_codec\":9,",
             "\"audio_pcm_pool_bytes\":23040,\"audio_queue_blocks\":4,",
             "\"audio_block_us\":20000,\"audio_mix_scope\":\"ready PCM mix; stream IO/decode on independent channels\",",
-            "\"audio_stream_channels\":8,\"audio_stream_queue_blocks\":10,\"audio_stream_pool_blocks\":12,\"audio_stream_pool_ceiling_bytes\":737280,",
+            "\"audio_stream_channels\":8,\"audio_stream_queue_blocks\":10,\"audio_stream_pool_blocks\":12,\"audio_stream_pool_ceiling_bytes\":737280,\"audio_stream_missing_scope\":\"per-stream absent PCM sample frames; excludes intentional pauses; device underrun is independent\",",
             "\"frame_work_excludes_pacer\":true,\"render_is_cpu_submission_including_waits\":true,",
             "\"memory_scope\":\"GXM mappings and separate JPEG temporary CDRAM; excludes Rust and codec heap\",",
-            "\"worker_time_scope\":\"archive read plus selected software/hardware decode\",",
+            "\"worker_time_scope\":\"archive read plus selected software/hardware decode\",\"movie_owner_scope\":\"native open/poll/control/frame/close run on one persistent worker; frame cache is main-thread GPU submission plus fence\",",
             "\"jpeg_hardware_cdram_reserve\":3145728,",
             "\"image_worker_audio_counters\":\"cumulative u32; wrap possible\",\"interval_ms\":5000,\"sink\":\"sceClibPrintf\",\"audit_schema\":1,\"audit_counter_bits\":64,\"frame_work_excludes_logger\":true}}\n"),
             memory.newlib_heap_bytes, memory.libc_heap_bytes, memory.main_stack_bytes,
@@ -99,11 +99,14 @@ impl PerfLog {
         let header = header.trim_end().strip_suffix('}').expect("header object").to_owned()
             + &format!(concat!(",\"logger_transport\":\"bounded-worker-v1\",\"audit_bank_policy\":\"changed-cumulative-v1\",",
                 "\"previous_console_scope\":\"main collect/enqueue; printf is console_worker_last_us\",",
-                "\"language_fixed\":{},\"cache_budgets\":{{\"cpu_source\":{},\"cpu_graded\":{},\"gpu_resource\":{},\"gpu_text\":{},\"gpu_group\":{},\"gpu_total_with_jpeg\":109051904}}}}\n"),
+                "\"language_fixed\":{},\"cache_budgets\":{{\"cpu_source\":{},\"cpu_graded\":{},\"cpu_grade_base\":{},\"cpu_sound\":{},\"cpu_sound_prepare\":{},\"cpu_sound_pins\":{},\"gpu_resource\":{},\"gpu_text\":{},\"gpu_text_entries\":{},\"gpu_group\":{},\"gpu_target_ring\":{},\"gpu_movie_frame\":{},\"gpu_total_with_jpeg\":109051904}}}}\n"),
                 2,
                 knife_perf::memory_budget::CPU_SOURCE_BYTES, knife_perf::memory_budget::CPU_GRADED_BYTES,
+                knife_perf::memory_budget::CPU_GRADE_BASE_BYTES, knife_perf::memory_budget::CPU_SOUND_BYTES,
+                knife_perf::memory_budget::CPU_SOUND_PREPARE_BYTES, knife_perf::memory_budget::CPU_SOUND_PREPARED_BYTES,
                 knife_perf::memory_budget::GPU_RESOURCE_BYTES, knife_perf::memory_budget::GPU_TEXT_BYTES,
-                knife_perf::memory_budget::GPU_GROUP_BYTES);
+                knife_perf::memory_budget::GPU_TEXT_ENTRIES, knife_perf::memory_budget::GPU_GROUP_BYTES,
+                knife_perf::memory_budget::GPU_TARGET_RING_BYTES, knife_perf::memory_budget::GPU_MOVIE_FRAME_BYTES);
         knife_platform_vita::audit::console(&header)?;
         knife_perf::set_enabled(true);
         knife_platform_vita::audit::set_enabled(true);

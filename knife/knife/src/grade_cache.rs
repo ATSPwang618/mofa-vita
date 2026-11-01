@@ -80,6 +80,61 @@ fn encoder() -> Option<&'static Encoder> {
     ENCODER.get_or_init(Encoder::new).as_ref()
 }
 
+/// Brightness and contrast run strictly after `channels`. Cache those exact
+/// f32 channel results, so a new tone does not repeat 65,281 gamma/matrix jobs.
+/// Input domain and grade-table bits remain part of the identity. No table is
+/// generated on another machine or approximated with interpolation.
+#[derive(Clone, PartialEq, Eq)]
+struct GrayBaseKey { build: u8, mode: i32, row: Option<[u32; 20]> }
+impl From<&GradeKey> for GrayBaseKey {
+    fn from(key: &GradeKey) -> Self { Self { build: key.build, mode: key.mode, row: key.row } }
+}
+struct GrayBase { key: GrayBaseKey, values: Vec<[f32; 3]>, bytes: usize }
+#[derive(Default)]
+struct GrayBases { entries: VecDeque<Arc<GrayBase>>, bytes: usize }
+fn gray_bases() -> &'static Mutex<GrayBases> {
+    static BASES: OnceLock<Mutex<GrayBases>> = OnceLock::new();
+    BASES.get_or_init(Mutex::default)
+}
+fn trim_gray_bases(cache: &mut GrayBases, need: usize) -> usize {
+    let before = cache.bytes;
+    let mut i = 0;
+    while i < cache.entries.len() && before - cache.bytes < need {
+        if Arc::strong_count(&cache.entries[i]) == 1 {
+            cache.bytes -= cache.entries.remove(i).unwrap().bytes;
+        } else { i += 1; }
+    }
+    knife_perf::gauge_set(Gauge::GradeBaseBytes, cache.bytes as u64);
+    before - cache.bytes
+}
+fn gray_base(key: &GradeKey, params: &Params) -> Option<Arc<GrayBase>> {
+    // Called only by encoded-input grey kernels. Those share the integer
+    // 54R+183G+19B grid, independent of sRGB metadata/raw and the final tone.
+    debug_assert!(key.native_encoded && params.grey);
+    let key = GrayBaseKey::from(key);
+    let mut cache = gray_bases().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(i) = cache.entries.iter().position(|entry| entry.key == key) {
+        let entry = cache.entries.remove(i).unwrap();
+        cache.entries.push_back(entry.clone());
+        knife_perf::add(Metric::GradeBaseHit, 0, 0);
+        return Some(entry);
+    }
+    let needed = std::mem::size_of::<GrayBase>() + (255 * 256 + 1) * std::mem::size_of::<[f32; 3]>();
+    let cap = knife_perf::memory_budget::CPU_GRADE_BASE_BYTES;
+    let deficit = cache.bytes.saturating_add(needed).saturating_sub(cap);
+    trim_gray_bases(&mut cache, deficit);
+    if cache.bytes.saturating_add(needed) > cap { return None; }
+    let probe = Scope::new(Metric::GradeBaseBuild);
+    let values: Vec<_> = (0..=255 * 256).map(|k| channels(params, [k as f32 / 256.0; 3])).collect();
+    let bytes = std::mem::size_of::<GrayBase>() + values.capacity() * std::mem::size_of::<[f32; 3]>();
+    let entry = Arc::new(GrayBase { key, values, bytes });
+    cache.bytes += bytes;
+    cache.entries.push_back(entry.clone());
+    knife_perf::gauge_set(Gauge::GradeBaseBytes, cache.bytes as u64);
+    probe.finish(bytes as u64, 0);
+    Some(entry)
+}
+
 enum Lut { Gray(Vec<[f32; 3]>), GrayEncoded(Vec<[u8; 3]>), Channels([[u8; 3]; 256]) }
 struct Kernel { key: GradeKey, pre: [f32; 256], lut: Lut, bytes: usize }
 impl Kernel {
@@ -93,8 +148,11 @@ impl Kernel {
                 // Encoded byte input makes 54R+183G+19B an exact integer. All
                 // 65,281 possible values map directly to final UNORM8, avoiding
                 // per-pixel floating interpolation and representation encoding.
-                Lut::GrayEncoded((0..=255 * 256).map(|k|
-                    last([k as f32 / 256.0; 3]).map(unorm_byte)).collect())
+                let base = gray_base(&key, p.as_ref().unwrap());
+                Lut::GrayEncoded(match base {
+                    Some(base) => base.values.iter().map(|v| v.map(|x| unorm_byte(bake.tone(x)))).collect(),
+                    None => (0..=255 * 256).map(|k| last([k as f32 / 256.0; 3]).map(unorm_byte)).collect(),
+                })
             } else { Lut::Gray((0..=255 * 256).map(|k| last([k as f32 / 256.0; 3])).collect()) }
         } else { Lut::Channels(std::array::from_fn(|i| last([pre[i]; 3]).map(|l| output_byte(l, key.native_encoded)))) };
         let bytes = std::mem::size_of::<Self>() + match &lut {
@@ -137,8 +195,19 @@ fn trim_lru_cache(cache:&mut Cache, need:usize)->usize {
 }
 pub(super) fn trim_lru(need:usize) -> usize {
     if need==0 {return 0;}
-    let mut cache=match cache().try_lock() {Ok(c)=>c,Err(TryLockError::Poisoned(e))=>e.into_inner(),Err(_)=>return 0};
-    trim_lru_cache(&mut cache,need)
+    let freed = match cache().try_lock() {
+        Ok(mut cache) => trim_lru_cache(&mut cache, need),
+        Err(TryLockError::Poisoned(e)) => trim_lru_cache(&mut e.into_inner(), need),
+        Err(_) => 0,
+    };
+    if freed >= need { return freed; }
+    // Never wait on the CPU decoder while the UI is reclaiming memory.
+    let extra = match gray_bases().try_lock() {
+        Ok(mut bases) => trim_gray_bases(&mut bases, need - freed),
+        Err(TryLockError::Poisoned(e)) => trim_gray_bases(&mut e.into_inner(), need - freed),
+        Err(_) => 0,
+    };
+    freed + extra
 }
 
 pub(super) fn apply(bake: &Bake, pixels: &mut [u8], srgb: bool) -> bool {

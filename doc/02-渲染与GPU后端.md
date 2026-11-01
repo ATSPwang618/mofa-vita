@@ -121,7 +121,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 ### 7.3 文字缓存与 stage 前缀
 
-- **text cache**：连续 ≥8 个 Text/RimText Alpha glyph 画到透明目标（专用 `CoverageOver=9` 混合），再用 `fs_alter` 原样合成；命中时用一次合成替代整段 glyph draw（`knife/knife/src/game/text_cache.rs:92-195`、`vita.rs:1869-1930`、`effects_backend.inc:207-215,260-277`）。预算 12 MiB/8 项、≤1024 glyph、600 帧空闲淘汰（`text_cache.rs:14-16`）。
+- **text cache**：连续 ≥8 个 Text/RimText Alpha glyph 画到透明目标（专用 `CoverageOver=9` 混合），再用 `fs_alter` 原样合成；命中时用一次合成替代整段 glyph draw（`knife/knife/src/game/text_cache.rs:92-195`、`vita.rs:1869-1930`、`effects_backend.inc:207-215,260-277`）。预算 12 MiB/32 项、≤1024 glyph、600 帧空闲淘汰（`text_cache.rs:14-16`）。
 - **stage prefix**：纯 stage 前缀（clear.a=1、≤64 quad、全部 Alpha/Ps、源为不可变 deferred 纹理或 white、前缀≥2 且含 PS）按 `Quad::render_key()` 精确 memoize，命中后用一次 Opaque+NoAlpha 全屏 quad 替代（`stage_prefix.rs:46-130`、`game.rs:6307-6313`），预算 3 MiB（`knife-perf/src/memory_budget.rs:13`）。
 - **direct stage**：无 ghost/focus/transition 时画布直接读 `stage_rt`，跳过 stage→scene 复制 pass（`game.rs:6726-6735`）。
 
@@ -138,7 +138,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 | newlib 堆 | 256 MiB | `platform.c:19` |
 | CPU source / graded | 64 / 32 MiB | `memory_budget.rs:4-5` |
 | GPU resource / source | 56 / 32 MiB | `memory_budget.rs:6-7` |
-| 文字 / 组 / stage 前缀 | 12 MiB(8 项) / 12 MiB(6 项) / 3 MiB | `memory_budget.rs:8-13` |
+| 文字 / 组 / stage 前缀 | 12 MiB(32 项) / 12 MiB(6 项) / 3 MiB | `memory_budget.rs:8-13` |
 | 批次槽 | 2 × 4 MiB | `gxm_backend.c:130-134` |
 
 ## 9. 运行时 shader 编译与缓存
@@ -147,13 +147,13 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 启动期（`runtime_shaders.c:331-418`）：
 
-1. 先查数据根下的 `ux0:data/WitchontheHolyNight/shader-cache/`；10 个条目全部命中则不加载编译器（`:337-343`）；
+1. 先查数据根下的 `ux0:data/WitchontheHolyNight/shader-cache/`；28 个条目全部命中则不加载编译器（`:337-343`）；
 2. 否则依次检查 4 个候选路径（`app0:/sce_module/libshacccg.suprx` 等），核对 1,776,523 B 大小与完整 SHA-256（`:344-362`、`:309-330`）、模块名与 7 个导出的归属（`:202-253`、`shader_module_exports.h:23-58`）；
 3. 用 `sceShaccCgExtEnableExtensions()` 启用 `__nativecolor`/`__regformat` 等 Cg 扩展（`shader_extensions.c:25-54`）；失败则跳过 native 声明编译（`runtime_shaders.c:390-412`）；
 4. 编译 O3、禁用 fastmath/fastprecision/fastint；产物先过完整校验：GXP 魔数、大小、stage/native-color 标志、输出寄存器格式（fetch 要求 UCHAR4）、参数/采样器/边界、`sceGxmProgramCheck`（`:93-150`）；
 5. 通过后写缓存：168 B 头（ABI 5、entry ABI 2、policy 1、source/compiler SHA、FNV-1a 校验和）+ 程序字节；先 `.tmp` 再 `rename`（`:24-46,183-201`），路径同时嵌 source/compiler SHA 与 ABI/ID（`:151-155`）。
 
-10 个运行时 ID 与入口（`runtime_shaders.c:49,56-80`）：
+28 个运行时 ID 与入口（`runtime_shaders.c:49,56-80`）：
 
 | ID | 入口 | 用途 |
 |---:|---|---|
@@ -167,6 +167,9 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 | 22 | `fs_sprite_plain` | 无 haze/soft/rule 的普通 Sprite |
 | 23 | `fs_ps19_plain_fetch` | 无 haze/soft/rule/group 的 op19 |
 | 25 | `fs_ps2_fetch` | 普通 Sprite 的 op2 Darken |
+| 26 | `fs_forcealpha_plain` | 无 haze/soft/rule 的 ForceAlpha |
+| 28 | `fs_rim_text_batched` | 按顶点传递字形边界的描边字批次 |
+| 32–47 | `fs_ps_chain2_fetch` | PS2/11/13/19 的 16 种编译期材质组合，公开 family ID 为 27 |
 
 每个 ID 独立接纳；`effects_backend.inc:156-184,279-318` 把失败降级为旧程序并清除能力位，Rust 只按能力走快路径。
 
@@ -200,7 +203,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 **Host 测试（不需要 Vita）**
 
-- Rust：`cargo test -p knife-render` 使用模拟 GXM 后端（`vita.rs:18-24`、`vita_test_backend.rs`），`vita_tests.rs` 有 76 个 `#[test]`，覆盖命令编码、批次、PS/组/文字缓存、预算与回退。
+- Rust：`cargo test -p knife-render` 使用模拟 GXM 后端（`vita.rs:18-24`、`vita_test_backend.rs`），`vita_tests.rs` 保留已有测试，覆盖命令编码、批次、PS/组/文字缓存、预算与回退。
 - C：`knife/vita/tests/*.c`（GXM copy/compressed/present/viewport/budget、effect 输入、图像解码、JPEG、音频），由 `tools/test-vita-*.sh` 在 host 编译运行；native 代码按 `-Wall -Wextra -Werror` 编译（`CMakeLists.txt:37`）。
 
 **设备验证（opt-in，默认静音）**
@@ -209,6 +212,45 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 - 日志：控制台 JSON 每 5 s 一个 window/audit，header 记录 build tag、时钟、scene/composite 尺寸、素材清单 SHA、优化 mask、颜色契约、缓存预算（`vita_entry.rs:45-111,467-481`）；native 侧 108 个累计计数器（`perf_audit.c:39-78`、`perf_counters.def`）覆盖上传/清零/copy/Finish/EndScene/display/批次等待/池/rename/PS 路径等；watchdog 每 500 ms 输出 `runtime_state` JSON（`vita_watchdog.rs:131-186`）。
 - 离线分析：`tools/read-vita-performance.py` 把日志转为 JSON 报告（`:1-40`），`tools/test-vita-performance.py` 做解析回归；构建收据/包检查见 `tools/vita-build-receipt.py`、`tools/check-vita-package.py`。注意离线分析器依赖未入库的 `tools/vita_audit_log.py`（见 [07](07-已知限制与未验证项.md)）。
 - [历史实测] r2/r3/r4 的 480×270/720×404 捕获只用于验证结构（如 group 融合后 scratch 3→0、compact 覆盖与字节减少、PS fetch 未成立）；**终版 960×540 的 FPS/帧时间、PS fetch 是否成立、各缓存命中收益、像素等价性均 [未验证]**，详见 [05](05-优化记录与实测数据.md)、[07](07-已知限制与未验证项.md)。
+
+## 13. 剧情合成流水线更新（2026-11-01）
+
+当前 `all` profile 新增 `blend-chain`、`producer-reuse`、`async-rebake`、`target-ring` 四项；以下为代码行为，不是实机收益声明。
+
+- **连续混合链**：按材质与裁剪后凸区域自动合并相邻两层 PS2/11/13/19。交集用 shader 27 一次取目标颜色，原顺序计算并保留中间 UCHAR4 量化；各自独占区域保留原 shader。不新增快照或渲染目标。交集至少 16,384 物理像素且达到较小图层面积的 50% 才使用；非仿射、haze/soft/rule/group 或缺少能力时回退。shader 在启动时编译并落盘复用。
+- **输出复用**：stage 使用完整绘制输入、源纹理世代和输出版本，scene 使用实际 ghost/focus 参数；过场状态本身不再强制重画。无 scene 写者时，过场直接读取 stage。继承旧内容的 group 保守保留；Witch RT40 只在原生 9/6/3 帧 tick 事件发布，历史目标不轮换。
+- **异步重烘焙**：复用已有 CPU 图片工作线程，每次 update 最多注册一张就绪图片；最多 40 层成组准备，在真实脚本屏障前等待，完整校验来源/参数/世代后一次提交。等待时保留旧完整舞台和准确 PC，音频、输入、外层 UI 继续；场景/读档/回溯取消旧请求，失败不发布半成品。
+- **中间目标双缓冲**：stage 仅实际重画时轮换，canvas 在完整重建前轮换；额外两张 540p 目标约 4 MiB，总上限 6 MiB，按原生 pitch、对齐和实际 CDRAM/JPEG 余量准入。FADS 在 stage 轮换前捕获旧画面；反馈别名、残影和累积历史不重命名。必需上传优先，可回收备用目标及 group/prefix 缓存；不删除原生 GPU 栅栏。
+
+日志继续只通过控制台输出。`target_ring_enable/rotate/bypass/release` 与 `target_ring_bytes` 记录实际准入；轮换本身不计复制字节。`blend_chain`、`blend_chain_coverage` 分别记录合并次数与估计交集物理像素；不是 GPU 计时。`stage_input_*_changed` 区分几何/UV、颜色、材质及纹理世代变化，关闭监控时不计算这些诊断哈希。`async_bake_*` 记录准备/等待/提交，`BakeRebuild` 热点在真正工作线程内计时，与主线程 update 可以重叠。
+
+## 14. 文字批次与 update 等待（2026-11-01）
+
+- **材质成本准入**：连续混合链的两个运算在编译期确定；16 个公共材质组合分别缓存和 patch，仅当编译产物 primary 指令数不超过对应两个单层快路径之和、且必需程序均可用时接纳。逐项 `shader_chain_variant` 输出实际成本和准入结果。指令数用于剔除已知不合算的程序，不等于 GPU 周期或实机收益。
+- **文字**：描边字的 glyph UV 边界改由每个三角形的顶点输入传递，描边 RGB24 仍保留在共享 uniform，允许同图集、同描边 RGB24 的相邻字合批。逐 glyph 的采样步长和强度也由顶点精确传递；缺少能力位 28 时保留旧路径。打字期间缓存逐行固定 8 glyph 小段，短尾直接绘制；调用方确认显示完成、完整输入连续两帧一致后，晋升完整连续文字 run，包含不足 8 glyph 的尾部。晋升未就绪继续使用已有前缀；成功后回收其精确覆盖的旧冷段。整数物理像素滚动保留栅格相位。保持 12 MiB/32 项；每帧最多两次构建，满池优先复用冷的同尺寸目标。
+- **CPU/GPU 顶点复用**：被合并掉的临时 CPU 顶点缓冲立即回池，提交完成后的缓冲回同一个有界池，累计保留上限仍为 16 MiB；缓存段合成不再分配临时命令 Vec。RimText28 可单独使用同一 vertex shader 的 64 B F32 顶点流（pos/UV/color/hx/hy），soft 接共享零流，RGB24 仍从原 CPU 数据传 uniform；patch 失败回退 112 B 完整流。每字六顶点由 672 B 降为 384 B，不改变图片上传路径。
+- **调色基础曲线**：native encoded 灰度核独立缓存亮度/对比度之前的精确 f32 曲线，按构建、grade 与原始矩阵位模式区分；上限 3 MiB，可统一回收。后续 tone 和 UNORM8 转换保持原顺序，不插值、不改变素材。
+- **动画资源屏障**：在推进动画、文字、RNG 与 VM 时钟之前预检未来变体；冷变体复用图片工作线程，完整成组准备并 pin 后只消费一次原时间步。播放时只读已准备图像，不再从换帧路径同步解码或调色。
+- **电影启动**：见下节的单 owner 工作线程修正；仅移走 READY 等待仍会留下 SelectStreams/Start 的同步阻塞。
+
+- **音效预解码**：独立单 CPU worker，至多 4 pending / 1 ready；前看 24 条脚本只预取，不播放。真实命令、覆盖旧延迟槽和延迟到期批次在准确 PC/时间步处准备 PCM，播放路径只读就绪缓存；读档/场景切换取消旧世代。沿用 16 MiB PCM 缓存，临时 pin 同样受 16 MiB/24 项双重限制；pin 与缓存/混音器共享 Arc，不能把 gauge 相加当独占内存。作业按最多 40 MiB 解码峰值检查堆余量，不预分配这些字节。缺失、解码失败、超时或 worker 异常保持原先 warn+None 行为，继续 VM，不在主线程偷偷同步解码。
+
+`rim_batch_merge` / `draw_rim_batched`、`text_cache_direct_glyphs` / `text_cache_target_reuse`、`grade_base_build/hit`、`motion_variant_*`、`movie_*` 与 `script_scene_*` / `script_command` 分别监控上述路径；`vertex_buffer_reuse/recycle` 记录 CPU 缓冲池，`sound_prefetch/demand_*` 与 `sound_effect_decode` 区分准备和真实解码。资源解码的 worker 时间与主线程 update 可以重叠。`text_cache_saved_draws` 只估计段内替代，整帧 draw 净变化看 native `draw_total`；收益以对应真机日志为准。
+
+
+## 15. cache-batch 回归修正（2026-11-01）
+
+本轮基线为 `mofa-native540-cache-batch-20261101` 真机控制台日志。28 次 `stream_stat` 合计 23.625 s，约占同次捕获 `game_update` 32.444 s 的 72.82%；`stream_resolve` 是其父 scope，不能相加。最坏帧 update 3334.070 ms，两个音效名字解析合计 3333.114 ms，GPU 等待仅 44 µs。因此此次秒级停顿首先是音效入队前同步文件探测，不是 GPU 合成耗时。
+
+- **音效与路径解析**：主线程作业只包含名字，先在声音 worker 查 BFSAR，确实失败才解析独立流。已绑定素材清单的 stream 索引对缺失名字直接返回，不再扫描目录；无有效索引的自定义素材保留 worker 独立的有界正/负缓存与 `.ogg/.opus` 兼容。
+- **音频观测**：按文件名及打开实例记录首 PCM 等待、播放中断流墙钟和缺失 sample frame 数。混音热点使用固定容量、无分配 `try_lock` 记录，忙则丢热点行但保留原子汇总；主动暂停不计断流。设备 underrun 为零仍可能只有某一条流缺 PCM，不能据此声明声音连续。保持原 10 队列块/12 池块和 8 通道，不盲目加缓冲或改优先级。两种 decoder 的 fresh-open 已就位逻辑 PCM 0，首次从 0 播放不再重复 seek；非零恢复和循环回绕仍走原精确 seek。
+- **电影 owner**：文件准备、Open、READY、SelectStreams/Start、控制、取帧和 Close 都放在同一个常驻 owner 线程。主线程只提交有界请求、轮询结果；新的解码帧先由 GPU 转成一张受 3 MiB 上限约束的 960×540 缓存，完成栅栏后再确认归还原生帧，等待时绘制缓存。该转换只发生在新解码帧，没有 CPU readback。取消不可归还已被 GPU 取用而尚未确认完成的帧；栅栏失败时隔离 owner 并拒绝继续打开，防止累积泄漏或复用未完成缓冲。
+- **文字和图片缓存**：上一节的完成态整 run 晋升与 RIM64 修正静态文字碎片化和逐 glyph 参数导致的拆批。图片需求在源读取/解压前尝试精确调色成品缓存，锁忙返回 Pending，保留原请求 deadline；命中沿原 reload 元数据注册，避免已有成品仍重新读源。
+
+`movie_owner_*` 是工作线程调用耗时，`movie_frame_cache` 是主线程 GPU 提交及完成等待；`audio_stream_start_wall` / `audio_stream_starve_wall` 是墙钟，`audio_stream_missing_frames.aux` 为缺失帧数，均不能与父 scope 相加。修正后的 FPS、断流次数和秒级停顿消除幅度需以同段真机日志确认；本轮不把 host 检查写成实测收益。素材未更改。
+
+
+本轮真机复核（`mofa-native540-io-owner-fix-20261101`）：已恢复的累计记录中 `stream_stat` 从 28 次/23.625 s 降为 0，播放中 `audio_stream_starved` 从 8 次降为 0；两次电影主线程启动轮询累计从 683.973 ms 降为 0.366 ms。文字整 run 晋升 148 次，RIM64 接纳成功；未见游戏期间 watchdog 停滞或 panic。仍有 UI 首次资源加载长帧（最大 599 ms）及部分约 30 FPS 的演出，不能据此声明全程 60 FPS。新旧捕获停留时长不同，不以全程平均 FPS 作严格 A/B 收益。临时回归桩、原始日志与构建证据仅在本地 `.work` 归档，不是编译依赖。
 
 ## 相关文档
 

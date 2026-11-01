@@ -38,6 +38,8 @@ pub enum EffectShader {
     PsPlain19,
     PsFetch2 = 25,
     PlainForceAlpha = 26,
+    PsChain2 = 27,
+    RimTextBatched = 28,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -152,6 +154,10 @@ impl Gxm {
     }
     pub fn shader_available(&self, shader: u32) -> Result<bool, String> {
         Ok(shader < 32 && self.control.borrow().shader_capabilities & (1u32 << shader) != 0)
+    }
+    pub fn chain_pair_available(&self, first: u32, second: u32) -> Result<bool, String> {
+        let ops = [2, 11, 13, 19];
+        Ok(self.shader_available(27)? && ops.contains(&first) && ops.contains(&second))
     }
     pub fn live_render_targets(&self) -> usize {
         self.textures.values().filter(|texture| texture.target).count()

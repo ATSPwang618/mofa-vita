@@ -39,6 +39,8 @@ typedef struct KvGxmStats {
 int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t error_capacity);
 /* Optional runtime program passed compiler output/metadata checks at startup. */
 int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader);
+/* Exact startup-patched, cost-admitted material pair; no compilation on draw. */
+int32_t kv_gxm_chain_pair_available(KvGxm *g, uint32_t first, uint32_t second);
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
     uint32_t height, uint32_t stride, KvGxmTexture **out);
 int32_t kv_gxm_texture_destroy(KvGxm *g, KvGxmTexture *texture);
@@ -72,7 +74,8 @@ int32_t kv_gxm_end_target(KvGxm *g);
 /* After a completed bake, release RT/DEV-sync attachments while retaining the
    sampled texture and its pixels. No active scene or displayed DEV target. */
 int32_t kv_gxm_texture_seal(KvGxm *g, KvGxmTexture *texture);
-/* Triangle-list vertices from exactly one quad (equal haze values). IDs match
+/* Triangle-list vertices follow the selected shader ABI: ordinary uniforms are
+   equal across the draw; RimText28 has per-triangle hx/xyz and shared RGB24. IDs match
    Rust EffectShader / EffectBlend; params is two complete float4 uniforms. */
 int32_t kv_gxm_draw_effect(KvGxm *g, const KvEffectVertex *vertices, uint32_t count,
     uint32_t shader, uint32_t blend, const KvGxmTexture *const textures[4], const float params[8]);

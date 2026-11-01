@@ -54,15 +54,26 @@ fn take_hit(state:&mut State,key:&Key)->Option<ResultPixels> {
 pub fn lookup_source(archive:&Arc<Archive>,index:usize,name:&str,bake:Bake,strip:Option<(usize,usize)>)->Option<ResultPixels> {
     if !enabled(bake) {return None;}
     let mut state=cache().state.lock().unwrap_or_else(|e|e.into_inner());
+    source_hit(&mut state,archive,index,name,bake,strip)
+}
+pub enum SourceLookup { Ready(ResultPixels), Missing, Pending }
+/// The VM owner may reuse a completed result without waiting on cache metadata
+/// owned by a decoder/maintenance sweep. A busy lock is Pending, not a cache miss
+/// that would unnecessarily enqueue archive I/O. No reservation is disturbed.
+pub fn try_lookup_source(archive:&Arc<Archive>,index:usize,name:&str,bake:Bake,
+    strip:Option<(usize,usize)>)->SourceLookup {
+    if !enabled(bake) {return SourceLookup::Missing;}
+    let mut state=match cache().state.try_lock() {
+        Ok(state)=>state,Err(TryLockError::Poisoned(error))=>error.into_inner(),Err(_)=>return SourceLookup::Pending,
+    };
+    source_hit(&mut state,archive,index,name,bake,strip).map_or(SourceLookup::Missing,SourceLookup::Ready)
+}
+fn source_hit(state:&mut State,archive:&Arc<Archive>,index:usize,name:&str,bake:Bake,
+    strip:Option<(usize,usize)>)->Option<ResultPixels> {
     let hit=state.entries.iter().find(|entry|entry.key.name==name && entry.key.strip==strip
         && entry.key.index==index && Arc::as_ptr(archive) as usize==entry.key.archive
         && entry.key.grade==GradeKey::new(&bake,entry.key.grade.srgb)).map(|entry|entry.key.clone());
-    hit.and_then(|key|take_hit(&mut state,&key))
-}
-pub fn lookup(archive:&Arc<Archive>,index:usize,name:&str,bake:Bake,strip:Option<(usize,usize)>,srgb:bool)->Option<ResultPixels> {
-    if !enabled(bake){return None;}
-    let key=key(archive,index,name,bake,strip,srgb);
-    take_hit(&mut cache().state.lock().unwrap_or_else(|e|e.into_inner()),&key)
+    hit.and_then(|key|take_hit(state,&key))
 }
 fn result_from(pixels:Pixels,rebuild_us:u64,archive:Arc<Archive>,index:usize,encoded_len:usize)->Result<ResultPixels> {
     let (pixels,logical)=match pixels {Pixels::Scaled(p,l)=>(*p,Some(l)),p=>(p,None)};

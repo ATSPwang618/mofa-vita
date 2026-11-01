@@ -593,7 +593,10 @@ impl StreamCursor {
         let loop_range = loop_range.map(|(a,b)| (a.min(decoder.total_frames()),b.min(decoder.total_frames())));
         if loop_range.is_some_and(|(a,b)| a >= b) { return Err("stream loop range outside source".into()); }
         if start as u64 > decoder.total_frames() { return Err("stream start exceeds source".into()); }
-        decoder.seek(start as u64)?;
+        // Both decoders finish opening at logical PCM frame zero (including
+        // pre-skip). Re-seeking a fresh stream repeats demux/decoder work.
+        // Nonzero restore positions and later loop rewinds keep exact seeking.
+        if start != 0 { decoder.seek(start as u64)?; }
         let mono = decoder.channels() == 1;
         Ok(Self { decoder, pcm: [[0.0;2];CHUNK_FRAMES], cursor:0, filled:0,
             position:start as u64, loop_range, looping, mono })
@@ -657,12 +660,14 @@ impl StreamSound {
         finished: Arc<AtomicBool>, start: usize, looping: bool)
         -> Result<Self,(String,Arc<AtomicBool>)>
     {
-        let pump=stream_pump::Pump::spawn(move || StreamCursor::open(path,loop_range,start,looping))
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let pump=stream_pump::Pump::spawn_named(&name, move || StreamCursor::open(path,loop_range,start,looping))
             .map_err(|error|(error,finished.clone()))?;
         Ok(Self { pump,ctl,finished,done:false })
     }
     fn process_frames(&mut self, mix: &mut [[f32;2];CHUNK_FRAMES]) -> Result<(),String> {
         let control=self.ctl.clone(); let mut ctl=control.lock();
+        if ctl.paused { self.pump.suspend_wait(); }
         let mut matrix = None;
         for (index, dst) in mix.iter_mut().enumerate() {
             if self.done || ctl.stop_now { self.done=true; break; }
@@ -670,6 +675,7 @@ impl StreamSound {
             let (sample,mono)=match self.pump.sample() {
                 stream_pump::Poll::Sample(sample,mono)=>(sample,mono),
                 stream_pump::Poll::Pending=>{
+                    self.pump.missing_frames(CHUNK_FRAMES - index);
                     // A stopped/fading pending channel must not live forever
                     // merely because its file worker has not produced PCM yet.
                     if ctl.stop_after_ramp {

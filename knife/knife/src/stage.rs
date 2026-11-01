@@ -1149,6 +1149,16 @@ impl Stage {
     /// Witch on the Holy Night (jp_35FC0, render +364..+372 stepped by jp_3C970): scale 0.9375 (1.875x), a tick
     /// every 9 frames for n 11 / 12, 6 for 21 / 22 / 31 / 32, else 3, and the offset -rand(0, 896) / 4 x
     /// -rand(0, 504) / 4 drawn only at a tick (held between ticks).
+    /// Native Witch noise publication event. Render-only frames within this
+    /// tick reuse RT40 without replaying its inherited alpha operation.
+    #[cfg(target_os = "vita")]
+    pub fn noise_event_key(&self) -> Option<(i32, u32)> {
+        if !crate::assets::witch() { return None; }
+        let n = self.layers.iter().flatten().find_map(|l| l.noise.filter(|_| !l.pending))?;
+        let period = match n { 11 | 12 => 9, 21 | 22 | 31 | 32 => 6, _ => 3 };
+        Some((n, self.frame / period))
+    }
+
     pub fn noise_pass(&self) -> Option<Quad> {
         let nt = self.noise.as_ref()?;
         let n = self.layers.iter().flatten().find_map(|l| l.noise.filter(|_| !l.pending))?;

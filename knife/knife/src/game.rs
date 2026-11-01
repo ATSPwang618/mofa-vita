@@ -7,9 +7,15 @@ use std::{
 
 mod bake_batch;
 #[cfg(target_os = "vita")]
+mod rebake_cohort;
+#[cfg(target_os = "vita")]
+mod sound_barrier;
+#[cfg(target_os = "vita")]
 mod text_cache;
 #[cfg(target_os = "vita")]
 mod ui_pass_cache;
+#[cfg(target_os = "vita")]
+mod producer_reuse;
 #[cfg(target_os = "vita")]
 mod group_schedule;
 #[cfg(target_os = "vita")]
@@ -555,6 +561,12 @@ pub struct Game {
     motions: MotionTable,
     pub stage: Stage,
     rebake_batch: bake_batch::Batch,
+    #[cfg(target_os = "vita")]
+    rebake_pending: Option<rebake_cohort::Pending>,
+    #[cfg(target_os = "vita")]
+    motion_resume: Option<rebake_cohort::PreparedMotion>,
+    #[cfg(target_os = "vita")]
+    sound_barrier: Option<sound_barrier::Barrier>,
     pub sound: Sound,
     font: FontAtlas,
     /// ja3 FOT-Seurat: the message text while the window is a bubble (see `msg_font`)
@@ -862,6 +874,18 @@ pub struct Game {
     relaying: bool,
 
     stage_rt: RenderTarget,
+    #[cfg(target_os = "vita")]
+    stage_producer: producer_reuse::Memo,
+    #[cfg(target_os = "vita")]
+    scene_producer: producer_reuse::Memo,
+    #[cfg(target_os = "vita")]
+    stage_changes: producer_reuse::Changes,
+    #[cfg(target_os = "vita")]
+    stage_ring: producer_reuse::Ring,
+    #[cfg(target_os = "vita")]
+    canvas_ring: producer_reuse::Ring,
+    #[cfg(target_os = "vita")]
+    noise_event: Option<(Vec<u64>, (usize, u64))>,
     /// STNS render target 40, created on first use
     noise_rt: Option<RenderTarget>,
     /// Save list previews (sub_884F0 / sub_89AD0): the Switch keeps no images, it rebuilds each preview
@@ -1014,6 +1038,12 @@ impl Game {
             motions,
             stage: Stage::new(),
             rebake_batch: bake_batch::Batch::default(),
+            #[cfg(target_os = "vita")]
+            rebake_pending: None,
+            #[cfg(target_os = "vita")]
+            motion_resume: None,
+            #[cfg(target_os = "vita")]
+            sound_barrier: None,
             sound: Sound::new(),
             font,
             font_bubble: None,
@@ -1164,6 +1194,18 @@ impl Game {
             border: Vec::new(),
             relaying: false,
             stage_rt: r.create_scene_target(CANVAS_W, CANVAS_H, "stage"),
+            #[cfg(target_os = "vita")]
+            stage_producer: producer_reuse::Memo::default(),
+            #[cfg(target_os = "vita")]
+            scene_producer: producer_reuse::Memo::default(),
+            #[cfg(target_os = "vita")]
+            stage_changes: producer_reuse::Changes::default(),
+            #[cfg(target_os = "vita")]
+            stage_ring: producer_reuse::Ring::default(),
+            #[cfg(target_os = "vita")]
+            canvas_ring: producer_reuse::Ring::default(),
+            #[cfg(target_os = "vita")]
+            noise_event: None,
             noise_rt: None,
             previews: Default::default(),
             preview_queue: Vec::new(),
@@ -1242,18 +1284,31 @@ impl Game {
 
     #[cfg(target_os = "vita")]
     fn reset_resource_command(&mut self) {
+        if self.rebake_pending.take().is_some() {
+            knife_perf::add(knife_perf::Metric::AsyncBakeCancel, 0, 1);
+        }
+        self.rebake_batch.take();
+        self.motion_resume = None;
+        self.sound_barrier = None;
+        self.assets.reset_sound_needed_context();
         self.resource_command = None;
         self.resource_pending = false;
         self.resource_error = None;
+        knife_perf::gauge_set(knife_perf::Gauge::AsyncBakeLayers, 0);
         self.assets.reset_image_needed_context();
     }
 
     #[cfg(target_os = "vita")]
     fn resource_event(&self, status: &str, detail: &str) {
+        let (scene, pc) = self.resource_command.unwrap_or((self.scene_index, self.pc.saturating_sub(1)));
+        self.resource_event_at(status, detail, scene, pc);
+    }
+
+    #[cfg(target_os = "vita")]
+    fn resource_event_at(&self, status: &str, detail: &str, scene: usize, pc: usize) {
         if !knife_perf::enabled() { return; }
         let mut quoted = String::new();
         knife_perf::json_string(&mut quoted, &detail.chars().take(768).collect::<String>());
-        let (scene, pc) = self.resource_command.unwrap_or((self.scene_index, self.pc.saturating_sub(1)));
         let _ = knife_platform_vita::audit::console(&format!(
             "{{\"kind\":\"resource_event\",\"schema\":1,\"scene\":{scene},\"pc\":{pc},\"status\":\"{status}\",\"detail\":{quoted}}}\n"));
     }
@@ -1284,7 +1339,12 @@ impl Game {
 
     #[cfg(target_os = "vita")]
     pub fn vita_diagnostic_resource(&self) -> (bool, bool) {
-        (self.resource_command.is_some() || self.resource_pending, self.resource_error.is_some())
+        (self.resource_waiting(), self.resource_error.is_some())
+    }
+
+    #[cfg(target_os = "vita")]
+    fn resource_waiting(&self) -> bool {
+        self.resource_command.is_some() || self.rebake_pending.is_some() || self.sound_barrier.is_some() || self.resource_pending
     }
 
     #[cfg(target_os = "vita")]
@@ -1296,7 +1356,7 @@ impl Game {
         crate::vita_watchdog::command(scene, pc, &command.name);
         self.pc = pc + 1;
         self.resource_pending = false;
-        self.exec(r, &command);
+        self.exec_profiled(r, &command);
         if self.resource_pending { self.pc = pc; }
         else {
             self.resource_event("ready", "STCH loaded; resume dispatch");
@@ -1581,6 +1641,36 @@ impl Game {
     pub fn update(&mut self, r: &Renderer, dt: f32) {
         #[cfg(target_os = "vita")]
         {
+            if self.sound_barrier.is_some() {
+                self.resource_pending = true;
+                self.sound.begin_frame(dt);
+                self.poll_sound_barrier(r);
+                self.sound.end_frame();
+                self.sound.update();
+                return;
+            }
+            if self.rebake_pending.is_some() {
+                self.resource_pending = true;
+                self.sound.begin_frame(dt);
+                self.sound.end_frame();
+                self.sound.update();
+                self.poll_rebake_cohort(r);
+                return;
+            }
+            if self.movie.as_ref().is_some_and(|movie| movie.starting()) {
+                self.resource_pending = true;
+                self.sound.begin_frame(dt);
+                self.sound.end_frame();
+                self.sound.update();
+                let start = self.movie.as_mut().unwrap().poll_start();
+                if let Err(error) = start {
+                    tracing::warn!("movie startup failed: {error:#}");
+                    self.stop_movie();
+                }
+                // TOMP's next PC is untouched; its WTTM begins only after
+                // READY, as with the original blocking call, without a stall.
+                return;
+            }
             if self.resource_command.is_some() {
                 // Resource latency must not advance story motions, text heads
                 // or transition clocks. Audio and the outer UI loop stay live.
@@ -1592,9 +1682,23 @@ impl Game {
             }
             self.resource_pending = false;
         }
+        #[cfg(target_os = "vita")]
+        let dt = if self.paused { dt } else { self.motion_resume.as_ref().map_or(dt, |prepared| prepared.dt) };
+        #[cfg(target_os = "vita")]
+        if !self.paused {
+            let step = if self.skip && self.speed <= 1 { dt * 8.0 } else { dt };
+            if !self.prepare_motion_variants(dt, step) {
+                self.sound.begin_frame(dt);
+                self.sound.end_frame();
+                self.sound.update();
+                return;
+            }
+        }
         self.frame_no += 1;
         #[cfg(target_os = "vita")]
         self.prefetch_images(r);
+        #[cfg(target_os = "vita")]
+        self.prefetch_sound_effects();
         // (the last frame's draw)
         self.latch_read_colours();
         // sub_A59F0: the capture fades by its step per frame, gone at 0
@@ -1627,13 +1731,20 @@ impl Game {
         if self.assets.build == Build::Witch {
             self.witch_duck(dt);
         }
-        for _ in 0..self.speed.max(1) {
-            self.update_step(r, dt);
+        for iteration in 0..self.speed.max(1) {
+            self.update_step(r, dt, iteration == 0);
             #[cfg(target_os = "vita")]
-            if self.resource_command.is_some() { break; }
+            if self.resource_waiting() { break; }
         }
         if !self.paused {
             self.step_read_fades(dt);
+        }
+        #[cfg(target_os = "vita")]
+        if self.sound_barrier.is_some() {
+            // A command barrier owns its saved audio tail. Do not replace it
+            // with another due batch or decrement timers while it is pending.
+            self.sound.end_frame();
+            return;
         }
         // the sound update (sub_9B7F0) runs once a frame after the script: sub_65E50 counts the queued SE
         // commands down (a key-68 SE queued by this frame's script already loses a frame: 500 ms is 29 frames
@@ -1641,8 +1752,13 @@ impl Game {
         // nn::atk's update. The main loop (sub_B5FE0) runs it whatever screen is up, so a queued SE still plays
         // (or ends a loop) under the system menu.
         if !self.rewinding {
-            self.tick_se_delayed(if self.skip && self.speed <= 1 { dt * 8.0 } else { dt });
+            if !self.tick_se_delayed(if self.skip && self.speed <= 1 { dt * 8.0 } else { dt }) {
+                self.sound.end_frame();
+                return;
+            }
         }
+        #[cfg(target_os = "vita")]
+        self.assets.release_prepared_sounds();
         self.sound.step_se_pans(dt * 60.0 / 1000.0);
         self.sound.end_frame();
         // sub_391A0, once a frame while the window is up: the click icon fades in by 0.1 a frame once the slot's
@@ -1679,7 +1795,16 @@ impl Game {
         }
     }
 
-    fn update_step(&mut self, r: &Renderer, dt: f32) {
+    fn update_step(&mut self, r: &Renderer, dt: f32, _preflight_done: bool) {
+        #[cfg(target_os = "vita")]
+        if !self.paused && !_preflight_done {
+            let step = if self.skip && self.speed <= 1 { dt * 8.0 } else { dt };
+            if !self.prepare_motion_variants(dt, step) { return; }
+        }
+        #[cfg(target_os = "vita")]
+        let prepared_motion = rebake_cohort::resume_once(&mut self.motion_resume, self.paused);
+        #[cfg(target_os = "vita")]
+        let dt = prepared_motion.as_ref().map_or(dt, |prepared| prepared.dt);
         self.time += dt;
         self.sound.update();
         if self.paused {
@@ -1927,14 +2052,33 @@ impl Game {
             // is an explicit barrier before that instruction executes.
             let coalesce = knife_perf::optimizations::enabled(knife_perf::optimizations::COALESCE_BAKE)
                 && matches!(cmd.op, Op::Cmd(_)) && bake_batch::Batch::allows(&cmd.name);
-            if !coalesce { self.flush_rebakes(r); }
+            if !coalesce && !self.flush_rebakes(r) {
+                // The barrier itself has not executed. Resume its exact PC
+                // after the whole image cohort has committed.
+                self.pc -= 1;
+                break;
+            }
+            #[cfg(target_os = "vita")]
+            if !self.prepare_sound_command(&cmd, if self.skip && self.speed <= 1 { dt * 8.0 } else { dt }) {
+                self.pc = dispatched.1;
+                break;
+            }
             self.rebake_batch.set_active(coalesce);
             #[cfg(target_os = "vita")]
             { self.resource_pending = false; }
+            #[cfg(target_os = "vita")]
+            self.exec_profiled(r, &cmd);
+            #[cfg(not(target_os = "vita"))]
             self.exec(r, &cmd);
             self.rebake_batch.set_active(false);
             #[cfg(target_os = "vita")]
             {
+                if self.movie.as_ref().is_some_and(|movie| movie.starting()) {
+                    // TOMP is committed once. Hold the NEXT instruction while
+                    // native buffering completes, instead of replaying TOMP.
+                    self.resource_pending = true;
+                    break;
+                }
                 if self.resource_pending {
                     // STCH has not published its new layer. Retry this exact
                     // command next frame; do not replay PGST/STCP or advance.
@@ -1972,7 +2116,7 @@ impl Game {
         if self.resource_pending { return; }
         // Covers the actual 20,000-op budget, run-off-end, hold, wait, skip and
         // seek/frame exits, rather than assuming a future FADS will be reached.
-        self.flush_rebakes(r);
+        if !self.flush_rebakes(r) { return; }
         // the pass that ended the seek: script_dispatch went on to the next wait first
         if self.seek_ended && !self.seek_node {
             self.seek_pass_end(r);
@@ -2708,6 +2852,25 @@ impl Game {
 
     // ---- commands ---------------------------------------------------------------
 
+    #[cfg(target_os = "vita")]
+    fn exec_profiled(&mut self, r: &Renderer, command: &Command) {
+        // Tight variable/branch loops can execute 20,000 opcodes in one update.
+        // Time only operations that can perform resource or snapshot work.
+        let costly = !matches!(&command.op, Op::Cmd(_)) || matches!(command.name.as_str(),
+            "STCH" | "SCH2" | "STMA" | "STNS" | "CKDP" | "FADS" | "PGST"
+            | "STEC" | "SNX2" | "SNX3" | "TOMP" | "TOMW" | "JUMP"
+            | "SEPL" | "SEAC" | "ATSV" | "RDAS" | "WNTY");
+        if !costly { self.exec(r, command); return; }
+        let (scene, pc) = (self.scene_index, self.pc.saturating_sub(1));
+        let probe = knife_perf::Scope::new(knife_perf::Metric::ScriptCommand);
+        self.exec(r, command);
+        // Keep a cheap aggregate for every instruction and name only real
+        // CPU spikes, rather than filling a bounded hotspot table with setters.
+        if probe.elapsed_us() >= 1000 {
+            probe.finish_hot(&format!("s{scene} pc{pc} {}", command.name), 0, 1);
+        } else { probe.finish(0, 1); }
+    }
+
     fn exec(&mut self, r: &Renderer, c: &Command) {
         match &c.op {
             Op::Marker => {
@@ -2817,6 +2980,8 @@ impl Game {
         }
         let name = c.name.as_str();
         self.note_stage_change(r, c);
+        #[cfg(target_os = "vita")]
+        if self.resource_pending { return; }
         match name {
             // variables and flow
             "WKST" => {
@@ -4123,7 +4288,10 @@ impl Game {
         #[cfg(target_os = "vita")]
         self.sound.pause_movie_stream(hold);
         if let Some(m) = &mut self.movie {
-            m.hold = hold;
+            #[cfg(target_os = "vita")]
+            m.set_hold(hold);
+            #[cfg(not(target_os = "vita"))]
+            { m.hold = hold; }
         }
     }
 
@@ -4311,8 +4479,9 @@ impl Game {
             // Normally the first setter sets F991, and no batched handler
             // clears it. Keep this internal snapshot an explicit barrier too.
             let active = self.rebake_batch.active();
-            self.flush_rebakes(r);
+            let ready = self.flush_rebakes(r);
             self.rebake_batch.set_active(active);
+            if !ready { return; }
             // sub_5F3B0: a type 1 ring entry, then the stage is the backup
             self.push_ring_event(1);
             self.stage_backup = Some(self.stage_bytes());
@@ -4544,7 +4713,11 @@ impl Game {
                 } else {
                     // a fade-in (key 1 given, even 0) on a channel still fading out takes a second longer
                     let fade = if c.keyed_int(1).is_some() && self.sound.se_state(ch) == 2 { fade + 1000 } else { fade };
-                    if let Some(pcm) = self.assets.sound_effect(name) {
+                    #[cfg(target_os = "vita")]
+                    let pcm = self.story_sound_effect(name);
+                    #[cfg(not(target_os = "vita"))]
+                    let pcm = self.assets.sound_effect(name);
+                    if let Some(pcm) = pcm {
                         let fade = if fade < 2 { 0.0 } else { f64::from(fade) / 1000.0 };
                         self.sound.play_se(ch, name, pcm, vol as f32 / 100.0, fade, looping, pan as f32 / 1000.0);
                     } else {
@@ -4639,7 +4812,11 @@ impl Game {
                     q.fade
                 };
                 let pan = if q.pan < 0 { 0 } else { (1000 * i32::from(q.pan) - 64000) / 64 };
-                if let Some(pcm) = self.assets.sound_effect(name) {
+                #[cfg(target_os = "vita")]
+                let pcm = self.story_sound_effect(name);
+                #[cfg(not(target_os = "vita"))]
+                let pcm = self.assets.sound_effect(name);
+                if let Some(pcm) = pcm {
                     let secs = if fade < 2 { 0.0 } else { f64::from(fade) / 1000.0 };
                     self.sound.play_se(ch, name, pcm, vol.clamp(0, 100) as f32 / 100.0, secs, q.looping, pan as f32 / 1000.0);
                 } else {
@@ -4715,10 +4892,10 @@ impl Game {
 
     /// sub_65E50: `ms` of frames pass for the queued SE commands; one queued this frame already had its first
     /// frame (`se_delayed`). Due ones run (the tolerance keeps f32 steps of 1000 / 60 from adding a frame).
-    fn tick_se_delayed(&mut self, ms: f32) {
-        if self.se_delayed.is_empty() {
-            return;
-        }
+    fn tick_se_delayed(&mut self, ms: f32) -> bool {
+        if self.se_delayed.is_empty() { return true; }
+        #[cfg(target_os = "vita")]
+        if !self.prepare_delayed_sounds(ms) { return false; }
         for d in &mut self.se_delayed {
             d.1 -= if std::mem::take(&mut d.2) { (ms - 1000.0 / 60.0).max(0.0) } else { ms };
         }
@@ -4726,6 +4903,9 @@ impl Game {
         for q in due {
             self.run_se_queued(&q);
         }
+        #[cfg(target_os = "vita")]
+        self.assets.release_prepared_sounds();
+        true
     }
 
     /// The queued SE commands as a save keeps them (the exe's frame counters before this frame's count-down).
@@ -6226,6 +6406,16 @@ impl Game {
         self.group_cache.begin_frame();
         let draws = self.stage.draws(&r.white, &self.border);
         #[cfg(target_os = "vita")]
+        if self.group_rt.is_none() && draws.iter().any(|d| !matches!(d, Draw::Stage(_))) {
+            // First-use mandatory group targets precede optional ring admission.
+            // A retained snapshot was already recorded before render_stage().
+            let bytes = r.vita_target_allocation_bytes(&self.stage_rt).unwrap_or(3 * 1024 * 1024);
+            if r.vita_cache_headroom().unwrap_or(0) < bytes * 2 + knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES {
+                self.vita_release_optional_render_targets(r);
+            }
+            self.group_targets(r, enc);
+        }
+        #[cfg(target_os = "vita")]
         {
             // Every rendering input participates, including source pixel generations.
             let layer_hash = |d: &Draw| -> u64 {
@@ -6266,36 +6456,69 @@ impl Game {
                 }
                 *previous = layers.clone();
             }
-            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-            // Cache is specific to this target/layout and clear color, not a global layer hash.
-            for bits in [Arc::as_ptr(&self.stage_rt.tex) as usize as u64,
+            let inputs: Vec<&Quad> = draws.iter().filter_map(|d| match d {
+                Draw::Stage(q) | Draw::Pixel { quad: q, .. } | Draw::Mask { quad: q, .. } => Some(q),
+                Draw::Composite { .. } => None,
+            }).collect();
+            self.stage_changes.observe(&inputs);
+            let physical = self.stage_rt.tex.physical_size();
+            let mut key = vec![knife_perf::optimizations::mask() as u64,
                 self.stage.backdrop_drawn as u64, self.stage_rt.tex.width as u64,
-                self.stage_rt.tex.height as u64, u64::from(self.stage_rt.tex.physical_size()[0]),
-                u64::from(self.stage_rt.tex.physical_size()[1])] {
-                hash = (hash ^ bits).wrapping_mul(0x100_0000_01b3);
+                self.stage_rt.tex.height as u64, physical[0] as u64, physical[1] as u64];
+            // A no-clear group producer inherits previous pixels. Identical draw
+            // commands do not prove its output is unchanged; do not memoize it.
+            let mut cleared = [false; 2];
+            let mut deterministic = true;
+            for draw in &draws {
+                match draw {
+                    Draw::Stage(q) => { let values = q.render_key(); key.extend([0, values.len() as u64]); key.extend(values); }
+                    Draw::Pixel { quad, clear } | Draw::Mask { quad, clear } => {
+                        let index = usize::from(matches!(draw, Draw::Mask { .. }));
+                        cleared[index] |= *clear;
+                        deterministic &= cleared[index];
+                        key.extend([1 + index as u64, u64::from(*clear)]);
+                        let values = quad.render_key(); key.push(values.len() as u64); key.extend(values);
+                    }
+                    Draw::Composite { blend, alpha } => {
+                        deterministic &= cleared[0] && cleared[1];
+                        let (kind, op) = match blend {
+                            Blend::Alpha => (0,0), Blend::Add => (1,0), Blend::Sub => (2,0),
+                            Blend::Multiply => (3,0), Blend::Screen => (4,0), Blend::Opaque => (5,0),
+                            Blend::Ps(op) => (6,*op as u64), Blend::Over => (7,0),
+                            Blend::Footprint => (8,0), Blend::MaskAlpha => (9,0),
+                        };
+                        key.extend([3, kind, op, alpha.to_bits() as u64]);
+                    }
+                }
             }
-            for bits in &layers {
-                hash = (hash ^ bits).wrapping_mul(0x100_0000_01b3);
-            }
+            let alias = inputs.iter().any(|q| std::iter::once(&q.tex)
+                .chain(q.rule.iter().map(|m| &m.tex)).any(|t|
+                    t.render_identity().0 == self.stage_rt.tex.render_identity().0));
             STAGE_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let previous = LAST_STAGE_HASH.swap(hash, std::sync::atomic::Ordering::Relaxed);
-            let reusable = previous == hash
-                && !self.stage_dirty
-                && !self.ghost.active()
-                && self.trans.is_none()
-                && self.stage.noise_pass().is_none();
-            if previous == hash {
+            let hash = layers.iter().fold(0xcbf2_9ce4_8422_2325u64,
+                |hash, bits| (hash ^ bits).wrapping_mul(0x100_0000_01b3));
+            if LAST_STAGE_HASH.swap(hash, std::sync::atomic::Ordering::Relaxed) == hash {
                 STAGE_REPEATS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            if reusable {
+            if deterministic && !alias && self.stage_producer.matches(&key, &self.stage_rt) {
                 knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
-                // The stage target still holds exactly this frame's layers: skip the ~40
-                // layer draws and their passes. Clears, copies and effects still run.
                 return;
             }
+            let upcoming: Vec<Quad> = inputs.iter().map(|q| (*q).clone()).collect();
+            self.stage_ring.rotate(r, enc, &mut self.stage_rt, &upcoming, 1);
+            self.stage_producer.commit(key, &inputs, &self.stage_rt);
         }
         #[cfg(target_os = "vita")]
         knife_perf::add(knife_perf::Metric::StageRedraw, 0, 0);
+        self.render_stage_draws(r, enc, draws);
+        #[cfg(target_os = "vita")]
+        self.stage_producer.finish(&self.stage_rt);
+    }
+
+    fn render_stage_draws(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
+        draws: Vec<crate::stage::Draw>)
+    {
+        use crate::stage::Draw;
         let mut run: Vec<Quad> = Vec::new();
         let b = if self.stage.backdrop_drawn == 1 { 1.0 } else { 0.0 };
         let mut clear = Some([b, b, b, 1.0]);
@@ -6696,9 +6919,26 @@ impl Game {
             self.menu_quarter = None;
             self.menu_captured = false;
         }
+        #[cfg(target_os = "vita")]
+        {
+            // Captures/history are required and may arrive after several quiet
+            // frames. Give them priority before their first native allocation.
+            let missing = usize::from(self.snapshot && self.old_rt.is_none())
+                + usize::from(self.noise_rt.is_none() && self.stage.noise_pass().is_some())
+                + if self.ghost.active() { usize::from(self.ghost_rt.is_none()) * 2
+                    + usize::from(self.blur_rt.is_none()) } else { 0 };
+            let bytes = r.vita_target_allocation_bytes(&self.stage_rt).unwrap_or(3 * 1024 * 1024);
+            if missing != 0 && r.vita_cache_headroom().unwrap_or(0)
+                < bytes * missing + knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES
+            { self.vita_release_optional_render_targets(r); }
+        }
         let mut enc = r.encoder();
         self.render_previews(r, &mut enc);
-        if self.snapshot {
+        #[cfg(target_os = "vita")]
+        let resources_waiting = self.resource_waiting();
+        #[cfg(not(target_os = "vita"))]
+        let resources_waiting = false;
+        if self.snapshot && !resources_waiting {
             #[cfg(target_os = "vita")]
             let old = self.old_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "old frame"));
             #[cfg(not(target_os = "vita"))]
@@ -6707,22 +6947,40 @@ impl Game {
             r.copy_target(&mut enc, previous, old);
             self.snapshot = false;
         }
-        if let Some(q) = self.stage.noise_pass() {
-            let fresh = self.noise_rt.is_none();
-            let rt = self.noise_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "noise rt40"));
-            if fresh {
-                // nothing earlier to show through the uncovered strip yet: start from a full-screen copy
-                let full = Quad::rect(q.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
-                r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
+        // RT40 is inherited history, not a rotating/discardable output. Witch
+        // jp_35FC0 publishes one noise event per native 9/6/3-frame tick. Do not
+        // alpha-accumulate that same event again on render-only/paused frames.
+        if !resources_waiting {
+            if let Some(q) = self.stage.noise_pass() {
+                let fresh = self.noise_rt.is_none();
+                let rt = self.noise_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "noise rt40"));
+                #[cfg(target_os = "vita")]
+                let event = self.stage.noise_event_key().map(|(n, tick)| {
+                    let mut key = vec![n as u64, tick as u64]; key.extend(q.render_key()); key
+                });
+                #[cfg(target_os = "vita")]
+                let held = knife_perf::optimizations::enabled(knife_perf::optimizations::PRODUCER_REUSE)
+                    && !fresh && event.as_ref().is_some_and(|key| self.noise_event.as_ref()
+                        .is_some_and(|(previous, version)| previous == key && *version == rt.tex.render_identity()));
+                #[cfg(not(target_os = "vita"))]
+                let held = false;
+                if !held {
+                    if fresh {
+                        let full = Quad::rect(q.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
+                        r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
+                    }
+                    r.draw(&mut enc, rt, None, &[q]);
+                    #[cfg(target_os = "vita")]
+                    { self.noise_event = event.map(|key| (key, rt.tex.render_identity())); }
+                }
+                self.stage.noise_rt = Some(rt.tex.clone());
             }
-            r.draw(&mut enc, rt, None, &[q]);
-            self.stage.noise_rt = Some(rt.tex.clone());
         }
-        self.render_choice_glow(r, &mut enc);
+        if !resources_waiting { self.render_choice_glow(r, &mut enc); }
         // Vita may overwrite scene with group scratch here. Preserve the
         // capture above -> all group readers -> stage-to-scene copy order.
         #[cfg(target_os = "vita")]
-        if self.resource_command.is_some() || self.resource_pending {
+        if resources_waiting {
             // A pending STCH has not committed its layer. Present the previous
             // complete stage rather than intermediate PGST/STCP dispatch state.
             knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
@@ -6735,20 +6993,44 @@ impl Game {
         // 50) is bucket 9, so it lies over all three, and what it shows is target 0 as it was, effects included
         // (035 ARC02_1's crossfade under FADE(40, -250): Switch region means 0.31 from this order, 1.38 with the
         // effect over the mixed frame, whose overlay of the frame with itself darkened the middle of the fade)
+        let focus_quads = if !resources_waiting && self.focus.active() && self.var("F963") != 1 {
+            if self.focus_tex.is_none() {
+                self.focus_tex = self.assets.ui_textures(r, "EFFECT_PARTS").ok().and_then(|t| {
+                    let find = |n: &str| t.iter().find(|(name, _)| name == n).map(|(_, t)| t.clone());
+                    Some([find("FallNote0")?, find("FallNote1")?, find("FallNote2")?, find("FocusLine")?])
+                });
+            }
+            self.focus_tex.as_ref().map_or_else(Vec::new, |tex| self.focus.quads(tex))
+        } else { Vec::new() };
         // No scene writer: its copy would only be sampled once by the canvas blit.
         // Keep stage read-only and remember its identity for a later FADS capture.
-        let direct_stage = cfg!(target_os = "vita")
-            && knife_perf::optimizations::enabled(knife_perf::optimizations::DIRECT_STAGE)
-            && !self.ghost.active() && !(self.focus.active() && self.var("F963") != 1)
-            && self.trans.is_none();
+        let direct_stage = if resources_waiting { self.scene_is_stage } else {
+            cfg!(target_os = "vita")
+                && knife_perf::optimizations::enabled(knife_perf::optimizations::DIRECT_STAGE)
+                && !self.ghost.active() && !(self.focus.active() && self.var("F963") != 1)
+        };
         self.scene_is_stage = direct_stage;
+        let ghost_trans = self.trans.as_ref().map(|t| (t.t / t.dur).clamp(0.0, 1.0));
+        #[cfg(target_os = "vita")]
+        let scene_key = {
+            let (id, generation) = self.stage_rt.tex.render_identity();
+            let mut key = vec![knife_perf::optimizations::mask() as u64, id as u64, generation];
+            key.extend(self.ghost.render_key(ghost_trans));
+            for q in &focus_quads { let values = q.render_key(); key.push(values.len() as u64); key.extend(values); }
+            key
+        };
+        #[cfg(target_os = "vita")]
+        let scene_reused = resources_waiting || (!direct_stage && self.scene_producer.matches(&scene_key, &self.scene_rt));
+        #[cfg(not(target_os = "vita"))]
+        let scene_reused = false;
+        if scene_reused { knife_perf::add(knife_perf::Metric::SceneProducerReuse, 0, 1); }
         if direct_stage {
             knife_perf::add(knife_perf::Metric::DirectStage, 0, 0);
-        } else {
+        } else if !scene_reused {
             r.copy_target(&mut enc, &self.stage_rt, &self.scene_rt);
         }
         // sub_3C490 draws the FADE(40) effect over the composed frame, before the text
-        if self.ghost.active() {
+        if !scene_reused && self.ghost.active() {
             let [src, out] = self.ghost_rt.get_or_insert_with(|| {
                 [r.create_scene_target(CANVAS_W, CANVAS_H, "ghost frame"), r.create_scene_target(CANVAS_W, CANVAS_H, "ghost channels")]
             });
@@ -6759,18 +7041,20 @@ impl Game {
             let blur = &self.blur_rt;
             self.ghost.render(r, &mut enc, &self.scene_rt, [src, blur, out], trans);
         }
-        // sub_391A0 starts the text pass with the FCLN effect (sub_87A90(2)) unless F963 = 1
-        if self.focus.active() && self.var("F963") != 1 {
-            if self.focus_tex.is_none() {
-                self.focus_tex = self.assets.ui_textures(r, "EFFECT_PARTS").ok().and_then(|t| {
-                    let find = |n: &str| t.iter().find(|(name, _)| name == n).map(|(_, t)| t.clone());
-                    Some([find("FallNote0")?, find("FallNote1")?, find("FallNote2")?, find("FocusLine")?])
-                });
-            }
-            if let Some(tex) = &self.focus_tex {
-                let quads = self.focus.quads(tex);
-                r.draw(&mut enc, &self.scene_rt, None, &quads);
-            }
+        if !scene_reused && !focus_quads.is_empty() {
+            r.draw(&mut enc, &self.scene_rt, None, &focus_quads);
+        }
+        #[cfg(target_os = "vita")]
+        if !direct_stage && !scene_reused {
+            let stage_input = Quad::rect(self.stage_rt.tex.clone(),
+                [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
+            let inputs: Vec<&Quad> = std::iter::once(&stage_input).chain(focus_quads.iter()).collect();
+            self.scene_producer.commit(scene_key, &inputs, &self.scene_rt);
+        }
+        #[cfg(target_os = "vita")]
+        {
+            if !resources_waiting { self.canvas_ring.rotate(r, &enc, &mut self.canvas, &[], 2); }
+            producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
         }
         match &self.trans {
             Some(t) => {
@@ -6780,12 +7064,18 @@ impl Game {
                 let old = self.old_rt.as_ref().expect("FADS transition requires its captured old frame");
                 #[cfg(not(target_os = "vita"))]
                 let old = &self.old_rt;
-                r.transition(&mut enc, &self.canvas, &old.tex, &self.scene_rt.tex, rule.as_deref(), p, self.stage.rule_soft);
+                r.transition(&mut enc, &self.canvas, &old.tex,
+                    if direct_stage { &self.stage_rt.tex } else { &self.scene_rt.tex },
+                    rule.as_deref(), p, self.stage.rule_soft);
             }
             None => r.blit_target(&mut enc,
                 if direct_stage { &self.stage_rt } else { &self.scene_rt }, &self.canvas),
         }
         let witch = crate::assets::witch();
+        #[cfg(target_os = "vita")]
+        let text_finished = self.paused || !self.page.visible ||
+            (self.page.revealed as usize >= self.page.order &&
+                (self.page.waiting || matches!(self.wait, Wait::Click | Wait::Message { .. } | Wait::Voice | Wait::Time { .. })));
         let mut ui = Vec::new();
         if witch {
             // WoH's sub_7FCA0 captures target 0 after the text pass: the window and text are blurred with the scene
@@ -6797,7 +7087,7 @@ impl Game {
             ui.extend(self.ui_quads(r));
             if !ui.is_empty() {
                 #[cfg(target_os = "vita")]
-                self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui);
+                self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui, text_finished);
                 #[cfg(not(target_os = "vita"))]
                 r.draw(&mut enc, &self.canvas, None, &ui);
                 ui.clear();
@@ -6906,7 +7196,7 @@ impl Game {
         }
         if !ui.is_empty() {
             #[cfg(target_os = "vita")]
-            self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui);
+            self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui, text_finished);
             #[cfg(not(target_os = "vita"))]
             r.draw(&mut enc, &self.canvas, None, &ui);
         }
@@ -7246,7 +7536,14 @@ impl Game {
         }
         if let Some(name) = variant {
             let (bake, cur) = (l.bake, l.name.clone());
-            if let Some(img) = self.assets.image_graded(r, &name, bake) {
+            #[cfg(target_os = "vita")]
+            let next = if knife_perf::optimizations::enabled(knife_perf::optimizations::ASYNC_REBAKE)
+                && !self.seek_node && !self.rewinding && self.seek_audio.is_none() {
+                self.assets.cached_graded_image(&name, bake)
+            } else { self.assets.image_graded(r, &name, bake) };
+            #[cfg(not(target_os = "vita"))]
+            let next = self.assets.image_graded(r, &name, bake);
+            if let Some(img) = next {
                 let delta = self.variant_delta(&name);
                 let old = self.variant_delta(&cur);
                 let l = self.stage.layers[li].as_mut().unwrap();
@@ -7344,12 +7641,15 @@ impl Game {
 
     fn rebake(&mut self, r: &Renderer, li: i32) {
         let Some(l) = self.stage.get(li) else { return };
-        if !l.pending || l.keeps_texture {
-            return;
-        }
+        if !l.pending || l.keeps_texture { return; }
         let bake = crate::grade::Bake::new(l.stec_mode, l.snx[0], l.snx[1]);
-        if l.stec_mode == 1 {
-            l.fill = Some(bake.fill(l.stec_color));
+        if l.stec_mode == 1 { l.fill = Some(bake.fill(l.stec_color)); }
+        #[cfg(target_os = "vita")]
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::ASYNC_REBAKE) {
+            let already = self.rebake_batch.defer(li);
+            knife_perf::add(knife_perf::Metric::BakeDeferred, 0, 1);
+            if already { knife_perf::add(knife_perf::Metric::BakeCoalesced, 0, 1); }
+            return;
         }
         if let Some(already) = self.rebake_batch.queue(li) {
             knife_perf::add(knife_perf::Metric::BakeDeferred, 0, 1);
@@ -7360,9 +7660,6 @@ impl Game {
             if let Source::Image(_) = l.source {
                 let probe = knife_perf::Scope::new(knife_perf::Metric::BakeRebuild);
                 if let Some(img) = self.assets.image_graded(r, &l.name, bake) {
-                    // Commit the matching pair together. A failed decode/load
-                    // retains the previous valid image and its truthful Bake;
-                    // a subsequent setter can safely retry the desired state.
                     l.source = Source::Image(img);
                     l.bake = bake;
                     probe.finish_hot(&l.name, 0, 1);
@@ -7370,19 +7667,29 @@ impl Game {
                     knife_perf::add(knife_perf::Metric::BakeFailed, 0, 1);
                     probe.finish_hot(&l.name, 0, 0);
                 }
-            } else {
-                l.bake = bake;
-            }
+            } else { l.bake = bake; }
         }
     }
 
-    fn flush_rebakes(&mut self, r: &Renderer) {
+    /// False means the caller must stop before executing its next observable
+    /// instruction. CPU work runs on the existing image worker; only completed
+    /// pixels are registered by the owner thread, one image per frame.
+    fn flush_rebakes(&mut self, r: &Renderer) -> bool {
+        #[cfg(target_os = "vita")]
+        if self.rebake_pending.is_some() { self.resource_pending = true; return false; }
         let dirty = self.rebake_batch.take();
-        if dirty.is_empty() { return; }
+        if dirty.is_empty() { return true; }
         let count = dirty.len();
         let probe = knife_perf::Scope::new(knife_perf::Metric::BakeFlush);
+        #[cfg(target_os = "vita")]
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::ASYNC_REBAKE) {
+            let ready = self.begin_rebake_cohort(dirty);
+            probe.finish(0, count as u64);
+            return ready;
+        }
         for li in dirty { self.rebake(r, i32::from(li)); }
         probe.finish(0, count as u64);
+        true
     }
 
     /// A stage layer as a snapshot describes it (restores and save list previews).
@@ -8239,6 +8546,18 @@ fn message_end(text: &str) -> (String, bool) {
 
 #[cfg(target_os = "vita")]
 impl Game {
+    /// Required resource jobs take precedence over optional render residency.
+    /// Recorded GPU owners remain pinned until the native retirement fence.
+    pub(crate) fn vita_release_optional_render_targets(&mut self, renderer: &Renderer) -> usize {
+        let mut released = self.stage_ring.release(1) + self.canvas_ring.release(2);
+        released += self.group_cache.bytes() + self.stage_prefix.bytes();
+        self.group_cache.clear();
+        self.stage_prefix.clear();
+        producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
+        let _ = renderer.vita_reclaim_idle();
+        released
+    }
+
     /// All optional render/CPU pools share this pressure checkpoint. Active
     /// frame owners stay pinned; native retirement waits only at real admission
     /// pressure, never adds a per-frame Finish to ordinary rendering.
@@ -8269,6 +8588,8 @@ impl Game {
             self.assets.vita_warm_ui_sources(memory.heap_headroom as usize);
         }
         if gpu_pressure {
+            released += self.stage_ring.release(1) + self.canvas_ring.release(2);
+            producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
             let before = self.text_cache.bytes() + self.group_cache.bytes() + self.stage_prefix.bytes();
             self.text_cache.trim(0);
             self.group_cache.trim(0);

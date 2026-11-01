@@ -9,7 +9,7 @@
 #include <float.h>
 
 enum { TEST_VERTEX_FLOATS = 28, TEST_VERTEX_LIMIT = 32760,
-    TEST_SHADER_COUNT = 27, TEST_BLEND_COUNT = 10 };
+    TEST_SHADER_COUNT = 29, TEST_BLEND_COUNT = 10 };
 typedef struct Input { KvEffectVertex v[3]; float p[8]; } Input;
 static unsigned cases, checks, failures, accepted_cases, rejected_cases;
 
@@ -99,11 +99,12 @@ static void preconditions(void) {
             if (effect_fetch_shader(shader) && blend != 5) continue;
             in = fresh();
             in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : 1.0f;
-            if (shader == 22 || shader == 26) { memset(in.p, 0, sizeof(in.p)); }
+            if (shader == 22 || shader == 26 || shader == 28) { memset(in.p, 0, sizeof(in.p)); }
             else if (shader >= 19) {
                 in.p[1] = 0; in.p[4] = -1; in.p[7] = shader == 19 ? 1 : 0;
                 if (shader == 23) in.p[5] = 0;
             }
+            if (shader == 27) { in.p[0] = 11; in.p[1] = 13; in.p[5] = 0; }
             snprintf(name, sizeof(name), "valid.shader.%u.blend.%u", shader, blend);
             check(name, in.v, sizeof(in.v), in.p, 3, shader, blend, 0, 0);
         }

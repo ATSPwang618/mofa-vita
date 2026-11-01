@@ -40,6 +40,11 @@ mod graded_cache;
 #[path="image_needed.rs"]
 mod image_needed;
 #[cfg(target_os="vita")]
+#[path="sound_needed.rs"]
+mod sound_needed;
+#[cfg(target_os="vita")]
+pub use sound_needed::SoundNeeded;
+#[cfg(target_os="vita")]
 pub use image_needed::ImageNeeded;
 
 /// Image name prefix that loads the save-list thumbnail copy of an image (`Assets::thumb_name`).
@@ -161,6 +166,8 @@ pub struct Decoded {
 struct ImageJob {
     initial:Option<(ByteView,Arc<Archive>,usize)>,
     demanded:bool,
+    rebake:bool,
+    motion:bool,
     key: String,
     name: String,
     grade: Bake,
@@ -366,7 +373,7 @@ pub struct Assets {
     image_index: HashMap<String, usize>,
     pub scenes: SceneArchive,
     pub text: ScriptText,
-    pub sar: SoundArchive,
+    pub sar: Arc<SoundArchive>,
     parsed: HashMap<usize, Arc<Scene>>,
     images: HashMap<String, Option<Arc<Image>>>,
     #[cfg(target_os = "vita")]
@@ -382,6 +389,14 @@ pub struct Assets {
     #[cfg(target_os = "vita")]
     image_perf: ImagePerf,
     sounds: RefCell<knife_audio::pcm_cache::PcmCache>,
+    #[cfg(target_os="vita")]
+    sound_worker: Option<knife_platform_vita::image_worker::BoundedWorker<sound_needed::Job, sound_needed::DecodedSound>>,
+    #[cfg(target_os="vita")]
+    sound_context: u64,
+    #[cfg(target_os="vita")]
+    sound_demand: Option<sound_needed::Demand>,
+    #[cfg(target_os="vita")]
+    sound_prepared: HashMap<String, Option<Arc<Pcm>>>,
     /// Indexed by allui entry, so EN/ZC variants and language-neutral atlases do not collide.
     /// A cached first texture identifies the owning Renderer before reuse.
     #[cfg(target_os = "vita")]
@@ -537,7 +552,7 @@ impl Assets {
             tables,
             image_index,
             scenes,
-            sar,
+            sar: Arc::new(sar),
             parsed: HashMap::new(),
             images: HashMap::new(),
             #[cfg(target_os = "vita")]
@@ -553,6 +568,14 @@ impl Assets {
             #[cfg(target_os = "vita")]
             image_perf: ImagePerf::default(),
             sounds: RefCell::new(knife_audio::pcm_cache::PcmCache::default()),
+            #[cfg(target_os="vita")]
+            sound_worker: None,
+            #[cfg(target_os="vita")]
+            sound_context: 1,
+            #[cfg(target_os="vita")]
+            sound_demand: None,
+            #[cfg(target_os="vita")]
+            sound_prepared: HashMap::new(),
             #[cfg(target_os = "vita")]
             ui_atlases: RefCell::new(HashMap::new()),
         sysmes_cache: RefCell::new(HashMap::new()),
@@ -572,6 +595,10 @@ impl Assets {
             let source_cache = a.atlas_cache.clone();
             a.image_worker = match knife_platform_vita::image_worker::BoundedWorker::new(8, 2,
                 move |job: ImageJob| {
+                    let bake_probe=if job.motion { Some(Scope::new(Metric::MotionVariantDecode)) }
+                        else { job.rebake.then(||Scope::new(Metric::BakeRebuild)) };
+                    let bake_name=(job.rebake || job.motion).then(||job.name.clone());
+                    let result=(|| {
                     if let Some((data,archive,index))=job.initial {
                         knife_platform_vita::image_worker::resource_state::image_location(archive.cache_identity(),index);
                         let pixels=Self::decode_shared_data_pixels(data,archive,index,&job.name,job.grade,job.strip,
@@ -601,11 +628,19 @@ impl Assets {
                     let pixels = Self::decode_data_pixels(data, archive, index,
                         &job.name, job.grade, job.strip, Some(PREFETCH_RGBA_CAP));
                     Some(Decoded { demanded:job.demanded, key: job.key, name: job.name, strip: job.strip, pixels })
+                    })();
+                    if let Some(probe)=bake_probe {
+                        let ok=result.as_ref().is_some_and(|decoded|decoded.pixels.is_ok());
+                        probe.finish_hot(bake_name.as_deref().unwrap_or(""),0,u64::from(ok));
+                    }
+                    result
                 }) {
                 Ok(worker) => Some(worker),
                 Err(e) => { tracing::warn!("bounded image worker unavailable: {e}"); None }
             };
         }
+        #[cfg(target_os="vita")]
+        a.start_sound_worker();
         Ok(a)
     }
 
@@ -707,10 +742,15 @@ impl Assets {
 
     pub fn scene(&mut self, index: usize) -> Option<Arc<Scene>> {
         if let Some(s) = self.parsed.get(&index) {
+            knife_perf::add(Metric::ScriptSceneCacheHit, 0, index as u64);
             return Some(s.clone());
         }
+        let read = Scope::new(Metric::ScriptSceneRead);
         let raw = self.scenes.scene(index)?;
+        read.finish_hot(self.scene_name(index), raw.len() as u64, index as u64);
+        let parse = Scope::new(Metric::ScriptSceneParse);
         let s = Arc::new(Scene::parse(raw));
+        parse.finish_hot(self.scene_name(index), 0, index as u64);
         self.parsed.insert(index, s.clone());
         Some(s)
     }
@@ -1088,7 +1128,7 @@ impl Assets {
                 if self.image_cached(name, *bake) { continue; }
                 let (name, grade, key) = Self::image_key(name, *bake);
                 let strip = self.strip(&name);
-                if !worker.request(key.clone(), ImageJob { initial:None,demanded:false,key,name,grade,strip }) { break; }
+                if !worker.request(key.clone(), ImageJob { initial:None,demanded:false,rebake:false,motion:false,key,name,grade,strip }) { break; }
             }
         }
     }
@@ -1321,12 +1361,6 @@ impl Assets {
         Self::decode_image_pixels_limit(data, grade, strip, rgba_cap)
     }
 
-    /// Shared by the first worker decode and a later residency miss. Grades,
-    /// raw masks, language strips and compact layout must take the same route.
-    fn decode_image_pixels(data: &[u8], grade: Bake, strip: Option<(usize, usize)>) -> Result<Pixels> {
-        Self::decode_image_pixels_limit(data, grade, strip, None)
-    }
-
     fn decode_image_pixels_limit(data: &[u8], grade: Bake, strip: Option<(usize, usize)>, rgba_cap: Option<usize>) -> Result<Pixels> {
         let compact = compact::is_compact(data).then(|| compact::parse(data)).transpose()?;
         let mut logical = compact.as_ref().map(|image| image.logical);
@@ -1487,14 +1521,12 @@ impl Assets {
                 }
             },
             #[cfg(target_os = "vita")]
-            Pixels::Native { width, height, owner, range, srgb, baked } => {
+            Pixels::Native { width, height, owner, range, baked, .. } => {
                 let px = &owner.pixels()[range];
                 if owner.bytes_per_pixel() == 1 {
                     r.try_upload(width, height, Upload::R8(px), name)?
                 } else if baked {
                     r.try_upload_baked(width, height, px, name)?
-                } else if let Some(srgb) = srgb {
-                    r.try_upload(width, height, Upload::Rgba8(px), name)?
                 } else { r.try_upload(width, height, Upload::Rgba8(px), name)? }
             },
             #[cfg(target_os = "vita")]
@@ -1569,12 +1601,12 @@ impl Assets {
                         Pixels::Rgba(w, h, px, srgb) => Ok((w, h, knife_render::PixelOwner::from(px), srgb.unwrap_or(false))),
                         Pixels::Baked(w, h, px) => Ok((w, h, knife_render::PixelOwner::from(px), false)),
                         Pixels::SharedBaked(w, h, px, _) => Ok((w, h, knife_render::PixelOwner::new(px), false)),
-                        Pixels::Native { width, height, owner, range, srgb, baked } => {
+                        Pixels::Native { width, height, owner, range, .. } => {
                             anyhow::ensure!(owner.bytes_per_pixel() == 4, "raw R8 must not enter RGBA reload");
                             Ok((width, height, knife_render::PixelOwner::new(NativeSlice { owner, range }),
                                 false))
                         },
-                        Pixels::Bntx(t, alter) => Ok((t.width, t.height,
+                        Pixels::Bntx(t, _) => Ok((t.width, t.height,
                             knife_render::PixelOwner::from(bntx_decode::to_rgba8(&t)?), false)),
                         _ => anyhow::bail!("invalid CG reload pixel route"),
                     }
@@ -2047,9 +2079,12 @@ impl Assets {
     /// Decode a sound effect from the BFSAR (`MOON_SE03001` -> `WSD_moon_se03001`).
     pub fn sound_effect(&mut self, name: &str) -> Option<Arc<Pcm>> {
         let key = name.to_ascii_lowercase();
+        #[cfg(target_os="vita")]
+        if let Some(pcm) = self.sound_prepared.get(&key) { return pcm.clone(); }
         if let Some(pcm) = self.sounds.borrow_mut().get(&key) {
             return pcm;
         }
+        let decode = Scope::new(Metric::SoundEffectDecode);
         let res = self.sound_pcm(|| self.sar.load_wave_sound(&format!("wsd_{key}"))
             .or_else(|error| if Self::audio_allocation_failed(&error) { Err(error) }
                 else { self.sar.load_wave_sound(&key) })
@@ -2064,6 +2099,7 @@ impl Assets {
                 None
             }
         };
+        decode.finish_hot(name, pcm.as_ref().map_or(0, |pcm| pcm.frames.len() as u64 * 8), u64::from(pcm.is_some()));
         self.sounds.borrow_mut().insert(key, pcm.clone());
         pcm
     }
@@ -2074,6 +2110,7 @@ impl Assets {
         if let Some(pcm) = self.sounds.borrow_mut().get(&key) {
             return pcm;
         }
+        let decode = Scope::new(Metric::SoundEffectDecode);
         let pcm = match self.sound_pcm(|| self.sar.load_wave_sound_id(item)) {
             Ok(p) => Some(Arc::new(p)),
             Err(e) => {
@@ -2082,6 +2119,7 @@ impl Assets {
                 None
             }
         };
+        decode.finish_hot(&key, pcm.as_ref().map_or(0, |pcm| pcm.frames.len() as u64 * 8), u64::from(pcm.is_some()));
         self.sounds.borrow_mut().insert(key, pcm.clone());
         pcm
     }
@@ -2144,7 +2182,9 @@ impl Assets {
 /// Upload a BNTX texture as a sprite texture (through pre_alter, `Renderer::upload_altered`; the exe builds every
 /// image slot with sub_A3180).
 pub fn upload_bntx(r: &Renderer, t: &bntx::Texture) -> Result<TexRef> {
-    let (label, srgb) = (&t.name, t.format.is_srgb());
+    let label = &t.name;
+    #[cfg(not(target_os = "vita"))]
+    let srgb = t.format.is_srgb();
     #[cfg(target_os = "vita")]
     return match t.format {
         TexFormat::R8Unorm => r.try_upload(t.width, t.height, Upload::R8(&t.data), label),
@@ -2253,7 +2293,7 @@ fn decode_image_owned(data: &[u8]) -> Result<(u32, u32, knife_render::PixelOwner
     let pixels = Assets::decode_image_pixels_limit(data, Bake::NONE, None, None)?;
     let pixels = match pixels { Pixels::Scaled(px, _) => *px, px => px };
     match pixels {
-        Pixels::Native { width, height, owner, range, srgb, baked } =>
+        Pixels::Native { width, height, owner, range, .. } =>
             Ok((width, height, knife_render::PixelOwner::new(NativeSlice { owner, range }), false)),
         Pixels::Rgba(w, h, px, srgb) => Ok((w, h, px.into(), srgb.unwrap_or(false))),
         Pixels::Baked(w, h, px) => Ok((w, h, px.into(), false)),

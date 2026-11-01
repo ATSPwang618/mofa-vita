@@ -85,8 +85,18 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
     pub fn new(
         pending_limit: usize,
         ready_limit: usize,
-        mut decode: impl FnMut(J) -> R + Send + 'static,
+        decode: impl FnMut(J) -> R + Send + 'static,
     ) -> std::io::Result<Self> {
+        Self::new_named("knife-image", true, pending_limit, ready_limit, decode)
+    }
+    /// CPU-only users keep their own diagnostics instead of overwriting the
+    /// image watchdog slot. The same bounded queue and generation rules apply.
+    pub fn new_cpu(name: &str, pending_limit: usize, ready_limit: usize,
+        decode: impl FnMut(J) -> R + Send + 'static) -> std::io::Result<Self> {
+        Self::new_named(name, false, pending_limit, ready_limit, decode)
+    }
+    fn new_named(name: &str, report_image: bool, pending_limit: usize, ready_limit: usize,
+        mut decode: impl FnMut(J) -> R + Send + 'static) -> std::io::Result<Self> {
         if pending_limit == 0 || ready_limit == 0 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "zero image worker capacity"));
         }
@@ -100,7 +110,7 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
         });
         let run = shared.clone();
         let thread = std::thread::Builder::new()
-            .name("knife-image".into()).stack_size(512 * 1024).spawn(move || {
+            .name(name.into()).stack_size(512 * 1024).spawn(move || {
                 run.lock().stats.threads_started = 1;
                 loop {
                     let mut state = run.lock();
@@ -111,7 +121,7 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
                     let request = state.pending.pop_front().unwrap();
                     state.active = Some((request.key.clone(), request.context, request.id));
                     drop(state);
-                    resource_state::image(Phase::Decode,&request.key,0,usize::MAX,request.context);
+                    if report_image { resource_state::image(Phase::Decode,&request.key,0,usize::MAX,request.context); }
                     let start = Instant::now();
                     // Wake demand waiters even if a decoder panics in an unwind build.
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode(request.job)));
@@ -135,10 +145,10 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
                             if state.context==request.context {state.failures.insert(request.key,"image decoder panicked".into());}
                         }
                     }
-                    resource_state::image(Phase::Idle,"",0,usize::MAX,request.context);
+                    if report_image { resource_state::image(Phase::Idle,"",0,usize::MAX,request.context); }
                     run.wake.notify_all();
                 }
-                resource_state::image(Phase::Stopped,"",0,usize::MAX,0);
+                if report_image { resource_state::image(Phase::Stopped,"",0,usize::MAX,0); }
             })?;
         Ok(Self { shared, pending_limit, thread: Some(thread) })
     }

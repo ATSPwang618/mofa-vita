@@ -50,7 +50,7 @@ def analyze(data: bytes, environment: str, console: bool = False) -> dict:
         raise ValueError("Unknown measurement environment")
     warnings, samples, header = list(transport_warnings), [], None
     audit_records, panics, compact_windows, shader_capabilities, compact_stream = [], [], [], [], []
-    class_records, runtime_states, resource_events = [], [], []
+    class_records, runtime_states, resource_events, shader_chain_variants = [], [], [], []
     limit_reached = False
     lines = data.splitlines()
     for index, line in enumerate(lines):
@@ -96,6 +96,18 @@ def analyze(data: bytes, environment: str, console: bool = False) -> dict:
                 if capability in row and (type(row[capability]) is not int or row[capability] not in (0, 1)):
                     raise ValueError("Invalid optional PS shader capability")
             shader_capabilities.append(row)
+        elif kind == "shader_chain_variant":
+            ops = (2, 11, 13, 19)
+            if (header is None or row.get("op_a") not in ops or row.get("op_b") not in ops
+                    or row.get("shader") != 32 + ops.index(row["op_a"]) * 4 + ops.index(row["op_b"])
+                    or any(type(row.get(k)) is not int or not 0 <= row[k] < (1 << 32)
+                           for k in ("primary", "single_primary_sum"))
+                    or any(type(row.get(k)) is not int or row[k] not in (0, 1)
+                           for k in ("cost_admitted", "admitted"))
+                    or type(row.get("patch_status")) is not int
+                    or not -(1 << 31) <= row["patch_status"] < (1 << 31)):
+                raise ValueError("Invalid material chain variant admission")
+            shader_chain_variants.append(row)
         elif kind == "frame_classes":
             if header is None or header.get("schema") != 3:
                 raise ValueError("Frame classes outside schema 3")
@@ -195,7 +207,7 @@ def analyze(data: bytes, environment: str, console: bool = False) -> dict:
         "copy_audit": audit, "panics": panics, "shader_capabilities": shader_capabilities, "compact_stream": compact_stream,
         "frame_classes": classes, "runtime_states": runtime_states,
         "runtime_stalls": [row for row in runtime_states if row["stalled"]],
-        "resource_events": resource_events,
+        "resource_events": resource_events, "shader_chain_variants": shader_chain_variants,
         "schema": "knife-vita-performance-summary-v1", "environment": environment,
         "environment_authority": "caller-declared; not inferred from frame times",
         "scope": "Observed log windows only; no full-game, visual correctness or hardware-speed certification",

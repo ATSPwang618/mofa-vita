@@ -117,7 +117,45 @@ metrics! {
     UiSourcePending => "ui_source_pending", UiSourceReady => "ui_source_ready",
     UiSourceFailed => "ui_source_failed", UiSourceCancelled => "ui_source_cancelled",
     UiGlowCoverage => "ui_glow_coverage",
+    // Coverage aux values are estimated physical pixels, never bus bytes.
+    BlendChain => "blend_chain", BlendChainCoverage => "blend_chain_coverage",
+    BlendChainFallback => "blend_chain_fallback",
+    TargetRingEnable => "target_ring_enable", TargetRingRotate => "target_ring_rotate",
+    TargetRingBypass => "target_ring_bypass", TargetRingRelease => "target_ring_release",
+    StageInputGeometryChanged => "stage_input_geometry_changed",
+    StageInputColorChanged => "stage_input_color_changed",
+    StageInputMaterialChanged => "stage_input_material_changed",
+    StageInputTextureChanged => "stage_input_texture_changed",
+    SceneProducerReuse => "scene_producer_reuse",
+    AsyncBakeBatch => "async_bake_batch", AsyncBakePoll => "async_bake_poll",
+    AsyncBakeReady => "async_bake_ready", AsyncBakeCommit => "async_bake_commit",
+    AsyncBakeCancel => "async_bake_cancel", AsyncBakeFailed => "async_bake_failed",
+    RimBatchMerge => "rim_batch_merge",
+    VertexBufferReuse => "vertex_buffer_reuse", VertexBufferRecycle => "vertex_buffer_recycle",
+    TextCacheDirectGlyphs => "text_cache_direct_glyphs",
+    TextCacheTargetReuse => "text_cache_target_reuse",
+    TextCachePromote => "text_cache_promote",
+    MovieGeometry => "movie_geometry", MovieOpen => "movie_open",
+    MovieStartPoll => "movie_start_poll", MovieStartPending => "movie_start_pending",
+    MovieStartReady => "movie_start_ready",
+    MotionVariantBarrier => "motion_variant_barrier", MotionVariantDecode => "motion_variant_decode",
+    ScriptSceneRead => "script_scene_read", ScriptSceneParse => "script_scene_parse",
+    ScriptSceneCacheHit => "script_scene_cache_hit", ScriptCommand => "script_command",
+    GradeBaseBuild => "grade_base_build", GradeBaseHit => "grade_base_hit",
+    SoundEffectDecode => "sound_effect_decode",
+    SoundPrefetch => "sound_prefetch", SoundDemandPending => "sound_demand_pending",
+    SoundDemandReady => "sound_demand_ready", SoundDemandFailed => "sound_demand_failed",
+    SoundDemandCancel => "sound_demand_cancel", SoundPreparedRelease => "sound_prepared_release",
+    StreamIndexMiss => "stream_index_miss",
+    AudioStreamStarveWall => "audio_stream_starve_wall",
+    AudioStreamMissingFrames => "audio_stream_missing_frames",
+    AudioStreamStartWall => "audio_stream_start_wall",
+    MovieOwnerOpen => "movie_owner_open", MovieOwnerPoll => "movie_owner_poll",
+    MovieOwnerControl => "movie_owner_control", MovieOwnerFrame => "movie_owner_frame",
+    MovieOwnerClose => "movie_owner_close", MovieFrameCache => "movie_frame_cache",
 }
+// Console audit banks carry eight counters and use a bounded 0..32 index.
+const _: () = assert!(NAMES.len() <= 32 * 8);
 
 #[repr(C)]
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +196,14 @@ impl Scope {
     pub fn finish(mut self, bytes: u64, aux: u64) {
         if let Some(start) = self.start.take() { record(self.metric, start.elapsed().as_micros() as u64, bytes, aux); }
     }
+    /// Audio-boundary diagnostics never wait for the logger or allocate labels.
+    pub fn finish_hot_try(mut self, label: &str, bytes: u64, aux: u64) {
+        if let Some(start) = self.start.take() {
+            let us = start.elapsed().as_micros() as u64;
+            record(self.metric, us, bytes, aux);
+            hotspot_try(self.metric, label, us, bytes, aux);
+        }
+    }
     pub fn finish_hot(mut self, label: &str, bytes: u64, aux: u64) {
         if let Some(start) = self.start.take() {
             let us = start.elapsed().as_micros() as u64;
@@ -175,13 +221,14 @@ impl Drop for Scope {
 
 #[repr(usize)]
 #[derive(Clone, Copy)]
-pub enum Gauge { StageInflight, StageRequestedBytes, StageReadyBytes, ResidentBytes, EncodedBytes, GradeLutBytes, GradeResultBytes, ArchiveTinyBytes, TextCacheBytes, TextCacheEntries, GroupCacheBytes, SourceCacheBytes, GlyphShadowBytes, StagePrefixBytes, GlyphPageBytes, GlyphPageEntries, AudioStreamChannels, AudioStreamBufferBytes, SoundCacheBytes, SoundCacheEntries, UiPassCacheBytes, UiPassCacheEntries, Count }
+pub enum Gauge { StageInflight, StageRequestedBytes, StageReadyBytes, ResidentBytes, EncodedBytes, GradeLutBytes, GradeResultBytes, ArchiveTinyBytes, TextCacheBytes, TextCacheEntries, GroupCacheBytes, SourceCacheBytes, GlyphShadowBytes, StagePrefixBytes, GlyphPageBytes, GlyphPageEntries, AudioStreamChannels, AudioStreamBufferBytes, SoundCacheBytes, SoundCacheEntries, UiPassCacheBytes, UiPassCacheEntries, TargetRingBytes, AsyncBakeLayers, GradeBaseBytes, SoundPreparedBytes, SoundPreparedEntries, MovieFrameCacheBytes, Count }
 pub const GAUGE_NAMES: &[&str] = &["stage_inflight", "stage_requested_bytes", "stage_ready_bytes",
     "resident_deferred_bytes", "retained_encoded_bytes", "grade_lut_bytes", "grade_result_bytes", "archive_tiny_bytes",
     "text_cache_bytes", "text_cache_entries", "group_cache_bytes", "source_cache_bytes",
     "glyph_shadow_bytes", "stage_prefix_bytes", "glyph_page_bytes", "glyph_page_entries",
     "audio_stream_channels", "audio_stream_buffer_bytes", "sound_cache_bytes", "sound_cache_entries",
-    "ui_pass_cache_bytes", "ui_pass_cache_entries"];
+    "ui_pass_cache_bytes", "ui_pass_cache_entries", "target_ring_bytes", "async_bake_layers", "grade_base_bytes", "sound_prepared_bytes", "sound_prepared_entries", "movie_frame_cache_bytes"];
+const _: () = assert!(GAUGE_NAMES.len() == Gauge::Count as usize);
 static GAUGES: [AtomicU64; Gauge::Count as usize] = [const { AtomicU64::new(0) }; Gauge::Count as usize];
 static PEAKS: [AtomicU64; Gauge::Count as usize] = [const { AtomicU64::new(0) }; Gauge::Count as usize];
 pub fn gauge_set(g: Gauge, value: u64) {
@@ -222,10 +269,45 @@ fn hotspot(metric: Metric, label: &str, us: u64, bytes: u64, aux: u64) {
     };
     row.sample.calls += 1; row.sample.us += us; row.sample.bytes += bytes; row.sample.aux += aux;
 }
+// A fixed, allocation-free table for realtime audio boundary events. Strings
+// are materialized only by the main-thread logger after copying this table.
+#[derive(Clone, Copy)]
+struct FixedHotspot { metric: usize, label: [u8; 80], len: usize, sample: Sample }
+const EMPTY_FIXED: FixedHotspot = FixedHotspot { metric: 0, label: [0; 80], len: 0,
+    sample: Sample { calls: 0, us: 0, bytes: 0, aux: 0 } };
+struct RealtimeHotspots { rows: [FixedHotspot; 32], len: usize }
+const EMPTY_REALTIME: RealtimeHotspots = RealtimeHotspots { rows: [EMPTY_FIXED; 32], len: 0 };
+static REALTIME_HOT: Mutex<RealtimeHotspots> = Mutex::new(EMPTY_REALTIME);
+fn hotspot_try(metric: Metric, label: &str, us: u64, bytes: u64, aux: u64) {
+    let Ok(mut table) = REALTIME_HOT.try_lock() else {
+        HOT_OVERFLOW.fetch_add(1, Ordering::Relaxed); return;
+    };
+    let mut end = label.len().min(80);
+    while !label.is_char_boundary(end) { end -= 1; }
+    let label = &label.as_bytes()[..end];
+    let index = if let Some(index) = table.rows[..table.len].iter()
+        .position(|row| row.metric == metric as usize && &row.label[..row.len] == label) { index }
+    else {
+        if table.len == table.rows.len() { HOT_OVERFLOW.fetch_add(1, Ordering::Relaxed); return; }
+        let index = table.len; table.len += 1;
+        let row = &mut table.rows[index]; row.metric = metric as usize;
+        row.len = label.len(); row.label[..label.len()].copy_from_slice(label); index
+    };
+    let row = &mut table.rows[index];
+    row.sample.calls += 1; row.sample.us += us; row.sample.bytes += bytes; row.sample.aux += aux;
+}
 /// Per-window bounded table, ranked by CPU time. Overflow remains explicit.
 pub fn take_hotspots(limit: usize) -> (Vec<Hotspot>, u64, u64) {
     let mut table = HOT.lock().unwrap_or_else(|e| e.into_inner());
     let mut rows = std::mem::take(&mut *table);
+    drop(table);
+    let fixed = {
+        let mut table = REALTIME_HOT.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::replace(&mut *table, EMPTY_REALTIME)
+    };
+    rows.extend(fixed.rows[..fixed.len].iter().map(|row| Hotspot { metric: row.metric,
+        // Input truncation above always preserves the original UTF-8 boundary.
+        label: std::str::from_utf8(&row.label[..row.len]).expect("bounded hotspot UTF-8").into(), sample: row.sample }));
     rows.sort_by_key(|r| std::cmp::Reverse(r.sample.us));
     let omitted = rows.len().saturating_sub(limit) as u64;
     rows.truncate(limit);

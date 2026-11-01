@@ -161,6 +161,16 @@ impl Ghost {
         }
     }
 
+    /// Shader-visible values only: a paused effect can retain its completed
+    /// output even while its mode remains enabled. No history texture is renamed.
+    #[cfg(target_os = "vita")]
+    pub(super) fn render_key(&self, trans: Option<f32>) -> Vec<u64> {
+        if self.alpha <= 0.0 || !self.active() { return vec![0]; }
+        let bright = trans.map_or(self.bright, |t| self.latched + t * (self.bright - self.latched));
+        vec![1, self.alpha.to_bits() as u64, bright.to_bits() as u64,
+            self.amp.to_bits() as u64, self.angle.to_bits() as u64]
+    }
+
     /// sub_2FC50 over `canvas`. The scratch targets are the exe's render targets 2 (a copy of the frame), 1 (one
     /// channel) and 3 (the three channels). `trans` is the progress of a running transition, which eases a
     /// brightness change in.

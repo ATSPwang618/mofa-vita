@@ -36,8 +36,8 @@ original = (build / "green/effects_backend.inc").read_text(encoding="utf-8")
 # negative assertions detect missing boundaries. These are synthetic mutants,
 # not historical versions or edits to shared production code.
 mutations = {
-    "red-enums": [("shader >= EFFECT_SHADERS || blend >= EFFECT_BLENDS",
-                   "shader > EFFECT_SHADERS || blend > EFFECT_BLENDS")],
+    "red-enums": [("shader >= EFFECT_PUBLIC_SHADERS || blend >= EFFECT_BLENDS",
+                   "shader > EFFECT_PUBLIC_SHADERS || blend > EFFECT_BLENDS")],
     "red-finite": [("!isfinite(params[i])", "isnan(params[i])"),
                    ("!isfinite(floats[j])", "isnan(floats[j])")],
     "red-packed": [("truncf(value) == value", "isfinite(value)")],
@@ -95,7 +95,7 @@ PY
         fi
         cp "$build/$variant.log" "$logs/effects-inputs-$variant.log"
     done
-    grep -qF 'FAIL precondition.shader.26: expected status -1, got 0' "$build/red-enums.log"
+    grep -qF 'FAIL precondition.shader.29: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL precondition.blend.10: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL finite.params.0.infinity: expected status -1, got 0' "$build/red-finite.log"
     grep -qF 'FAIL rule.flags.shader.9.value.4: expected status -1, got 0' "$build/red-packed.log"

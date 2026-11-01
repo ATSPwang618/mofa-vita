@@ -1,8 +1,6 @@
 use super::test_backend::{Control, Event};
 use super::*;
 
-#[path = "../../knife/src/game/text_cache.rs"]
-mod text_cache;
 #[path = "../../knife/src/game/stage_prefix.rs"]
 mod stage_prefix;
 #[path = "../../knife/src/game/group_cache.rs"]

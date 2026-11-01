@@ -35,6 +35,7 @@ void kv_render_set_options(uint32_t options) { atomic_store_explicit(&render_opt
 uint32_t kv_render_options(void) { return atomic_load_explicit(&render_options, memory_order_relaxed); }
 typedef struct KvPerfCounter { _Atomic uint64_t calls, us, bytes, aux; } KvPerfCounter;
 static KvPerfCounter counters[KV_PERF_COUNT];
+_Static_assert(KV_PERF_COUNT <= 32 * 8, "console audit bank index bound");
 _Static_assert(sizeof(KvPerfSample) == 32, "performance counter ABI");
 void kv_perf_set_enabled(uint32_t value) { atomic_store_explicit(&enabled, value != 0, memory_order_relaxed); }
 uint64_t kv_perf_begin(void) {

@@ -34,6 +34,9 @@ unsafe extern "C" {
     fn kv_movie_open_file(path: *const c_char, out: *mut *mut c_void) -> i32;
     fn kv_movie_open_memory(bytes: *const u8, length: u32, out: *mut *mut c_void) -> i32;
     fn kv_movie_start(movie: *mut c_void) -> i32;
+    fn kv_movie_source_ready(movie: *mut c_void, ready: *mut u32) -> i32;
+    fn kv_movie_select_streams(movie: *mut c_void) -> i32;
+    fn kv_movie_start_selected(movie: *mut c_void) -> i32;
     fn kv_movie_pause(movie: *mut c_void) -> i32;
     fn kv_movie_resume(movie: *mut c_void) -> i32;
     fn kv_movie_stop(movie: *mut c_void) -> i32;
@@ -149,6 +152,20 @@ impl MoviePlayer {
     pub fn start(&mut self) -> Result<(), MovieError> {
         // SAFETY: exclusive creating-thread owner; C validates the state.
         status(unsafe { kv_movie_start(self.raw()?) })
+    }
+    pub fn source_ready(&mut self) -> Result<bool, MovieError> {
+        let mut ready = u32::MAX;
+        // SAFETY: exclusive creating-thread owner, fixed-width status output.
+        status(unsafe { kv_movie_source_ready(self.raw()?, &mut ready) })?;
+        match ready { 0 => Ok(false), 1 => Ok(true), _ => Err(MovieError::InvalidOutput) }
+    }
+    pub fn select_streams(&mut self) -> Result<(), MovieError> {
+        // SAFETY: this owner has observed READY and holds no GPU frame lease.
+        status(unsafe { kv_movie_select_streams(self.raw()?) })
+    }
+    pub fn start_selected(&mut self) -> Result<(), MovieError> {
+        // SAFETY: stream selection and Start execute on the creating thread.
+        status(unsafe { kv_movie_start_selected(self.raw()?) })
     }
     pub fn pause(&mut self) -> Result<(), MovieError> {
         // SAFETY: exclusive creating-thread owner; caller completed GPU reads.

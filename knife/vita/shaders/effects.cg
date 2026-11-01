@@ -202,22 +202,22 @@ float4 fs_text(FragmentInput i) : COLOR {
     return float4(i.color.rgb * c * i.color.a, c * (2.0 - c) * i.color.a);
 }
 
-float rim_cov(FragmentInput i, float2 uv) {
-    if (any(uv < uQuadHx.xy) || any(uv > uQuadHx.zw)) {
+float rim_cov_bounds(float2 uv, float4 bounds) {
+    if (any(uv < bounds.xy) || any(uv > bounds.zw)) {
         return 0.0;
     }
     return tex2Dlod(tex0, float4(uv, 0.0, 0.0)).r;
 }
 
-float4 fs_rim_text(FragmentInput i) : COLOR {
-    float c = rim_cov(i, i.uv);
+float4 rim_text_bounds(FragmentInput i, float4 bounds, float3 rim) {
+    float c = rim_cov_bounds(i.uv, bounds);
     float keep = 1.0;
     const float2 taps[8] = {
         float2(-2.0, 0.0), float2(2.0, 0.0), float2(0.0, -2.0), float2(0.0, 2.0),
         float2(-1.5, -1.5), float2(1.5, -1.5), float2(-1.5, 1.5), float2(1.5, 1.5)
     };
     for (int k = 0; k < 8; k++) {
-        keep *= 1.0 - uQuadHy.z * rim_cov(i, i.uv - taps[k] * uQuadHy.xy);
+        keep *= 1.0 - rim.z * rim_cov_bounds(i.uv - taps[k] * rim.xy, bounds);
     }
     float a = c + (1.0 - keep) * (1.0 - c);
     // All integers 0..0xFFFFFF are exactly representable by a float32.
@@ -228,6 +228,17 @@ float4 fs_rim_text(FragmentInput i) : COLOR {
                          e - 256.0 * floor(e / 256.0)) / 255.0;
     return float4((i.color.rgb * c + edge * (1.0 - keep) * (1.0 - c)) * i.color.a,
                   a * i.color.a);
+}
+
+float4 fs_rim_text(FragmentInput i) : COLOR {
+    return rim_text_bounds(i, uQuadHx, uQuadHy.xyz);
+}
+
+// Bounds and rim parameters are F32 attributes, constant per glyph triangle.
+// Their original values may differ between glyphs; never round them to batch.
+// Only packed RGB24 stays in uQuadHy.w outside raster interpolation.
+float4 fs_rim_text_batched(FragmentInput i) : COLOR {
+    return rim_text_bounds(i, i.hx, i.hy.xyz);
 }
 
 float4 fs_mono(FragmentInput i) : COLOR {
@@ -553,6 +564,58 @@ __nativecolor __regformat unsigned char4 fs_ps13_fetch(FragmentInput i,
     float4 d = native_unpack(destination);
     return native_pack(float4(ps_overlay(d.rgb, s, a), 1.0));
 }
+
+// A bounded, material-selected chain, independent of game or script identity.
+// The CPU partitions the two clipped convex footprints. Only their intersection
+// uses this entry; the other regions retain their original shader and sampling.
+// hx.xy carries source 2 UV, hy its constant tint. Native uchar conversion between
+// the operations is mandatory: removing it changes the original RGBA8 pipeline.
+// Each finite material pair is compiled at startup with integer macros. There
+// is no run-time operation uniform, selector, or unused operation body. In
+// particular a generic 119-instruction chain cannot replace two 35-op draws.
+#if defined(KNIFE_CHAIN_OP_A) && defined(KNIFE_CHAIN_OP_B)
+unsigned char4 chain_plain_a(float4 t, float4 tint, unsigned char4 destination) {
+    float a = t.a * tint.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float3 s = t.rgb * tint.rgb;
+    float4 d = native_unpack(destination);
+#if KNIFE_CHAIN_OP_A == 2
+    float3 r = ps_mix(d.rgb, min(d.rgb, s), a);
+#elif KNIFE_CHAIN_OP_A == 11
+    float3 r = ps_hard_light(d.rgb, s, a);
+#elif KNIFE_CHAIN_OP_A == 13
+    float3 r = ps_overlay(d.rgb, s, a);
+#elif KNIFE_CHAIN_OP_A == 19
+    float3 r = ps_mix(d.rgb * d.a, s, a);
+#else
+#error Unsupported chain operation A
+#endif
+    return native_pack(float4(r, 1.0));
+}
+unsigned char4 chain_plain_b(float4 t, float4 tint, unsigned char4 destination) {
+    float a = t.a * tint.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float3 s = t.rgb * tint.rgb;
+    float4 d = native_unpack(destination);
+#if KNIFE_CHAIN_OP_B == 2
+    float3 r = ps_mix(d.rgb, min(d.rgb, s), a);
+#elif KNIFE_CHAIN_OP_B == 11
+    float3 r = ps_hard_light(d.rgb, s, a);
+#elif KNIFE_CHAIN_OP_B == 13
+    float3 r = ps_overlay(d.rgb, s, a);
+#elif KNIFE_CHAIN_OP_B == 19
+    float3 r = ps_mix(d.rgb * d.a, s, a);
+#else
+#error Unsupported chain operation B
+#endif
+    return native_pack(float4(r, 1.0));
+}
+__nativecolor __regformat unsigned char4 fs_ps_chain2_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    unsigned char4 first = chain_plain_a(tex2D(tex0, i.uv), i.color, destination);
+    return chain_plain_b(tex2D(tex2, i.hx.xy), i.hy, first);
+}
+#endif
 
 // Ordinary op19 without haze/soft/rule/group. Stage clip_draw can prepare
 // this as Sprite, Fill or NoAlpha; retain both exact source-preparation flags.

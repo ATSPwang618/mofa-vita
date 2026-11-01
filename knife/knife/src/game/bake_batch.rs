@@ -17,10 +17,16 @@ impl Batch {
     /// None means immediate; Some reports whether this layer was already dirty.
     pub(super) fn queue(&mut self, layer: i32) -> Option<bool> {
         if !self.active || !(0..LAYERS as i32).contains(&layer) { return None; }
+        Some(self.defer(layer))
+    }
+    /// Async materialization also collects setters invoked outside a coalesced
+    /// script run (e.g. the five clock layers), until the next real barrier.
+    pub(super) fn defer(&mut self, layer: i32) -> bool {
+        if !(0..LAYERS as i32).contains(&layer) { return false; }
         let bit = 1u64 << layer;
         let already = self.mask & bit != 0;
         if !already { self.mask |= bit; self.order.push(layer as u8); }
-        Some(already)
+        already
     }
     /// Disable before materializing so flushes cannot requeue themselves. The
     /// first-dirty order preserves load order across distinct layer images.

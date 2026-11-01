@@ -443,15 +443,50 @@ static int select_streams(KvMovie *movie) {
     movie->streams_selected = 1;
     return atomic_load(&movie->callback_error);
 }
+/* Poll the asynchronous source parser without sleeping on the game thread.
+ * All control still executes on the player's creating thread. */
+int kv_movie_source_ready(KvMovie *movie, uint32_t *ready) {
+    if (!ready) return KV_MOVIE_ARGUMENT;
+    *ready = 0;
+    int code = checked(movie);
+    if (code) return code;
+    *ready = movie->started || atomic_load(&movie->source_ready) ? 1 : 0;
+    return 0;
+}
+int kv_movie_select_streams(KvMovie *movie) {
+    int code = checked(movie);
+    if (code) return code;
+    if (!atomic_load(&movie->source_ready)) return KV_MOVIE_STATE;
+    return select_streams(movie);
+}
+int kv_movie_start_selected(KvMovie *movie) {
+    int code = checked(movie);
+    if (code) return code;
+    if (movie->started) return 0;
+    if (!movie->streams_selected) return KV_MOVIE_STATE;
+    code = native_status(sceAvPlayerStart(movie->handle));
+    if (!code) { movie->started = 1; movie->stopped = 0; }
+    return code ? code : atomic_load(&movie->callback_error);
+}
+int kv_movie_poll_start(KvMovie *movie, uint32_t *ready) {
+    int code = kv_movie_source_ready(movie, ready);
+    if (code || !*ready) return code;
+    if (movie->started) return 0;
+    *ready = 0;
+    code = kv_movie_select_streams(movie);
+    if (!code) code = kv_movie_start_selected(movie);
+    if (!code) { movie->started = 1; movie->stopped = 0; *ready = 1; }
+    return code ? code : atomic_load(&movie->callback_error);
+}
 int kv_movie_start(KvMovie *movie) {
     int code = checked(movie);
     if (code) return code;
     if (movie->started) return KV_MOVIE_STATE;
     code = wait_ready(movie);
-    if (!code) code = select_streams(movie);
-    if (!code) code = native_status(sceAvPlayerStart(movie->handle));
-    if (!code) { movie->started = 1; movie->stopped = 0; }
-    return code ? code : atomic_load(&movie->callback_error);
+    if (code) return code;
+    uint32_t ready = 0;
+    code = kv_movie_poll_start(movie, &ready);
+    return code ? code : ready ? 0 : KV_MOVIE_STATE;
 }
 int kv_movie_pause(KvMovie *movie) {
     int code = checked(movie);

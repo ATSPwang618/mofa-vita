@@ -1,11 +1,14 @@
 //! Immutable asset-name lookup: indexed streams need no main-thread stat calls.
-//! Missing/custom paths retain bounded memoized filesystem fallback. Audio open
-//! remains responsible for reporting a physically absent/corrupt installed file.
-use std::{cell::RefCell, collections::HashMap, path::{Path, PathBuf}};
+//! A validated fixed-profile index is authoritative, including absent names.
+//! Custom distributions without that index retain bounded memoized filesystem
+//! fallback; CPU sound workers own a separate resolver for those checks.
+//! Audio open reports a physically absent/corrupt indexed file.
+use std::{cell::RefCell, collections::HashMap, path::{Path, PathBuf}, sync::Arc};
 use knife_perf::{Metric, Scope};
 const MEMO_LIMIT: usize = 1024;
 pub const EMBEDDED: Option<&str> = Some(include_str!("../data/vita_stream_index_540p.txt"));
-struct Index { names: Vec<&'static str> }
+#[derive(Clone)]
+struct Index { names: Arc<[&'static str]> }
 impl Index {
     fn parse(text: &'static str, expected: &str) -> Option<Self> {
         let mut rows = text.lines();
@@ -15,7 +18,7 @@ impl Index {
             !p.starts_with("stream/") || p.len() > 240 || p.contains('\\')
             || p.split('/').any(|part| part.is_empty() || part == ".." || part == "."))
             || names.windows(2).any(|p| p[0] >= p[1]) { return None; }
-        Some(Self { names })
+        Some(Self { names: names.into() })
     }
     fn contains(&self, name: &str) -> bool { self.names.binary_search(&name).is_ok() }
 }
@@ -26,6 +29,11 @@ impl StreamResolver {
     pub fn new(root: &Path, source: Option<&'static str>, manifest: &str) -> Self {
         Self { root: root.into(), index: source.and_then(|s| Index::parse(s, manifest)), memo: Default::default() }
     }
+    /// Immutable index owners are shared; custom filesystem memoization belongs
+    /// to this worker alone. RefCell is moved, never shared between threads.
+    pub fn fork_for_worker(&self) -> Self {
+        Self { root: self.root.clone(), index: self.index.clone(), memo: Default::default() }
+    }
     pub fn resolve(&self, rel: &str, accelerated: bool) -> Option<PathBuf> {
         let total = Scope::new(Metric::StreamResolve);
         let original = self.root.join(rel);
@@ -35,7 +43,10 @@ impl StreamResolver {
             if let Some(index) = &self.index {
                 let found = if ogg_rel.to_str().is_some_and(|p| index.contains(p)) { Some(ogg.clone()) }
                     else if index.contains(rel) { Some(original.clone()) } else { None };
-                if found.is_some() { knife_perf::add(Metric::StreamIndexHit, 0, 0); return found; }
+                knife_perf::add(if found.is_some() { Metric::StreamIndexHit } else { Metric::StreamIndexMiss }, 0, 0);
+                // A missing BFSAR-only SE must not scan the large stream
+                // directory twice, nor stall streams that are already playing.
+                return found;
             }
             if let Some(found) = self.memo.borrow().get(rel) { return found.clone(); }
         }

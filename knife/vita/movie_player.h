@@ -51,6 +51,15 @@ int kv_movie_open_memory(const uint8_t *bytes, uint32_t length, KvMovie **out);
  * A timeout retains the player and may be retried; an enable failure requires
  * Close because a partially selected stream may already be active. */
 int kv_movie_start(KvMovie *movie);
+/* Nonblocking counterpart: ready=0 until source READY, ready=1 after selecting
+ * the same supported streams and starting. No sleeps or implicit EOF. The
+ * creating-thread caller owns its deadline and keeps the player until Close. */
+int kv_movie_poll_start(KvMovie *movie, uint32_t *ready);
+/* Split owner-thread startup lets callers identify native Select versus Start
+ * latency. source_ready only observes parser state; the others require READY. */
+int kv_movie_source_ready(KvMovie *movie, uint32_t *ready);
+int kv_movie_select_streams(KvMovie *movie);
+int kv_movie_start_selected(KvMovie *movie);
 int kv_movie_pause(KvMovie *movie);
 int kv_movie_resume(KvMovie *movie);
 int kv_movie_stop(KvMovie *movie);

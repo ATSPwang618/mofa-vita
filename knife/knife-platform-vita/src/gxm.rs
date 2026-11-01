@@ -6,6 +6,7 @@ use std::{ffi::{c_char, c_void, CStr}, marker::PhantomData, ptr::NonNull, rc::Rc
 unsafe extern "C" {
     fn kv_gxm_create(out: *mut *mut c_void, error: *mut c_char, capacity: u32) -> i32;
     fn kv_gxm_shader_available(g: *mut c_void, shader: u32) -> i32;
+    fn kv_gxm_chain_pair_available(g: *mut c_void, first: u32, second: u32) -> i32;
     fn kv_gxm_texture_create(g: *mut c_void, rgba: *const u8, width: u32, height: u32,
         stride: u32, out: *mut *mut c_void) -> i32;
     fn kv_gxm_texture_destroy(g: *mut c_void, texture: *mut c_void) -> i32;
@@ -124,6 +125,10 @@ pub enum EffectShader {
     PlainSprite = 22, PsPlain19 = 23,
     PsFetch2 = 25,
     PlainForceAlpha = 26,
+    /// Two consecutive plain PS layers with an intermediate encoded UNORM8 pack.
+    PsChain2 = 27,
+    /// Bounds and rim steps/strength are per triangle; RGB24 remains a shared uniform.
+    RimTextBatched = 28,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -250,6 +255,12 @@ impl Gxm {
     /// Read the optional shader capability admitted completely during startup.
     pub fn shader_available(&self, shader: u32) -> Result<bool, String> {
         let status = unsafe { kv_gxm_shader_available(self.raw()?, shader) };
+        self.check(status)?;
+        Ok(status != 0)
+    }
+    /// Startup admitted the exact compile-time material variant and its cost.
+    pub fn chain_pair_available(&self, first: u32, second: u32) -> Result<bool, String> {
+        let status = unsafe { kv_gxm_chain_pair_available(self.raw()?, first, second) };
         self.check(status)?;
         Ok(status != 0)
     }

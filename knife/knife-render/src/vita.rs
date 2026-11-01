@@ -1,8 +1,8 @@
 //! Native GXM implementation of the renderer facade.
 //!
 //! Encoders retain resources and defer commands until submission, as on desktop.
-//! Each quad is a separate draw because GXM binds the WGSL flat haze fields as
-//! fragment uniforms. The native owner handles GPU fences and sRGB surfaces.
+//! Compatible draws share submissions; eligible consecutive pixel-local PS layers
+//! share a bounded blend-chain shader. The native owner retains all GPU fences.
 
 #![cfg_attr(not(target_os = "vita"), allow(dead_code))]
 
@@ -91,7 +91,6 @@ mod menu_draw_diagnostic {
 
     static RECORDED: AtomicU32 = AtomicU32::new(0);
     static SUBMITTED: AtomicU32 = AtomicU32::new(0);
-    static BAKES: AtomicU32 = AtomicU32::new(0);
     static COMPRESSED_UPLOADS: AtomicU32 = AtomicU32::new(0);
     static CG_QUADS: AtomicU32 = AtomicU32::new(0);
     static CG_SUBMITTED: AtomicU32 = AtomicU32::new(0);
@@ -219,26 +218,6 @@ mod menu_draw_diagnostic {
             + 2 * usize::from(texture.device.epoch.get() >= 2100);
         let bit = 1 << (index * 4 + phase);
         seen.fetch_or(bit, Ordering::Relaxed) & bit == 0
-    }
-
-    pub(super) fn bake_begin(texture: &NativeTexture, source: &NativeTexture,
-        target: &NativeTexture, lut: &NativeTexture) -> Option<u32>
-    {
-        if !enabled() || !is_menu(texture) { return None; }
-        let index = BAKES.fetch_add(1, Ordering::Relaxed);
-        if index >= 2 { return None; }
-        record(format_args!(
-            "MENU_RENDER BAKE_BEGIN index={index} cache_epoch={} label={:?} physical={:?} source_id={:?} source_srgb={} target_id={:?} target_srgb={} target_rt={} lut_id={:?} shader=Alter blend=Opaque sampler_request=linear_clamp gamma_request=source_srgb destination=sRGB_RGBA8 native_memblock_uid=unobserved",
-            texture.device.epoch.get(), texture.deferred.as_ref().map(|source| source.label.as_str()), texture.size, source.id.borrow(), source.srgb,
-            target.id.borrow(), target.srgb, target.render_target, lut.id.borrow()));
-        Some(index)
-    }
-
-    pub(super) fn bake_end(index: Option<u32>, result: &Result<()>, resident: &NativeTexture) {
-        if let Some(index) = index {
-            record(format_args!("MENU_RENDER BAKE_END index={index} result={result:?} resident_id={:?}",
-                resident.id.borrow()));
-        }
     }
 
     pub(super) fn compressed_upload(texture: &NativeTexture, info: GxtDescriptor) {
@@ -687,10 +666,32 @@ pub struct RenderTarget {
     pub tex: TexRef,
 }
 
+// The owner and its encoders share CPU-only scratch storage. Native submit
+// copies these vertices before returning; this never aliases a GXM arena.
+#[derive(Default)]
+struct VertexBuffers { buffers: Vec<Vec<Vertex>>, bytes: usize }
+impl VertexBuffers {
+    fn pop(&mut self) -> Option<Vec<Vertex>> {
+        let buffer = self.buffers.pop()?;
+        self.bytes -= buffer.capacity() * std::mem::size_of::<Vertex>();
+        knife_perf::add(Metric::VertexBufferReuse, 0, 1);
+        Some(buffer)
+    }
+    fn push(&mut self, mut buffer: Vec<Vertex>) {
+        let bytes = buffer.capacity().saturating_mul(std::mem::size_of::<Vertex>());
+        if bytes == 0 || bytes > MAX_FRAME_VERTEX_BYTES.saturating_sub(self.bytes) { return; }
+        self.bytes += bytes;
+        buffer.clear();
+        self.buffers.push(buffer);
+        knife_perf::add(Metric::VertexBufferRecycle, 0, 1);
+    }
+}
+
 /// A pending frame. Dropping an unsubmitted encoder discards its commands.
 /// Texture references stay alive until all commands have returned from GXM.
 pub struct CommandEncoder {
     device: Rc<Device>,
+    vertex_reuse: Rc<RefCell<VertexBuffers>>,
     commands: Vec<Command>,
     vertex_bytes: usize,
     /// Target whose render pass is still open at the end of `commands`. Consecutive
@@ -701,14 +702,14 @@ pub struct CommandEncoder {
 /// Simulates a minimal barrier scheme: a pass needs a Finish only when it samples a
 /// target that an earlier pass in this frame wrote. Returns (passes, passes_needing).
 #[cfg(target_os = "vita")]
-pub(crate) fn analyse_passes(commands: &[Command]) -> (u64, u64) {
+fn analyse_passes(commands: &[Command]) -> (u64, u64) {
     let flags = pass_finish_flags(commands);
     (flags.len() as u64, flags.iter().filter(|f| **f).count() as u64)
 }
 
 /// One flag per pass, in submission order: does this pass sample a target that an earlier
 /// pass in the same frame wrote? A Finish is only needed for those.
-pub(crate) fn pass_finish_flags(commands: &[Command]) -> Vec<bool> {
+fn pass_finish_flags(commands: &[Command]) -> Vec<bool> {
     // RAW: a pass samples a target an earlier pass wrote.
     let mut written: std::collections::HashSet<usize> = std::collections::HashSet::new();
     // WAR: a pass renders into a target an earlier in-flight pass is sampling.
@@ -757,43 +758,6 @@ pub(crate) fn pass_finish_flags(commands: &[Command]) -> Vec<bool> {
     flags
 }
 
-#[cfg(any(target_os = "vita", test))]
-pub(crate) fn analyse_passes_unused(commands: &[Command]) -> (u64, u64) {
-    let mut written: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    let (mut total, mut needing) = (0u64, 0u64);
-    let mut i = 0;
-    while i < commands.len() {
-        let Command::Begin { target, .. } = &commands[i] else { i += 1; continue };
-        total += 1;
-        let mut j = i + 1;
-        let mut need = false;
-        while j < commands.len() {
-            match &commands[j] {
-                Command::End => break,
-                Command::Draw { textures, .. } => {
-                    if textures.iter().flatten().any(|t| written.contains(&(Rc::as_ptr(t) as usize))) {
-                        need = true;
-                    }
-                }
-                Command::Copy { src, .. } => {
-                    if written.contains(&(Rc::as_ptr(src) as usize)) { need = true; }
-                }
-                _ => {}
-            }
-            j += 1;
-        }
-        if need {
-            needing += 1;
-            // A Finish drains everything submitted so far.
-            written.clear();
-        }
-        written.insert(Rc::as_ptr(target) as usize);
-        i = j;
-    }
-    (total, needing)
-}
-
-
 impl CommandEncoder {
     /// Close an open pass. Every command that is not a draw into the same target
     /// must call this first: GXM copies and passes cannot interleave.
@@ -801,6 +765,21 @@ impl CommandEncoder {
         if self.open.take().is_some() {
             self.commands.push(Command::End);
         }
+    }
+}
+
+#[path = "vita_blend_chain.rs"]
+mod blend_chain;
+
+// Uniform inputs must agree only where the selected shader actually reads a
+// shared uniform. RimText28 reads hx/steps per glyph and keeps only RGB24 shared.
+fn draw_uniforms_match(shader: EffectShader, a: &[Vertex], b: &[Vertex]) -> bool {
+    match shader {
+        EffectShader::RimTextBatched =>
+            a.first().map(|v|v.haze[1][3]) == b.first().map(|v|v.haze[1][3]),
+        EffectShader::PsChain2 =>
+            a.first().map(|v|v.haze[1]) == b.first().map(|v|v.haze[1]),
+        _ => a.first().map(|v|v.haze) == b.first().map(|v|v.haze),
     }
 }
 
@@ -825,19 +804,20 @@ enum Command {
 }
 
 impl CommandEncoder {
-    fn append(&mut self, commands: Vec<Command>) -> Result<()> {
+    fn append<C>(&mut self, commands: C) -> Result<()>
+    where C: AsRef<[Command]> + IntoIterator<Item = Command> {
         let _record = Scope::new(Metric::CommandAppend);
         let command_count = self
             .commands
             .len()
-            .checked_add(commands.len())
+            .checked_add(commands.as_ref().len())
             .context("frame command count overflow")?;
         ensure!(
             command_count <= MAX_FRAME_COMMANDS,
             "frame exceeds {MAX_FRAME_COMMANDS} GXM commands"
         );
         let mut vertex_bytes = self.vertex_bytes;
-        for command in &commands {
+        for command in commands.as_ref() {
             if let Command::Draw { vertices, .. } = command {
                 vertex_bytes = vertex_bytes
                     .checked_add(
@@ -854,9 +834,9 @@ impl CommandEncoder {
             "frame exceeds {MAX_FRAME_VERTEX_BYTES} recorded vertex bytes"
         );
         self.commands
-            .try_reserve(commands.len())
+            .try_reserve(commands.as_ref().len())
             .context("reserving frame command memory")?;
-        for command in &commands {
+        for command in commands.as_ref() {
             match command {
                 Command::Begin { target, .. } => target.changed(),
                 Command::Copy { dst, .. } => dst.changed(),
@@ -866,7 +846,7 @@ impl CommandEncoder {
         // Coalesce a run of draws that share every bound state into one submission, the
         // way the reference Vita renderer batches quads: the driver cost is per draw, and
         // a heavy frame issues 60-95 of them.
-        for command in commands {
+        for mut command in commands {
             if knife_perf::enabled() {
                 if let Command::Draw { vertices, shader, blend, textures, params } = &command {
                     let reason = match self.commands.last() {
@@ -874,7 +854,7 @@ impl CommandEncoder {
                             if a != shader { Some(Metric::MergeShader) }
                             else if b != blend { Some(Metric::MergeBlend) }
                             else if p != params { Some(Metric::MergeParams) }
-                            else if last.first().map(|v| v.haze) != vertices.first().map(|v| v.haze) { Some(Metric::MergeHaze) }
+                            else if !draw_uniforms_match(*shader,last,vertices) { Some(Metric::MergeHaze) }
                             else if last.len() + vertices.len() > MERGED_DRAW_VERTICES { Some(Metric::MergeCapacity) }
                             else if !t.iter().zip(textures).all(|(a,b)| match (a,b) {
                                 (Some(a),Some(b)) => Rc::ptr_eq(a,b), (None,None) => true, _ => false,
@@ -885,7 +865,7 @@ impl CommandEncoder {
                     if let Some(reason) = reason { knife_perf::add(reason,0,0); }
                 }
             }
-            if let Command::Draw { vertices, shader, blend, textures, params } = &command
+            if let Command::Draw { vertices, shader, blend, textures, params } = &mut command
                 && let Some(Command::Draw {
                     vertices: last_vertices,
                     shader: last_shader,
@@ -898,7 +878,7 @@ impl CommandEncoder {
                 && last_params == params
                 // The shader reads haze of the first vertex as a uniform, so a merged run
                 // must not cross a haze change.
-                && last_vertices.first().map(|v| v.haze) == vertices.first().map(|v| v.haze)
+                && draw_uniforms_match(*shader,last_vertices,vertices)
                 && last_vertices.len() + vertices.len() <= MERGED_DRAW_VERTICES
                 && last_textures.iter().zip(textures.iter()).all(|(a, b)| match (a, b) {
                     (Some(a), Some(b)) => Rc::ptr_eq(a, b),
@@ -907,8 +887,12 @@ impl CommandEncoder {
                 })
             {
                 let copy = Scope::new(Metric::CommandMerge);
+                if *shader == EffectShader::RimTextBatched { knife_perf::add(Metric::RimBatchMerge,0,1); }
                 last_vertices.extend_from_slice(vertices);
                 copy.finish((vertices.len() * std::mem::size_of::<Vertex>()) as u64, 0);
+                if knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM) {
+                    self.vertex_reuse.borrow_mut().push(std::mem::take(vertices));
+                }
                 continue;
             }
             self.commands.push(command);
@@ -1055,7 +1039,7 @@ pub struct Renderer {
     device: Rc<Device>,
     backdrops: HashMap<[u32; 2], Rc<NativeTexture>>,
     command_reuse: RefCell<Vec<Command>>,
-    vertex_reuse: RefCell<Vec<Vec<Vertex>>>,
+    vertex_reuse: Rc<RefCell<VertexBuffers>>,
     soft_lut: Rc<NativeTexture>,
     pub bc_supported: bool,
     pub white: TexRef,
@@ -1110,6 +1094,39 @@ impl Renderer {
 
     pub fn movie_gpu_fence(&self) -> MovieGpuFence {
         MovieGpuFence { device: self.device.clone() }
+    }
+
+    /// Convert one newly leased native YVU surface into an owned UNORM target.
+    /// No display/present or CPU pixel copy occurs. Native sampling is completed
+    /// before returning, allowing the decoder owner to reclaim this lease while
+    /// subsequent app frames keep sampling the same stable RGBA cache.
+    #[cfg(target_os = "vita")]
+    pub fn try_cache_movie_frame(&self, source: &TexRef, target: &RenderTarget, uv: [f32; 4]) -> Result<()> {
+        let probe = Scope::new(Metric::MovieFrameCache);
+        self.check_texture(source)?; self.check_target(target)?;
+        ensure!(source.native.bpp == 0 && target.tex.physical_size() == [960, 540]
+            && !Rc::ptr_eq(&source.native, &target.tex.native), "invalid movie cache source/target");
+        ensure!(uv.iter().all(|v| v.is_finite()) && uv[0] >= 0.0 && uv[1] >= 0.0
+            && uv[2] <= 1.0 && uv[3] <= 1.0 && uv[0] < uv[2] && uv[1] < uv[3], "invalid movie UV window");
+        let quad = Quad::rect(source.clone(), [0.0, 0.0, 960.0, 540.0], [1.0; 4])
+            .with_uv_rect(uv[0], uv[1], uv[2], uv[3]);
+        let reuse = self.vertex_reuse.borrow_mut().pop().unwrap_or_default();
+        let vertices = quad_vertices_reusing(&quad, [960.0, 540.0], [1.0; 2], reuse)?;
+        let mut commands = [Command::Begin { target: target.tex.native.clone(), clear: None },
+            Command::Draw { vertices, shader: EffectShader::Sprite, blend: EffectBlend::Opaque,
+                textures: [Some(source.native.clone()), Some(self.white.native.clone()), None, Some(self.soft_lut.clone())],
+                params: [0.0; 8] }, Command::End];
+        let submitted = execute(&self.device, &commands);
+        // Even a partial/failed submit must be settled before its native source
+        // can be acknowledged. The caller quarantines the lease if this fails.
+        let settled = self.device.call(|g| g.finish_movie_sampling());
+        if let Command::Draw { vertices, .. } = &mut commands[1] {
+            self.vertex_reuse.borrow_mut().push(std::mem::take(vertices));
+        }
+        settled?; submitted?;
+        target.tex.native.changed();
+        probe.finish(960 * 540 * 4, 1);
+        Ok(())
     }
 
     /// # Safety
@@ -1186,7 +1203,7 @@ impl Renderer {
             device,
             backdrops: HashMap::new(),
             command_reuse: RefCell::new(Vec::new()),
-            vertex_reuse: RefCell::new(Vec::new()),
+            vertex_reuse: Rc::new(RefCell::new(VertexBuffers::default())),
             soft_lut,
             bc_supported: false,
             white,
@@ -1774,8 +1791,14 @@ impl Renderer {
     /// the 1920x1080 logical canvas. With the scene chain also at 960x540 the
     /// scene-to-canvas blit is 1:1. Script coordinates remain unchanged.
     pub fn create_composite_target(&self, width: u32, height: u32, label: &str) -> RenderTarget {
-        self.create_target_sized([width, height], composite_physical(width, height), label)
+        self.try_create_composite_target(width, height, label)
             .expect("creating Vita UI composite target")
+    }
+
+    /// Fallible allocation for optional frame-output rings. Failure keeps the
+    /// existing target usable; physical sizing matches the primary composite.
+    pub fn try_create_composite_target(&self, width: u32, height: u32, label: &str) -> Result<RenderTarget> {
+        self.create_target_sized([width, height], composite_physical(width, height), label)
     }
 
     fn create_target_sized(
@@ -1899,21 +1922,21 @@ impl Renderer {
             "invalid text cache composite");
         let [pw, ph] = target.tex.physical_size();
         let size = [target.tex.width as f32, target.tex.height as f32];
-        let vertices = quad_vertices(&Quad::rect(source.tex.clone(), rect, [1.0; 4]),
-            size, [pw as f32 / size[0], ph as f32 / size[1]])?;
+        let reuse = if knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM) {
+            self.vertex_reuse.borrow_mut().pop().unwrap_or_default()
+        } else { Vec::new() };
+        let vertices = quad_vertices_reusing(&Quad::rect(source.tex.clone(), rect, [1.0; 4]),
+            size, [pw as f32 / size[0], ph as f32 / size[1]], reuse)?;
         let same_target = encoder.open.as_ref().is_some_and(|open|
             Rc::ptr_eq(open, &target.tex.native));
         if !same_target { encoder.close_pass(); }
-        let mut commands = Vec::with_capacity(2);
-        if !same_target {
-            commands.push(Command::Begin { target: target.tex.native.clone(), clear: None });
-        }
-        commands.push(Command::Draw { vertices, shader: EffectShader::Alter,
+        let draw = Command::Draw { vertices, shader: EffectShader::Alter,
             blend: EffectBlend::Alpha,
             textures: [Some(source.tex.native.clone()), Some(self.white.native.clone()),
                 Some(self.white.native.clone()), Some(self.soft_lut.clone())],
-            params: [0.0; 8] });
-        encoder.append(commands)?;
+            params: [0.0; 8] };
+        if same_target { encoder.append([draw])?; }
+        else { encoder.append([Command::Begin { target: target.tex.native.clone(), clear: None }, draw])?; }
         encoder.open = Some(target.tex.native.clone());
         target.tex.native.changed();
         Ok(())
@@ -1947,6 +1970,10 @@ impl Renderer {
         let fetch_overlay = fetch_enabled && self.device.call(|g| g.shader_available(21))?;
         let fetch_darken = fetch_enabled && self.device.call(|g| g.shader_available(25))?;
         let fetch_plain_normal = fetch_enabled && self.device.call(|g| g.shader_available(23))?;
+        let blend_chain = fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::BLEND_CHAIN)
+            && !target.tex.native.srgb && self.device.call(|g| g.shader_available(27))?;
+        let batched_rim = self.device.call(|g| g.shader_available(28))?;
         let plain_sprite = self.device.call(|g| g.shader_available(22))?;
         let plain_forcealpha = knife_perf::optimizations::enabled(knife_perf::optimizations::PLAIN_FORCEALPHA)
             && self.device.call(|g| g.shader_available(26))?;
@@ -1960,7 +1987,8 @@ impl Renderer {
             }
         };
         let source_shader = |q: &Quad| {
-            if plain_sprite && plain_ps_source(q) { EffectShader::PlainSprite }
+            if q.shade == Shade::RimText && batched_rim { EffectShader::RimTextBatched }
+            else if plain_sprite && plain_ps_source(q) { EffectShader::PlainSprite }
             else if plain_forcealpha && q.shade == Shade::ForceAlpha && plain_material(q) {
                 EffectShader::PlainForceAlpha
             } else { effect_shader(q.shade) }
@@ -2000,7 +2028,9 @@ impl Renderer {
             });
             open = true;
         }
-        for q in quads {
+        let mut skip = false;
+        for (index,q) in quads.iter().enumerate() {
+            if skip { skip = false; continue; }
             self.check_texture(&q.tex)?;
             ensure!(
                 !Rc::ptr_eq(&q.tex.native, &target.tex.native),
@@ -2042,6 +2072,28 @@ impl Renderer {
             let vertices = quad_vertices_reusing(q, [tw, th], scale, reuse)?;
             #[cfg(target_os = "vita")]
             menu_draw_diagnostic::quad(q, target, &vertices, scale);
+            if blend_chain && let Some(next) = quads.get(index+1)
+                && let (Blend::Ps(a),Blend::Ps(b)) = (q.blend,next.blend)
+                && let (Some(sa),Some(sb)) = (ps_shader(q,a),ps_shader(next,b))
+                && self.device.call(|g|g.chain_pair_available(a as u32,b as u32))?
+            {
+                self.check_texture(&next.tex)?;
+                ensure!(!Rc::ptr_eq(&next.tex.native,&target.tex.native), "a chain cannot sample its active target");
+                // Validate every original source before considering its replacement.
+                // Invalid parameters must remain errors, rather than being hidden by
+                // an optional optimization or a fully clipped intersection.
+                let compact = knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM);
+                let reuse = if compact { self.vertex_reuse.borrow_mut().pop().unwrap_or_default() } else { Vec::new() };
+                let next_vertices = quad_vertices_reusing(next,[tw,th],scale,reuse)?;
+                let pair = blend_chain::pair(q,next,[sa,sb],[tw,th],[pw,ph],
+                    &self.white.native,&self.soft_lut);
+                if compact { self.vertex_reuse.borrow_mut().push(next_vertices); }
+                if let Some(pair) = pair {
+                    if compact { self.vertex_reuse.borrow_mut().push(vertices); }
+                    if !open { commands.push(Command::Begin {target:target.tex.native.clone(),clear:None}); }
+                    commands.extend(pair);open = true;skip = true;continue;
+                }
+            }
             if let Blend::Ps(op) = q.blend && !ps18_direct(q) {
                 // A fully clipped PS quad must not snapshot or open a pass.
                 if vertices.is_empty() {
@@ -2463,6 +2515,7 @@ impl Renderer {
     pub fn encoder(&self) -> CommandEncoder {
         CommandEncoder {
             device: self.device.clone(),
+            vertex_reuse: self.vertex_reuse.clone(),
             commands: if knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM) {
                 std::mem::take(&mut *self.command_reuse.borrow_mut())
             } else { Vec::new() },
@@ -2525,14 +2578,9 @@ impl Renderer {
             // Native submission has copied vertices; resource owners are retired by native completion.
             let mut commands = std::mem::take(&mut encoder.commands);
             let mut vertices = self.vertex_reuse.borrow_mut();
-            vertices.clear();
-            let mut retained = 0usize;
             for command in commands.drain(..) {
-                if let Command::Draw { vertices: mut buffer, .. } = command {
-                    let bytes = buffer.capacity().saturating_mul(std::mem::size_of::<Vertex>());
-                    if bytes <= MAX_FRAME_VERTEX_BYTES.saturating_sub(retained) {
-                        retained += bytes; buffer.clear(); vertices.push(buffer);
-                    }
+                if let Command::Draw { vertices: buffer, .. } = command {
+                    vertices.push(buffer);
                 }
             }
             *self.command_reuse.borrow_mut() = commands;
@@ -2999,8 +3047,8 @@ fn scene_kind(target: &NativeTexture) -> u32 {
     #[cfg(target_os = "vita")]
     if let Some(label) = target_labels::get(target as *const NativeTexture as usize) {
         return match label.as_str() {
-            "stage" => 1, "group pixel" => 2, "group mask" => 3,
-            "scene" | "canvas" => 5,
+            "stage" | "stage ring" => 1, "group pixel" => 2, "group mask" => 3,
+            "scene" | "canvas" | "canvas ring" => 5,
             _ if target.deferred.is_some() => 9,
             _ => 0,
         };
@@ -3130,6 +3178,7 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     let diagnostic_draw = menu_draw_diagnostic::draw_begin(device, _command_index,
                         vertices, *shader, *blend, textures, &ids, *params, diagnostic_target);
                     if matches!(*shader, EffectShader::Ps | EffectShader::PsFetch | EffectShader::PsFetch19 | EffectShader::PsGroup19 | EffectShader::PsFetch11 | EffectShader::PsFetch13 | EffectShader::PsPlain19 | EffectShader::PsFetch2) || params[7] == -18.0 { knife_perf::record_ps(params[0] as u32); }
+                    if *shader == EffectShader::PsChain2 { knife_perf::record_ps(params[0] as u32); knife_perf::record_ps(params[1] as u32); }
                     let result = g.draw_effect(
                         vertices,
                         *shader,
@@ -3206,11 +3255,9 @@ fn effect_blend(blend: Blend) -> EffectBlend {
     }
 }
 
+#[cfg(test)]
 fn quad_vertices(q: &Quad, size: [f32; 2], scale: [f32; 2]) -> Result<Vec<Vertex>> {
-    let build = Scope::new(Metric::QuadBuild);
-    let result = quad_vertices_inner(q, size, scale, Vec::new());
-    build.finish(result.as_ref().map_or(0, |v| (v.len() * std::mem::size_of::<Vertex>()) as u64), 0);
-    result
+    quad_vertices_reusing(q, size, scale, Vec::new())
 }
 
 fn quad_vertices_reusing(q: &Quad, size: [f32; 2], scale: [f32; 2], reuse: Vec<Vertex>) -> Result<Vec<Vertex>> {

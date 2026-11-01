@@ -52,7 +52,24 @@ impl Assets {
             None=>self.image_need_failed(format!("{name}: image registration/upload failed")),
         }
     }
+    pub fn image_needed_context(&self)->u64 { self.image_context }
+    /// Cache-only access never starts I/O or cancels a distinct real demand.
+    pub fn cached_graded_image(&mut self,name:&str,bake:Bake)->Option<Arc<Image>> {
+        let key=Self::image_key(name,bake).2;
+        let image=self.images.get(&key).and_then(Option::as_ref).cloned()?;
+        self.image_cache.touch(&key);Some(image)
+    }
     pub fn poll_image_needed(&mut self,r:&Renderer,name:&str,bake:Bake)->ImageNeeded {
+        self.poll_image_needed_kind(r,name,bake,false,false)
+    }
+    /// Same bounded demand queue as STCH; only CPU worker profiling differs.
+    pub fn poll_rebake_needed(&mut self,r:&Renderer,name:&str,bake:Bake)->ImageNeeded {
+        self.poll_image_needed_kind(r,name,bake,true,false)
+    }
+    pub fn poll_motion_needed(&mut self,r:&Renderer,name:&str,bake:Bake)->ImageNeeded {
+        self.poll_image_needed_kind(r,name,bake,false,true)
+    }
+    fn poll_image_needed_kind(&mut self,r:&Renderer,name:&str,bake:Bake,rebake:bool,motion:bool)->ImageNeeded {
         let (name,grade,key)=Self::image_key(name,bake);
         if let Some(request)=self.image_needed.as_ref().filter(|request|request.key==key)
             && let Some(error)=request.failure.clone() {return ImageNeeded::Failed(error);}
@@ -97,6 +114,19 @@ impl Assets {
                 _=>{},
             }
         }else if matches!(step,Step::Decode) {return self.image_need_failed(format!("image CPU worker unavailable: {name}"));}
+        // Logical/GPU cache eviction does not invalidate a fully graded CPU
+        // owner. Query its exact source/Bake identity before requesting archive
+        // bytes; otherwise a warm result still pays card I/O and NX inflation.
+        match graded_cache::try_lookup_source(&archive,index,&name,grade,strip) {
+            graded_cache::SourceLookup::Ready(hit)=>{
+                let reload=ImageReload {archive:hit.archive.clone(),index:hit.index,
+                    encoded_len:hit.encoded_len,grade,strip,initial:None};
+                let pixels=Pixels::Reloadable(Box::new(hit.into_pixels()),reload);
+                return self.finish_needed_pixels(r,key,&name,Ok(pixels));
+            },
+            graded_cache::SourceLookup::Pending=>return ImageNeeded::Pending,
+            graded_cache::SourceLookup::Missing=>{},
+        }
         resource_state::demand(Phase::DemandSource,&key,archive.cache_identity(),index,generation);
         if self.image_needed.as_ref().unwrap().retry_source {
             if !self.atlas_cache.retry_failed(&archive,index) {return ImageNeeded::Pending;}
@@ -118,7 +148,7 @@ impl Assets {
         resource_state::demand(Phase::DemandDecode,&key,archive.cache_identity(),index,generation);
         let Some(worker)=&self.image_worker else{return self.image_need_failed(format!("image CPU worker unavailable: {name}"));};
         if !worker.is_running() {return self.image_need_failed(format!("image CPU worker unavailable: {name}"));}
-        let job=ImageJob {initial:Some((data,archive,index)),demanded:true,key:key.clone(),name,grade,strip};
+        let job=ImageJob {initial:Some((data,archive,index)),demanded:true,rebake,motion,key:key.clone(),name,grade,strip};
         if worker.request_needed(generation,key,job) {self.image_needed.as_mut().unwrap().step=Step::Decode;}
         ImageNeeded::Pending
     }

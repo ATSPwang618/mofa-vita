@@ -379,8 +379,8 @@ pub struct WUi {
     /// fading the menu to zero before state 5 starts ws_draw, and ws_step closes
     /// the save page before state 6 draws the menu again. Each pass clears both
     /// targets. Sharing this pair saves 4 MiB of CDRAM at 960x540 on Vita.
-    /// Ui::update releases it outside the active menu/save phase, including
-    /// transitions to backlog, so its idle storage cannot crowd out that page.
+    /// Ui::update retains it for both the story menu and title state 25's load
+    /// page, then releases it when those owners leave (including to backlog).
     #[cfg(target_os = "vita")]
     pub(super) backdrop_rt: Option<[TexRef; 2]>,
     pub dlg: dialog::WDlg,

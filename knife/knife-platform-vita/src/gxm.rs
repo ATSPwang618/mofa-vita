@@ -123,6 +123,7 @@ pub enum EffectShader {
     PsFetch11 = 20, PsFetch13 = 21,
     PlainSprite = 22, PsPlain19 = 23,
     PsFetch2 = 25,
+    PlainForceAlpha = 26,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]

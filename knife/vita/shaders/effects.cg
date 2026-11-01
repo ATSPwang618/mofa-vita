@@ -313,6 +313,14 @@ float4 fs_alter(FragmentInput i) : COLOR { return tex2D(tex0, i.uv); }
 float4 fs_present(FragmentInput i) : COLOR { return float4(tex2D(tex0, i.uv).rgb, 1.0); }
 float4 fs_present_srgb(FragmentInput i) : COLOR { return fs_present(i); }
 
+// Exact ForceAlpha subset for cached UI glows: no haze/soft/rule/premultiply.
+// The cached RGB already contains coverage. Multiplying sampled alpha here
+// would square the book-edge coverage; output alpha remains the vertex alpha.
+float4 fs_forcealpha_plain(FragmentInput i) : COLOR {
+    float3 rgb = tex2D(tex0, i.uv).rgb;
+    return float4(rgb * i.color.rgb * i.color.a, i.color.a);
+}
+
 // Exact plain Sprite subset: no haze, soft clip, rule or premultiply flag.
 // Keep Sprite's multiplication by sampled alpha even with Opaque fixed blend.
 float4 fs_sprite_plain(FragmentInput i) : COLOR {

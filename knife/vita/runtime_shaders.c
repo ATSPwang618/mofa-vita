@@ -25,7 +25,7 @@ enum { CACHE_ABI = 5, MAX_PROGRAM = 1024 * 1024, MIN_PROGRAM = 156 };
 #include "diagnostic_log.h"
 static struct {
     int attempted;
-    SceGxmProgram *programs[26];
+    SceGxmProgram *programs[27];
 } runtime;
 #ifndef KV_SHADER_CACHE_HOST_TEST
 static SceShaccCgSourceFile source;
@@ -47,7 +47,7 @@ static const char *validation_reason;
 static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25; }
 /* ID24 is a checked text-cache capability, never a shader entry. Source SHA
    changes invalidate prior Cg binaries without changing their metadata ABI. */
-static const uint32_t runtime_shader_ids[] = { 11, 22, 23, 25, 15, 19, 20, 21, 18, 17 };
+static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 23, 25, 15, 19, 20, 21, 18, 17 };
 static int runtime_shader_id(uint32_t shader) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
         if (runtime_shader_ids[i] == shader) return 1;
@@ -63,6 +63,7 @@ static const char *entry_for(uint32_t shader) {
         case 20: return "fs_ps11_fetch";
         case 21: return "fs_ps13_fetch";
         case 22: return "fs_sprite_plain";
+        case 26: return "fs_forcealpha_plain";
         case 23: return "fs_ps19_plain_fetch";
         case 25: return "fs_ps2_fetch";
         default: return NULL;
@@ -143,7 +144,7 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     if (!(sampler_bits & 1) || (shader == 15 && !(sampler_bits & 2))
         || (shader == 19 && !(sampler_bits & 4))) REJECT("required_sampler_missing");
     if (shader == 19 && (sampler_bits & ~5u)) REJECT("group19_unexpected_sampler");
-    if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25)
+    if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25 || shader == 26)
         && (sampler_bits & ~1u)) REJECT("plain_ps_unexpected_sampler");
     if (sceGxmProgramCheck((const SceGxmProgram *)program) < 0) REJECT("sceGxmProgramCheck");
     return 1;
@@ -410,9 +411,9 @@ int kv_runtime_shader_initialize(void) {
     memset(&compiler, 0, sizeof(compiler));
     const int stopped = sceKernelStopUnloadModule(module, 0, NULL, 0, NULL, NULL);
     KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=compiler_release uid=%08x rc=%08x\n", (unsigned)module, (unsigned)stopped);
-    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=programs text_passthrough11=%d plain_sprite=%d plain_ps19=%d ps2=%d ps19_group=%d ps11=%d ps13=%d ps19=%d generic=%d group=%d source=%.16s\n",
+    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=programs text_passthrough11=%d plain_sprite=%d plain_ps19=%d ps2=%d plain_forcealpha=%d ps19_group=%d ps11=%d ps13=%d ps19=%d generic=%d group=%d source=%.16s\n",
         runtime.programs[11] != NULL, runtime.programs[22] != NULL, runtime.programs[23] != NULL,
-        runtime.programs[25] != NULL,
+        runtime.programs[25] != NULL, runtime.programs[26] != NULL,
         runtime.programs[19] != NULL, runtime.programs[20] != NULL, runtime.programs[21] != NULL,
         runtime.programs[18] != NULL, runtime.programs[17] != NULL, runtime.programs[15] != NULL, KNIFE_RUNTIME_SOURCE_SHA256);
     return runtime_any();

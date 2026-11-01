@@ -165,6 +165,7 @@ impl Ui {
         c.black = 0.0;
         c.old = None;
         c.tex = [None, None];
+        c.rt = None;
         self.w.objs.install(objtab::CG);
         // each slot's pictures that exist (jp_A90C0), those seen in order
         c.seen = (0..PAGES * 20)
@@ -217,6 +218,7 @@ impl Ui {
                     c.st = 0;
                     c.tex = [None, None];
                     c.old = None;
+                    c.rt = None;
                     // jp_9C960(1); jp_9C470(jp_8E1C0(), 255, 0): the title's BGM
                     let bgm = super::title_bgm(super::title::complete(game));
                     if game.sound.bgm_state().is_none_or(|(id, _)| id != bgm) {
@@ -264,6 +266,7 @@ impl Ui {
                     c.old = None;
                     c.st = 2;
                     c.viewing = false;
+                    c.rt = None;
                 }
                 c.back = c.pic_a;
             }

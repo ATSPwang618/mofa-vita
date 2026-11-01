@@ -1948,6 +1948,8 @@ impl Renderer {
         let fetch_darken = fetch_enabled && self.device.call(|g| g.shader_available(25))?;
         let fetch_plain_normal = fetch_enabled && self.device.call(|g| g.shader_available(23))?;
         let plain_sprite = self.device.call(|g| g.shader_available(22))?;
+        let plain_forcealpha = knife_perf::optimizations::enabled(knife_perf::optimizations::PLAIN_FORCEALPHA)
+            && self.device.call(|g| g.shader_available(26))?;
         let ps_shader = |q: &Quad, op| {
             if op == PsOp::Normal && fetch_plain_normal && plain_ps19_source(q) {
                 Some(EffectShader::PsPlain19)
@@ -1959,7 +1961,9 @@ impl Renderer {
         };
         let source_shader = |q: &Quad| {
             if plain_sprite && plain_ps_source(q) { EffectShader::PlainSprite }
-            else { effect_shader(q.shade) }
+            else if plain_forcealpha && q.shade == Shade::ForceAlpha && plain_material(q) {
+                EffectShader::PlainForceAlpha
+            } else { effect_shader(q.shade) }
         };
         let has_ps = quads.iter().any(|q| matches!(q.blend, Blend::Ps(op)
             if !ps18_direct(q) && ps_shader(q, op).is_none()));
@@ -2639,7 +2643,11 @@ fn select_group_ps_fetch(op: PsOp, general: bool, normal: bool, group_normal: bo
 }
 
 fn plain_ps_source(q: &Quad) -> bool {
-    q.shade == Shade::Sprite && q.rule.is_none() && q.soft.is_none() && !q.masked
+    q.shade == Shade::Sprite && plain_material(q)
+}
+
+fn plain_material(q: &Quad) -> bool {
+    q.rule.is_none() && q.soft.is_none() && !q.masked
         // Include hx.w: dropping that flag would lose premultiplication.
         && q.haze.iter().flatten().all(|value| *value == 0.0)
 }

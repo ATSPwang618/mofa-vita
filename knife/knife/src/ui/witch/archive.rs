@@ -859,6 +859,8 @@ impl Ui {
         let a = &self.w.arc;
         let focus = CH_OBJ.get(a.ch as usize).map_or(-1, |&id| id - 325);
         let mut glow = Vec::new();
+        #[cfg(target_os = "vita")]
+        let mut lit_bounds: Option<[f32; 4]> = None;
         for k in (0..=20).rev() {
             let id = 325 + k;
             let shown = self.w.objs.o.get(id as usize).and_then(|o| o.as_ref()).is_some_and(|o| o.pos[0] >= 0.0 && o.pos[1] >= 0.0);
@@ -876,6 +878,16 @@ impl Ui {
             for q in &mut glow[n..] {
                 q.shade = Shade::Fill;
                 q.blend = Blend::Over;
+                // Only the focus writes nonzero RGB. Black foreground shapes
+                // can occlude this region, but cannot expand it.
+                #[cfg(target_os = "vita")]
+                if k == focus {
+                    for p in q.pos {
+                        let b = lit_bounds.get_or_insert([p[0], p[1], p[0], p[1]]);
+                        b[0] = b[0].min(p[0]); b[1] = b[1].min(p[1]);
+                        b[2] = b[2].max(p[0]); b[3] = b[3].max(p[1]);
+                    }
+                }
             }
         }
         let k = if a.ch == 0 { 1.0 } else { 0.25 };
@@ -886,6 +898,32 @@ impl Ui {
             let mut q = Quad::rect(rt, [0.0, 0.0, W, H], [1.0, 1.0, 1.0, alpha]);
             q.shade = Shade::ForceAlpha;
             q.blend = Blend::Add;
+            #[cfg(target_os = "vita")]
+            if knife_perf::optimizations::enabled(knife_perf::optimizations::ARCHIVE_GLOW_BOUNDS)
+                && let Some([x0, y0, x1, y1]) = lit_bounds {
+                // Add uses ONE/ONE for RGB and ZERO/ONE for alpha. Outside
+                // this RGB support the full-screen draw is an exact no-op.
+                // Keep two physical texels for raster/linear-filter coverage;
+                // clipping the original quad preserves its full-target UV map.
+                let [pw, ph] = q.tex.physical_size();
+                let (dx, dy) = (W / pw as f32, H / ph as f32);
+                let (x0, y0) = (((x0 / dx).floor() - 2.0) * dx, ((y0 / dy).floor() - 2.0) * dy);
+                let (x1, y1) = (((x1 / dx).ceil() + 2.0) * dx, ((y1 / dy).ceil() + 2.0) * dy);
+                q.clip = Some([[x0.max(0.0), y0.max(0.0)], [x1.min(W), y0.max(0.0)],
+                    [x1.min(W), y1.min(H)], [x0.max(0.0), y1.min(H)]]);
+            }
+            #[cfg(target_os = "vita")]
+            {
+                let [pw, ph] = q.tex.physical_size();
+                let full = u64::from(pw) * u64::from(ph);
+                let covered = q.clip.map_or(full, |p| {
+                    let width = ((p[1][0] - p[0][0]).max(0.0) * pw as f32 / W).ceil() as u64;
+                    let height = ((p[2][1] - p[1][1]).max(0.0) * ph as f32 / H).ceil() as u64;
+                    width.saturating_mul(height).min(full)
+                });
+                // Logical raster coverage estimate, not measured memory traffic.
+                knife_perf::add(knife_perf::Metric::UiGlowCoverage, covered, full);
+            }
             out.push(q);
         }
     }

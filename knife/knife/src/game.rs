@@ -9,6 +9,8 @@ mod bake_batch;
 #[cfg(target_os = "vita")]
 mod text_cache;
 #[cfg(target_os = "vita")]
+mod ui_pass_cache;
+#[cfg(target_os = "vita")]
 mod group_schedule;
 #[cfg(target_os = "vita")]
 mod group_cache;
@@ -839,6 +841,8 @@ pub struct Game {
     menu_quarter: Option<[RenderTarget; 2]>,
     /// Offscreen passes the UI queues for this frame (target, clear colour, quads), drawn before its quads
     pub ui_passes: Vec<(RenderTarget, Option<[f32; 4]>, Vec<Quad>)>,
+    #[cfg(target_os = "vita")]
+    ui_pass_cache: ui_pass_cache::Cache,
     /// overseas screen capture (sub_A2550: jd_18AFD94 / jd_18AFD98): the frame as it was, drawn over everything
     /// at `alpha` (sub_A59F0), which falls by `step` per frame once released (sub_A27F0)
     freeze: Option<Freeze>,
@@ -1147,6 +1151,8 @@ impl Game {
             menu_half: None,
             menu_quarter: None,
             ui_passes: Vec::new(),
+            #[cfg(target_os = "vita")]
+            ui_pass_cache: ui_pass_cache::Cache::default(),
             freeze: None,
             freeze_rt: None,
             menu_captured: false,
@@ -6672,6 +6678,8 @@ impl Game {
         #[cfg(target_os = "vita")]
         self.text_cache.begin_frame();
         #[cfg(target_os = "vita")]
+        self.ui_pass_cache.begin_frame();
+        #[cfg(target_os = "vita")]
         if !self.snapshot && self.trans.is_none() {
             // Every FADS entry requests its capture before sampling it. A held
             // transition keeps the target while images load; an ended one has
@@ -6890,6 +6898,10 @@ impl Game {
         }
         overlay(self, r, &mut ui);
         for (rt, clear, quads) in std::mem::take(&mut self.ui_passes) {
+            #[cfg(target_os = "vita")]
+            self.ui_pass_cache.draw(r, &mut enc, &rt, clear, &quads)
+                .expect("recording cached Vita UI producer");
+            #[cfg(not(target_os = "vita"))]
             r.draw(&mut enc, &rt, clear, &quads);
         }
         if !ui.is_empty() {
@@ -8246,7 +8258,8 @@ impl Game {
             let before=cpu_memory.as_ref().unwrap().heap_headroom as usize;
             let need=memory_budget::CPU_TARGET_HEADROOM.saturating_sub(before);
             knife_perf::add(Metric::CpuReclaimRequest,need as u64,before as u64);
-            let freed=self.assets.vita_trim_cpu_caches(need);
+            let freed=self.assets.vita_trim_cpu_caches(need) + self.ui_pass_cache.bytes();
+            self.ui_pass_cache.clear();
             released+=freed;
             let after=knife_platform_vita::memory_available().ok()
                 .map_or(before.saturating_add(freed),|m|m.heap_headroom as usize);

@@ -131,7 +131,7 @@ impl PerfLog {
     }
 
     fn record(&mut self, frame: u64, work: u64, update: u64, render: u64, wall: u64,
-        game: &game::Game, renderer: &Renderer) -> std::io::Result<bool> {
+        game: &game::Game, renderer: &Renderer, ui: &ui::Ui) -> std::io::Result<bool> {
         self.frames.record(work, update, render, wall);
         let snapshot_started = Instant::now();
         let probe = crate::vita_audit::FrameProbe::capture().delta(self.before);
@@ -232,13 +232,20 @@ impl PerfLog {
         let transport = knife_platform_vita::audit::console_stats();
         let memory = knife_platform_vita::memory_available().ok();
         let available = memory.unwrap_or_default();
+        // UI is separate from script scene/PC: title-hosted load/config pages
+        // can all report scene=0, PC=0. Capture only at the five-second boundary.
+        let (screen, title_state, title_cursor, overlay, menu_state, menu_cursor) = ui.vita_diagnostic_state();
+        let quote = |text: &str| { let mut out = String::new(); knife_perf::json_string(&mut out, text); out };
+        let ui_state = format!(concat!("{{\"screen\":{},\"title_state\":{},\"title_cursor\":{},",
+            "\"overlay\":{},\"menu_state\":{},\"menu_cursor\":{}}}"),
+            quote(&screen), title_state, title_cursor, quote(&overlay), menu_state, menu_cursor);
         let line = line.trim_end().strip_suffix('}').expect("sample object").to_owned()
             + &format!(concat!(",\"console_worker_last_us\":{},\"console_worker_total_us\":{},\"console_batches\":{},",
                 "\"console_dropped_batches\":{},\"console_write_failures\":{},\"console_queued_bytes\":{},",
-                "\"language_id\":{},\"memory_available\":{},\"kernel_main_free\":{},\"kernel_cdram_free\":{},\"heap_used\":{},\"heap_headroom\":{}}}\n"),
+                "\"language_id\":{},\"memory_available\":{},\"kernel_main_free\":{},\"kernel_cdram_free\":{},\"heap_used\":{},\"heap_headroom\":{},\"ui_at_window_end\":{}}}\n"),
                 transport.last_us, transport.total_us, transport.completed, transport.dropped, transport.failures,
                 transport.queued_bytes, game.assets.language(), memory.is_some(), available.kernel_main,
-                available.kernel_cdram, available.heap_used, available.heap_headroom);
+                available.kernel_cdram, available.heap_used, available.heap_headroom, ui_state);
         knife_platform_vita::audit::console(&line)?;
         let compact = format!("{{\"kind\":\"frame_window\",\"frame\":{frame},\"frames\":{},\"elapsed_ms\":{},\"window_ms\":{},\"scene\":{},\"pc\":{},\"work_us\":{},\"render_us\":{},\"update_us\":{},\"wall_us\":{},\"max_work_us\":{},\"p50_work_upper_us\":{},\"p95_work_upper_us\":{},\"p99_work_upper_us\":{},\"over_16ms\":{},\"over_33ms\":{}}}\n",
             sample.frames,self.started.elapsed().as_millis(),elapsed,game.scene_index,game.current_pc(),
@@ -471,7 +478,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         if let (Some(perf_log), Some(render_started)) = (&mut perf, render_started) {
             let render_us = render_started.elapsed().as_micros() as u64;
             let work_us = now.elapsed().as_micros() as u64;
-            match perf_log.record(frame, work_us, update_us, render_us, wall_us, &game, &renderer) {
+            match perf_log.record(frame, work_us, update_us, render_us, wall_us, &game, &renderer, &ui) {
                 Ok(true) => {},
                 Ok(false) => perf = None,
                 Err(error) => {

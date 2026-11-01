@@ -162,6 +162,10 @@ pub struct WitchTitle {
     /// the logo movie runs (state 63)
     movie: bool,
     pub out: Option<WtOut>,
+    #[cfg(target_os = "vita")]
+    source_wait: Option<std::time::Instant>,
+    #[cfg(target_os = "vita")]
+    source_prepared: bool,
 }
 
 /// jp_8D180: RDST bit `n` (bit n % 16 of G130 + n / 16).
@@ -235,6 +239,8 @@ impl Ui {
 
     /// jp_8D2E0: the title starts over (state 0, black), the menu laid out for the records there are.
     pub(in crate::ui) fn wt_init(&mut self, game: &mut Game, r: &Renderer) {
+        #[cfg(target_os = "vita")]
+        { self.wt.source_wait = None; self.wt.source_prepared = false; }
         self.wt_load(game, r);
         // jp_47BF0 loads dialog_win at boot: the title's popups (ロード中です, セーブデータがありません) draw it
         self.wd_install(game, r);
@@ -370,6 +376,43 @@ impl Ui {
         }
     }
 
+    /// A source miss keeps the visible menu animating until its worker is ready.
+    /// The deadline/cancel path returns to the menu and never releases an active
+    /// worker's reservation or starts a duplicate read. Ready time is lead time
+    /// in Metric::UiSourceReady.aux, not main-thread CPU work.
+    #[cfg(target_os = "vita")]
+    fn wt_sources_ready(&mut self, game: &Game) -> bool {
+        if self.wt.source_prepared { return true; }
+        let retry = self.wt.source_wait.is_none();
+        let start = *self.wt.source_wait.get_or_insert_with(std::time::Instant::now);
+        let elapsed = start.elapsed();
+        let result = if elapsed >= std::time::Duration::from_secs(10) {
+            Err(anyhow::anyhow!("UI source preparation deadline (10s); worker owner retained"))
+        } else { game.assets.vita_poll_extra_ui_sources(self.wt.st, retry) };
+        match result {
+            Ok(true) => {
+                knife_perf::add(knife_perf::Metric::UiSourceReady, 0, start.elapsed().as_micros() as u64);
+                self.wt.source_prepared = true;
+                self.wt.source_wait = None;
+                true
+            },
+            Ok(false) => {
+                knife_perf::add(knife_perf::Metric::UiSourcePending, 0, u64::from(self.wt.st));
+                false
+            },
+            Err(error) => {
+                tracing::warn!("UI source preparation: {error:#}");
+                if let Ok(mut slot) = super::LAST_ATLAS_ERROR.lock() { *slot = Some(format!("{error:#}")); }
+                knife_perf::add(knife_perf::Metric::UiSourceFailed, 0, u64::from(self.wt.st));
+                self.wt.source_wait = None;
+                self.wt.black = 0.0;
+                self.wt.st = 35;
+                self.wt.groups[1] = true;
+                false
+            },
+        }
+    }
+
     /// One frame of jp_8E200.
     pub(in crate::ui) fn wt_step(&mut self, game: &mut Game, r: &Renderer) {
         let f = 1.0;
@@ -501,6 +544,10 @@ impl Ui {
                 self.wt.st = 35;
             }
             35 => {
+                #[cfg(target_os = "vita")]
+                if let Some(page) = [40, 38, 39].get(self.wt.ext_cursor as usize) {
+                    game.assets.vita_warm_extra_ui_sources(*page);
+                }
                 self.wt.focus = Some(WitchTitle::ext_obj(self.wt.ext_cursor.max(0) as usize));
                 self.wt_touch(game, r);
             }
@@ -513,6 +560,8 @@ impl Ui {
                 }
             }
             38..=40 => {
+                #[cfg(target_os = "vita")]
+                if !self.wt_sources_ready(game) { return; }
                 self.wt.black += 0.02 * f;
                 if self.wt.black > 1.2 {
                     self.wt.black = 1.0;
@@ -749,6 +798,17 @@ impl Ui {
     /// Controller input on the title (states 11 / 35; the splashes take any button).
     pub(in crate::ui) fn wt_pad(&mut self, game: &mut Game, r: &Renderer, b: super::super::Pad, repeat: bool) {
         use super::super::Pad;
+        #[cfg(target_os = "vita")]
+        if matches!(self.wt.st, 38..=40) && !self.wt.source_prepared
+            && self.wt.source_wait.is_some() && b == Pad::B && !repeat {
+            knife_perf::add(knife_perf::Metric::UiSourceCancelled, 0, u64::from(self.wt.st));
+            self.wt.source_wait = None;
+            self.wt.black = 0.0;
+            self.wt.st = 35;
+            self.wt.groups[1] = true;
+            self.snd(game, SND_NG);
+            return;
+        }
         if self.wt_any_input() || self.w.popup.busy != 0 {
             return;
         }
@@ -862,6 +922,8 @@ impl Ui {
                         // sub_745D0(0): G009 = 0
                         game.set_var_pub("G009", 0);
                     }
+                    #[cfg(target_os = "vita")]
+                    { self.wt.source_wait = None; self.wt.source_prepared = false; }
                     self.wt.st = [40, 38, 39][i as usize];
                 }
                 4 => {

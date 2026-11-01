@@ -7,7 +7,7 @@
  * 15 group composite, 17 generic target-colour fetch,
  * 18 specialised PsOp19, 19 fullscreen group-PsOp19, 20 PsOp11, 21 PsOp13,
  * 22 plain premultiplied Sprite, 23 no-haze/soft/rule/group PsOp19 (Sprite/Fill/NoAlpha),
- * 25 plain Sprite PsOp2 (Darken); 24 remains a capability, not a shader. Sources/targets are encoded
+ * 25 plain Sprite PsOp2 (Darken), 26 plain ForceAlpha; 24 remains a capability, not a shader. Sources/targets are encoded
  * UNORM8; native fetch has a raw unsigned-char4 register ABI, never HALF4.
  * Each entry is admitted independently and has a renderer-selected fallback.
  * Initialize before recording commands: a fallback cannot replace a snapshot

@@ -4,6 +4,9 @@ pub const MIB: usize = 1024 * 1024;
 pub const CPU_SOURCE_BYTES: usize = 64 * MIB;
 pub const CPU_GRADED_BYTES: usize = 32 * MIB;
 pub const CPU_SOUND_BYTES: usize = 16 * MIB;
+// Metadata only; targets remain owned and budgeted by the visible UI page.
+pub const CPU_UI_PASS_CACHE_BYTES: usize = 256 * 1024;
+pub const CPU_UI_PASS_CACHE_ENTRIES: usize = 16;
 pub const GPU_RESOURCE_BYTES: usize = 56 * MIB;
 pub const GPU_SOURCE_BYTES: usize = 32 * MIB;
 pub const GPU_TEXT_BYTES: usize = 12 * MIB;

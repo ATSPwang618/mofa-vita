@@ -9,7 +9,7 @@
 #include <float.h>
 
 enum { TEST_VERTEX_FLOATS = 28, TEST_VERTEX_LIMIT = 32760,
-    TEST_SHADER_COUNT = 26, TEST_BLEND_COUNT = 10 };
+    TEST_SHADER_COUNT = 27, TEST_BLEND_COUNT = 10 };
 typedef struct Input { KvEffectVertex v[3]; float p[8]; } Input;
 static unsigned cases, checks, failures, accepted_cases, rejected_cases;
 
@@ -99,7 +99,7 @@ static void preconditions(void) {
             if (effect_fetch_shader(shader) && blend != 5) continue;
             in = fresh();
             in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : 1.0f;
-            if (shader == 22) { memset(in.p, 0, sizeof(in.p)); }
+            if (shader == 22 || shader == 26) { memset(in.p, 0, sizeof(in.p)); }
             else if (shader >= 19) {
                 in.p[1] = 0; in.p[4] = -1; in.p[7] = shader == 19 ? 1 : 0;
                 if (shader == 23) in.p[5] = 0;
@@ -162,6 +162,8 @@ static void preconditions(void) {
         Input bad = sprite; bad.p[field] = 1;
         snprintf(name, sizeof(name), "invalid.plain-sprite.param.%u", field);
         check(name, bad.v, sizeof(bad.v), bad.p, 3, 22, 0, KV_BAD_ARGUMENT, 0);
+        snprintf(name, sizeof(name), "invalid.plain-forcealpha.input.%u", field);
+        check(name, bad.v, sizeof(bad.v), bad.p, 3, 26, 1, KV_BAD_ARGUMENT, 0);
     }
     for (unsigned field = 0; field < 20; ++field) {
         Input bad = sprite;
@@ -172,6 +174,8 @@ static void preconditions(void) {
         }
         snprintf(name, sizeof(name), "invalid.plain-sprite.haze-soft.%u", field);
         check(name, bad.v, sizeof(bad.v), bad.p, 3, 22, 0, KV_BAD_ARGUMENT, 0);
+        snprintf(name, sizeof(name), "invalid.plain-forcealpha.input.%u", field);
+        check(name, bad.v, sizeof(bad.v), bad.p, 3, 26, 1, KV_BAD_ARGUMENT, 0);
     }
     in = fresh();
     KvEffectVertex *large = calloc(TEST_VERTEX_LIMIT, sizeof(*large));

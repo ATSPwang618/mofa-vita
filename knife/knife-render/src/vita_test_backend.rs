@@ -37,6 +37,7 @@ pub enum EffectShader {
     PlainSprite,
     PsPlain19,
     PsFetch2 = 25,
+    PlainForceAlpha = 26,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -357,14 +358,14 @@ impl Gxm {
         if vertices.iter().any(|v| v.haze != vertices[0].haze) {
             return Err("mock per-quad uniforms differ".into());
         }
-        if matches!(shader, EffectShader::PlainSprite | EffectShader::PsPlain19 | EffectShader::PsFetch2) {
+        if matches!(shader, EffectShader::PlainSprite | EffectShader::PsPlain19 | EffectShader::PsFetch2 | EffectShader::PlainForceAlpha) {
             if control.shader_capabilities & (1u32 << shader as u32) == 0 {
                 return Err("mock unavailable plain shader".into());
             }
             if vertices.iter().any(|v| v.haze.iter().flatten().chain(v.soft.iter().flatten()).any(|x| *x != 0.0)) {
                 return Err("mock plain shader cannot discard haze/soft".into());
             }
-            if shader == EffectShader::PlainSprite && params != [0.0; 8] {
+            if matches!(shader, EffectShader::PlainSprite | EffectShader::PlainForceAlpha) && params != [0.0; 8] {
                 return Err("mock plain sprite params".into());
             }
             if shader == EffectShader::PsPlain19 && (blend != EffectBlend::Opaque || params[0] != 19.0

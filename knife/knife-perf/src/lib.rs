@@ -111,6 +111,12 @@ metrics! {
     GpuCacheAdmit => "gpu_cache_admit", GpuCacheEvict => "gpu_cache_evict",
     GpuCacheBypass => "gpu_cache_bypass", GroupBatchPlan => "group_batch_plan",
     GroupBatchBypass => "group_batch_bypass", GroupBatchStagePasses => "group_batch_stage_passes",
+    UiPassCacheRecord => "ui_pass_cache_record", UiPassCacheHit => "ui_pass_cache_hit",
+    UiPassCacheBuild => "ui_pass_cache_build", UiPassCacheBypass => "ui_pass_cache_bypass",
+    UiPassCacheInvalidate => "ui_pass_cache_invalidate", UiPassCacheQuadsSaved => "ui_pass_cache_quads_saved",
+    UiSourcePending => "ui_source_pending", UiSourceReady => "ui_source_ready",
+    UiSourceFailed => "ui_source_failed", UiSourceCancelled => "ui_source_cancelled",
+    UiGlowCoverage => "ui_glow_coverage",
 }
 
 #[repr(C)]
@@ -169,12 +175,13 @@ impl Drop for Scope {
 
 #[repr(usize)]
 #[derive(Clone, Copy)]
-pub enum Gauge { StageInflight, StageRequestedBytes, StageReadyBytes, ResidentBytes, EncodedBytes, GradeLutBytes, GradeResultBytes, ArchiveTinyBytes, TextCacheBytes, TextCacheEntries, GroupCacheBytes, SourceCacheBytes, GlyphShadowBytes, StagePrefixBytes, GlyphPageBytes, GlyphPageEntries, AudioStreamChannels, AudioStreamBufferBytes, SoundCacheBytes, SoundCacheEntries, Count }
+pub enum Gauge { StageInflight, StageRequestedBytes, StageReadyBytes, ResidentBytes, EncodedBytes, GradeLutBytes, GradeResultBytes, ArchiveTinyBytes, TextCacheBytes, TextCacheEntries, GroupCacheBytes, SourceCacheBytes, GlyphShadowBytes, StagePrefixBytes, GlyphPageBytes, GlyphPageEntries, AudioStreamChannels, AudioStreamBufferBytes, SoundCacheBytes, SoundCacheEntries, UiPassCacheBytes, UiPassCacheEntries, Count }
 pub const GAUGE_NAMES: &[&str] = &["stage_inflight", "stage_requested_bytes", "stage_ready_bytes",
     "resident_deferred_bytes", "retained_encoded_bytes", "grade_lut_bytes", "grade_result_bytes", "archive_tiny_bytes",
     "text_cache_bytes", "text_cache_entries", "group_cache_bytes", "source_cache_bytes",
     "glyph_shadow_bytes", "stage_prefix_bytes", "glyph_page_bytes", "glyph_page_entries",
-    "audio_stream_channels", "audio_stream_buffer_bytes", "sound_cache_bytes", "sound_cache_entries"];
+    "audio_stream_channels", "audio_stream_buffer_bytes", "sound_cache_bytes", "sound_cache_entries",
+    "ui_pass_cache_bytes", "ui_pass_cache_entries"];
 static GAUGES: [AtomicU64; Gauge::Count as usize] = [const { AtomicU64::new(0) }; Gauge::Count as usize];
 static PEAKS: [AtomicU64; Gauge::Count as usize] = [const { AtomicU64::new(0) }; Gauge::Count as usize];
 pub fn gauge_set(g: Gauge, value: u64) {

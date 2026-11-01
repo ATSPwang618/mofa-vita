@@ -1,7 +1,7 @@
 /* Private implementation included by gxm_backend.c. No host GL/VitaGL path. */
 #include "shaders/generated/effects.h"
 
-enum { EFFECT_SHADERS = 26, EFFECT_BLENDS = 10, EFFECT_VERTICES = 32760 };
+enum { EFFECT_SHADERS = 27, EFFECT_BLENDS = 10, EFFECT_VERTICES = 32760 };
 struct KvEffects {
     Block buffer, vertex_usse, fragment_usse, vertices, indices;
     SceGxmShaderPatcher *patcher;
@@ -277,13 +277,13 @@ static int effects_text_cache_initialize(KvGxm *g) {
     return effects_text_cache_initialize_program(g, kv_runtime_shader_program(11));
 }
 static int effects_optional_initialize(KvGxm *g) {
-    int status_by_shader[9] = {0};
-    const uint32_t optional[9] = {15, 17, 18, 19, 20, 21, 22, 23, 25};
+    int status_by_shader[10] = {0};
+    const uint32_t optional[10] = {15, 17, 18, 19, 20, 21, 22, 23, 25, 26};
     int available = kv_runtime_shader_available(11);
-    for (uint32_t i = 0; i < 9; ++i) available |= kv_runtime_shader_available(optional[i]);
+    for (uint32_t i = 0; i < 10; ++i) available |= kv_runtime_shader_available(optional[i]);
     if (available) {
         CHECK(g, effects_ensure(g));
-        for (uint32_t i = 0; i < 9; ++i) {
+        for (uint32_t i = 0; i < 10; ++i) {
             const uint32_t shader = optional[i];
             status_by_shader[i] = g->effects->optional_status[shader];
             if (!(g->shader_capabilities & (1U << shader))) continue;
@@ -297,22 +297,24 @@ static int effects_optional_initialize(KvGxm *g) {
         }
     }
     const int text_cache_status = effects_text_cache_initialize(g);
-    char line[980];
+    char line[1280];
     const int length = snprintf(line, sizeof(line),
         "{\"kind\":\"shader_capabilities\",\"color_contract\":\"encoded-unorm8-uchar4\",\"group15\":%u,\"ps_fetch17\":%u,\"ps_fetch19\":%u,"
         "\"ps_group19\":%u,\"ps_fetch11\":%u,\"ps_fetch13\":%u,\"plain_sprite22\":%u,\"plain_ps19_23\":%u,\"ps_fetch2_25\":%u,"
         "\"group_patch_status\":%d,\"fetch_patch_status\":%d,\"fetch19_patch_status\":%d,"
         "\"group19_patch_status\":%d,\"fetch11_patch_status\":%d,\"fetch13_patch_status\":%d,"
+        "\"plain_forcealpha26\":%u,\"plain_forcealpha_patch_status\":%d,"
         "\"plain_sprite_patch_status\":%d,\"plain_ps19_patch_status\":%d,\"fetch2_patch_status\":%d,"
         "\"text_cache24\":%u,\"text_cache_patch_status\":%d,"
-        "\"fallback_routes\":\"group19:19/18/17/14;op2:25/17/14;op11:20/17/14;op13:21/17/14;sprite:22/0;op19:23/18/17/14\"}\n",
+        "\"fallback_routes\":\"group19:19/18/17/14;op2:25/17/14;op11:20/17/14;op13:21/17/14;sprite:22/0;forcealpha:26/2;op19:23/18/17/14\"}\n",
         (g->shader_capabilities >> 15) & 1U, (g->shader_capabilities >> 17) & 1U,
         (g->shader_capabilities >> 18) & 1U, (g->shader_capabilities >> 19) & 1U,
         (g->shader_capabilities >> 20) & 1U, (g->shader_capabilities >> 21) & 1U,
         (g->shader_capabilities >> 22) & 1U, (g->shader_capabilities >> 23) & 1U,
         (g->shader_capabilities >> 25) & 1U,
         status_by_shader[0], status_by_shader[1], status_by_shader[2], status_by_shader[3],
-        status_by_shader[4], status_by_shader[5], status_by_shader[6], status_by_shader[7], status_by_shader[8],
+        status_by_shader[4], status_by_shader[5],
+        (g->shader_capabilities >> 26) & 1U, status_by_shader[9], status_by_shader[6], status_by_shader[7], status_by_shader[8],
         (g->shader_capabilities >> 24) & 1U, text_cache_status);
     if (length > 0 && (size_t)length < sizeof(line)) (void)kv_perf_console(line, (uint32_t)length);
     return 0;
@@ -598,7 +600,7 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
         || (shader == 21 && params[0] != 13.0f)
         || (shader == 25 && params[0] != 2.0f)) return KV_BAD_ARGUMENT;
     for (uint32_t i = 0; i < 8; ++i)
-        if (!isfinite(params[i]) || (shader == 22 && params[i] != 0)) return KV_BAD_ARGUMENT;
+        if (!isfinite(params[i]) || ((shader == 22 || shader == 26) && params[i] != 0)) return KV_BAD_ARGUMENT;
     if (((shader >= 19 && shader <= 21) || shader == 25) && (params[1] != 0 || params[4] >= 0 || params[6] != 0
         || params[7] != (shader == 19 ? 1.0f : 0.0f)))
         return KV_BAD_ARGUMENT;
@@ -736,6 +738,8 @@ int32_t kv_gxm_draw_effect(KvGxm *g, const KvEffectVertex *vertices, uint32_t co
         if (shader == 22) kv_perf_end_at(KV_PERF_DRAW_PLAIN_SPRITE, started, finished, 0, 0);
         if (shader == 23) kv_perf_end_at(KV_PERF_DRAW_PS19_PLAIN, started, finished, 0, 0);
         if (shader == 25) kv_perf_end_at(KV_PERF_DRAW_PS2, started, finished, 0, 0);
+        if (shader == 2) kv_perf_end_at(KV_PERF_DRAW_FORCEALPHA, started, finished, 0, 0);
+        if (shader == 26) kv_perf_end_at(KV_PERF_DRAW_PLAIN_FORCEALPHA, started, finished, 0, 0);
     }
     if (blend == 8) kv_perf_end_at(KV_PERF_DRAW_MASK_ALPHA, started, finished, 0, result < 0);
     if (shader == 15 || shader == 16) kv_perf_end_at(KV_PERF_DRAW_GROUP, started, finished, 0, result < 0);

@@ -776,10 +776,12 @@ impl Ui {
             let x = drag + 101.33 * col + 74.667 + dx;
             let y = 76.326 * row + 34.015 + dy;
             let n = 20 * shown as usize + k;
-            let data = self.slots.get(n).cloned().flatten();
+            // Slot records include variables, layers and the rewind snapshot.
+            // Drawing only borrows them; never clone twenty records per frame.
+            let data = self.slots.get(n).and_then(Option::as_ref);
             pen.alpha(a);
             let thumb = self.w.tex.get(416);
-            match (&data, self.ws_used(n)) {
+            match (data, self.ws_used(n)) {
                 (Some(d), true) => match game.preview(n, d) {
                     Some(t) => {
                         let k = [W / 640.0, H / 448.0];
@@ -810,7 +812,7 @@ impl Ui {
             if let Some(t) = self.w.tex.get(415) {
                 pen.spr(out, &t, 16, Some(frame), x - 1.3333, y - 10.785);
             }
-            if let Some(d) = data.as_ref().filter(|_| self.ws_used(n)) {
+            if let Some(d) = data.filter(|_| self.ws_used(n)) {
                 if (shown, k as i32) == (i32::from(newest.0), i32::from(newest.1)) {
                     let mut p = pen;
                     p.scale(SX, 0.4144);
@@ -898,14 +900,14 @@ impl Ui {
         let white = [1.0, 1.0, 1.0, a];
         let size = [0.42, 0.414];
         self.wtext(game, r, out, &format!("No.{:03}", n + 1), 0xB11020, size, 4.0, 80.0, y, 0, white);
-        let data = self.slots.get(n).cloned().flatten().filter(|_| self.ws_used(n));
-        let Some(d) = data else {
+        let chapter = self.slots.get(n).and_then(Option::as_ref)
+            .filter(|_| self.ws_used(n)).map(|d| rec_var(d, 23) & 0xFF);
+        let Some(ch) = chapter else {
             // text slot 39, "データ無し"
             let line = self.sysmes.get(188).cloned().unwrap_or_default();
             self.wtext(game, r, out, &line, 0xB11020, size, 4.0, 136.67, y, 0, white);
             return;
         };
-        let ch = rec_var(&d, 23) & 0xFF;
         if ch >= 1 {
             let line = self.sysmes.get(213 + ch as usize).cloned().unwrap_or_default();
             self.wtext(game, r, out, &line, 0xB01020, size, 4.0, 136.67, y, 0, white);
@@ -915,6 +917,8 @@ impl Ui {
             let date = format!("{yy:04}/{mo:02}/{dd:02} {hh:02}:{mi:02}:{ss:02}");
             self.wtext(game, r, out, &date, 0xB11020, size, 4.0, 549.33, y, 2, white);
         }
+        // Reborrow after the mutable text helpers above; no full SaveData copy.
+        let Some(d) = self.slots.get(n).and_then(Option::as_ref) else { return };
         // the record's text with its ruby, italics and colours (jp_53CF0 only resolves the `$` lines) in slot 48:
         // F1105 (the window type) below 3 (sub_1ADD0) the message font at 0.6512 x 0.6808, else flag 0x100000
         // (the bubble font, line spacing 8 px less) at 0.6512; line spacing 6 + 14, 394 units wide, two lines

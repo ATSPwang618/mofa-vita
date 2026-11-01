@@ -9,6 +9,8 @@ mod stage_prefix;
 mod group_cache;
 #[path = "../../knife/src/game/group_batch.rs"]
 mod group_batch;
+#[path = "../../knife/src/game/ui_pass_cache.rs"]
+mod ui_pass_cache;
 
 /// Bytes one scene target occupies after the 256 KiB CDRAM granule, in either variant.
 fn scene_bytes() -> usize {
@@ -2500,5 +2502,71 @@ fn fused_groups_append_to_one_stage_begin_and_keep_newly_opened_pass_owned() {
         r.try_group_composite(&mut enc, &stage, &pixel, &mask, Blend::Alpha, 0.7).unwrap();
         r.try_present(enc, &stage).unwrap();
         assert!(control.borrow().active.is_none());
+    }
+}
+
+#[test]
+fn plain_forcealpha_route_preserves_blend_and_rejects_omitted_inputs() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PLAIN_FORCEALPHA);
+    let (mut r, control) = setup();
+    let target = r.create_target(4, 4, "glow-route");
+    for kind in 0..9 {
+        let mut q = Quad::rect(r.white.clone(), [0., 0., 2., 2.], [0.3, 0.6, 0.9, 0.25]);
+        q.shade = Shade::ForceAlpha; q.blend = Blend::Add;
+        match kind {
+            1 => q.haze[1][0] = 0.1,
+            2 => q.haze[0][3] = 1.0,
+            3 => q.soft = Some(SoftClip { inner: [0., 0., 2., 2.], pivot: [0., 0.],
+                rot: 0., radius: 1., row: 0, texels: 4, fill: 0. }),
+            4 => q.rule = Some(RuleMask::new(r.white.clone(), 0.5)),
+            5 => q.masked = true,
+            6 => { q.clip = Some(q.pos); q.haze[0][3] = -0.0; },
+            _ => {},
+        }
+        control.borrow_mut().shader_capabilities = if kind == 7 { 0 } else { 1 << 26 };
+        knife_perf::optimizations::set(if kind == 8 { 0 } else { knife_perf::optimizations::PLAIN_FORCEALPHA });
+        control.borrow_mut().events.clear();
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, Some([0.; 4]), &[q]).unwrap();
+        r.try_present(enc, &target).unwrap();
+        let trace = control.borrow();
+        let (shader, blend, vertices) = trace.events.iter().find_map(|e| match e {
+            Event::Draw { shader, blend, vertices, .. } => Some((*shader, *blend, vertices)), _ => None,
+        }).unwrap();
+        assert_eq!(shader == EffectShader::PlainForceAlpha, kind == 0 || kind == 6, "case {kind}");
+        if kind == 0 || kind == 6 {
+            assert_eq!(blend, EffectBlend::Add);
+            assert!(vertices.iter().all(|v| v.color == [0.3, 0.6, 0.9, 0.25]));
+        }
+    }
+}
+
+#[test]
+fn cropped_forcealpha_keeps_full_target_sampling_and_destination_blend() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PLAIN_FORCEALPHA);
+    let (mut r, control) = setup();
+    control.borrow_mut().shader_capabilities = 1 << 26;
+    let canvas = r.create_scene_target(1920, 1080, "archive canvas");
+    let glow = r.create_scene_target(1920, 1080, "archive glow");
+    let mut q = Quad::rect(glow.tex.clone(), [0., 0., 1920., 1080.], [1., 1., 1., 0.25]);
+    q.shade = Shade::ForceAlpha; q.blend = Blend::Add;
+    q.clip = Some([[200., 100.], [600., 100.], [600., 400.], [200., 400.]]);
+    let mut enc = r.encoder();
+    r.try_draw(&mut enc, &canvas, Some([0.; 4]), &[q]).unwrap();
+    r.try_present(enc, &canvas).unwrap();
+    let trace = control.borrow();
+    let vertices = trace.events.iter().find_map(|e| match e {
+        Event::Draw { shader: EffectShader::PlainForceAlpha, blend: EffectBlend::Add, vertices, .. } => Some(vertices),
+        _ => None,
+    }).unwrap();
+    assert!(!vertices.is_empty());
+    for v in vertices {
+        // Original full-screen UV and clip-space transform still agree. The
+        // small geometry must not stretch the whole mask into the book region.
+        assert!((v.pos[0] - (v.uv[0] * 2. - 1.)).abs() < 0.00001);
+        assert!((v.pos[1] - (1. - v.uv[1] * 2.)).abs() < 0.00001);
+        assert!(v.uv[0] >= 200./1920. - 0.00001 && v.uv[0] <= 600./1920. + 0.00001);
+        assert!(v.uv[1] >= 100./1080. - 0.00001 && v.uv[1] <= 400./1080. + 0.00001);
+        assert_eq!(v.color[3], 0.25);
     }
 }

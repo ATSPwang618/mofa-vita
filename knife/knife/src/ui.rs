@@ -6289,13 +6289,19 @@ impl Ui {
             self.end_story(game);
         }
         #[cfg(target_os = "vita")]
-        if !matches!(self.w.scr, witch::WScr::Menu | witch::WScr::Save)
-            || !(self.screen == Screen::Witch || self.stack.contains(&Screen::Witch))
         {
-            // Menu/save own this 4 MiB pair only while that UI phase is alive.
-            // Release before Game::render prepares the next scene's textures;
-            // recorded encoders still retain any outstanding GPU references.
-            self.w.backdrop_rt = None;
+            let story_menu = matches!(self.w.scr, witch::WScr::Menu | witch::WScr::Save)
+                && (self.screen == Screen::Witch || self.stack.contains(&Screen::Witch));
+            // draw_title calls ws_draw in state 25 without entering Screen::Witch.
+            // Keep its pair until that load page closes, including a dialog above
+            // the title. Dropping it here recreated/zeroed two 540p targets each frame.
+            let title_load = self.wt.st == 25
+                && (self.screen == Screen::Title || self.stack.contains(&Screen::Title));
+            if !story_menu && !title_load {
+                // Release before the next scene's texture admission. Native
+                // retirement still fences any submitted readers of this pair.
+                self.w.backdrop_rt = None;
+            }
         }
     }
 

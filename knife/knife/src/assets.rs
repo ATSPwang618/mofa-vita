@@ -983,6 +983,65 @@ impl Assets {
         }
     }
 
+    // The two atlases of each Extra page are a single preparation cohort.
+    // Resolve language-neutral names exactly as WTex::load does.
+    #[cfg(target_os = "vita")]
+    fn vita_extra_source_names(page: u32) -> &'static [&'static str] {
+        match page {
+            38 => &["EXTRA_PARTS", "CG_PARTS"],
+            39 => &["SOUND_PARTS"],
+            40 => &["ARCHIVE_PARTS", "ARCHTHUMB_PARTS"],
+            _ => &[],
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    fn vita_ui_source_index(&self, stem: &str) -> Option<&'static atlas_index::Atlas> {
+        let index = self.allui.find_stem(&self.ui_atlas(stem)).or_else(|| self.allui.find_stem(stem))?;
+        atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST, index, &self.allui.entries()[index])
+    }
+
+    /// Cursor prediction is opportunistic: one existing worker, no eviction,
+    /// and room for BOTH stored input scratch and decoded output above recovery
+    /// headroom. No GPU allocation or caller-side file/header read is performed.
+    #[cfg(target_os = "vita")]
+    pub fn vita_warm_extra_ui_sources(&self, page: u32) {
+        use knife_perf::{optimizations as opt, memory_budget::{CPU_TARGET_HEADROOM, MIB}};
+        if !opt::enabled(opt::SHARED_ATLAS) || !opt::enabled(opt::UI_SOURCE_PREFETCH)
+            || self.cpu_cache_pressure.get() { return; }
+        let Ok(memory) = knife_platform_vita::memory_available() else { return; };
+        let available = (memory.heap_headroom as usize).saturating_sub(CPU_TARGET_HEADROOM + 2 * MIB);
+        for stem in Self::vita_extra_source_names(page) {
+            let Some(atlas) = self.vita_ui_source_index(stem) else { continue; };
+            let scratch = usize::from(atlas.stored_sectors) * 2048;
+            if atlas.decoded_bytes.saturating_add(scratch) <= available
+                && self.atlas_cache.prewarm_if_room(self.allui.clone(), atlas.index, atlas.decoded_bytes) != 0 {
+                break; // prewarm_if_room admits only one idle job.
+            }
+        }
+    }
+
+    /// Demand joins/promotes the same source owner, without waiting on the UI
+    /// thread. All required atlas outputs must be ready before metadata is handed
+    /// to deferred rendering. Errors remain errors, never a blank "ready" page.
+    #[cfg(target_os = "vita")]
+    pub fn vita_poll_extra_ui_sources(&self, page: u32, retry: bool) -> Result<bool> {
+        use knife_perf::optimizations as opt;
+        if !opt::enabled(opt::SHARED_ATLAS) || !opt::enabled(opt::UI_SOURCE_PREFETCH) { return Ok(true); }
+        let mut ready = true;
+        for stem in Self::vita_extra_source_names(page) {
+            // An unindexed asset pack retains its ordinary loader/error path.
+            let Some(atlas) = self.vita_ui_source_index(stem) else { continue; };
+            if retry { self.atlas_cache.retry_failed(&self.allui, atlas.index); }
+            match self.atlas_cache.poll(self.allui.clone(), atlas.index, true) {
+                atlas_cache::Poll::Ready(_) => {},
+                atlas_cache::Poll::Pending => ready = false,
+                atlas_cache::Poll::Failed(error) => anyhow::bail!("UI source {}: {error}", atlas.entry),
+            }
+        }
+        Ok(ready)
+    }
+
     /// One speculative upload per update, before motion/rendering. Real demand
     /// joins an active decode through image_graded instead of starting a duplicate.
     #[cfg(target_os = "vita")]

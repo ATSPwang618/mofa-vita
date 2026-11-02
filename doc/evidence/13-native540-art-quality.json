@@ -1,0 +1,71 @@
+{
+  "schema": "knife-all-art-delivery-qa-v1",
+  "version": "540p-46fc688-all-art-20261101",
+  "render": [
+    960,
+    540
+  ],
+  "files": 9564,
+  "asset_payload_bytes": 3632234157,
+  "assets_manifest_bytes": 1604250,
+  "assets_manifest_sha256": "97e0ebd7e9c30905356462293a4d1420d0422309972ae9cda69c516462cd879a",
+  "storage_delta_bytes_from_start": 180858880,
+  "host_tests_passed": 241,
+  "native_decoder_images": 21185,
+  "native_decoder_pixels": 11053827336,
+  "native_decoder_max_channel_difference": 0,
+  "image_entries_improved_in_this_update": 21237,
+  "image_entries_improved_in_global_pass": 21185,
+  "unresolved_reviews": 0,
+  "on_device_test_performed": false,
+  "native_gpu_source_allocation_comparison": {
+    "scope": "plain source textures only; not simultaneous residency or graded outputs",
+    "entries": 21185,
+    "changes": {
+      "lower": 5084,
+      "equal": 8659,
+      "higher": 7442
+    },
+    "old_sum_bytes": 13917749248,
+    "new_sum_bytes": 15848439808,
+    "old_mean_bytes": 656962.4379513807,
+    "new_mean_bytes": 748097.2295492094
+  },
+  "rollback_reconstruction_verified": [
+    "RESTORED_INITIAL jallpac 869ec769f5b64650f4502af3f2c4dbbab307174e9d090ccac31f951c835b12ab",
+    "RESTORED_INITIAL jallpachd 41603d6ac9865b1e164a13e77024d78c7e7f873c5f6e721a6c7c1df7526a3ee1"
+  ],
+  "offline_tool_sha256": {
+    "tools/quality540/bntx_image.py": "bd2b1cd5069a5d2bd579446bc7584b632e0cad091df842e43c62d1b12069f6b3",
+    "tools/quality540/identity-preserve.json": "48841f97243ff780ffa829ac75676342c10234b332a51a5b16943e94713d143d",
+    "tools/quality540/README.md": "64783c6c6e97c211d69b07f5d3439a82c617207f539588438d99e79f11539008",
+    "tools/quality540/rebuild_all_art.py": "3ea3f555e07ec7ac9f11e2278afe6bba52c6bfc74bd6843176eb81a768bf6223",
+    "tools/quality540/rebuild_scene_art.py": "7ea59d245cfd3b5f7ccfa01179aa93fa83f7ac5931e456fc5e4170aad39e83da",
+    "tools/quality540/scenes.json": "dfe4904b4308d5797ad8d3c3729b53a307fb8eb2b6095606041a137c2e8d59be",
+    "tools/quality540/stage_originals.py": "748cb898defcc7de8814952c186183f6d5e2187af5aface1b8c8734f52c2f4a1"
+  },
+  "data_archive": {
+    "path": "dist\\WitchontheHolyNight.7z",
+    "bytes": 3378650723,
+    "sha256": "4bfab294b239f2be199c2b0ffce6613cdd02ae428ed175fb79c60284b1e273a6",
+    "all_crc_verified": true,
+    "embedded_manifest_sha256": "97e0ebd7e9c30905356462293a4d1420d0422309972ae9cda69c516462cd879a",
+    "retained": false,
+    "validated_before_cleanup": true
+  },
+  "build_tag": "540p-46fc688-all-art-20261101",
+  "eboot_sha256": "efd5ecb11d1b1e8239626b8e76f7ed1373310138e5b1d03f073e4f4316019242",
+  "vpk_sha256": "c399e3d11293ea7858ff4e7a3e2297d9fe54e36593f7a31f81dd96699b3bf8b1",
+  "asset_folder_bytes": 3633838407,
+  "image_source_bytes": 6034846364,
+  "local_storage_policy": {
+    "as_of": "2026-11-02",
+    "runtime": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita",
+    "editable_images": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-image-source",
+    "reports": ".work/reports/native540-art-quality",
+    "historical_resource_backups_retained": false,
+    "before_after_image_copies_retained": false,
+    "note": "User requested retaining only the current runtime and editable project. Historical data_archive and rollback reconstruction fields record tests performed before cleanup; their resource copies are not retained."
+  },
+  "verification_recorded_at": "2026-11-01"
+}

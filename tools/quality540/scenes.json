@@ -1,0 +1,14 @@
+{
+  "schema": "knife-540p-scene-quality-selection-v1",
+  "pixel_budget": 1036800,
+  "maximum_axis": 2048,
+  "stems": [
+    "IMG0288", "IMG0289", "IMG0290", "IMG0291", "IMG0292", "IMG0293", "IMG0294",
+    "IMG1192", "IMG1193",
+    "IMG2273", "IMG2274", "IMG2331", "IMG2332", "IMG2333",
+    "IMG3050", "IMG3051", "IMG3052", "IMG3644"
+  ],
+  "include_variants": true,
+  "exclude_gallery_thumbnails": true,
+  "render": [960, 540]
+}

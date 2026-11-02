@@ -69,6 +69,28 @@ fn defer_test_gxt(r: &Renderer, bytes: &[u8], load: Rc<dyn Fn() -> Result<Vec<u8
 }
 
 #[test]
+fn overscan_gxt_keeps_logical_layout_and_the_existing_pixel_budget() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(1920, 1080, "overscan-canvas");
+    for physical in [[1314, 788], [860, 1204], [1502, 688]] {
+        let bytes = gxt_fixture(physical, 0x8700_0000);
+        let tex = defer_test_gxt(&r, &bytes, {
+            let copy = bytes.clone(); Rc::new(move || Ok(copy.clone()))
+        }).expect("pan/zoom art within the existing decoded pixel budget");
+        assert_eq!([tex.width, tex.height], [u32::from(physical[0]) * 2, u32::from(physical[1]) * 2]);
+        assert_eq!(tex.physical_size(), physical.map(u32::from));
+        submit_deferred(&mut r, &canvas, &[tex]).unwrap();
+    }
+    let events = &control.borrow().events;
+    assert_eq!(events.iter().filter(|e| matches!(e, Event::CreateCompressed { .. })).count(), 3);
+    assert!(!events.iter().any(|e| matches!(e, Event::Draw { shader: EffectShader::Alter, .. })),
+        "native encoded art uploads compressed blocks without an Alter target");
+    let excessive = gxt_fixture([1440, 1080], 0x8500_0000);
+    assert!(defer_test_gxt(&r, &excessive, Rc::new(|| unreachable!())).is_err(),
+        "changing the aspect boundary must not increase the decoded pixel budget");
+}
+
+#[test]
 fn cache_admission_avoids_registry_walks_without_pressure_and_sorts_only_missing_images() {
     let (mut r, _) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");

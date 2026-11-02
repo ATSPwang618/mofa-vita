@@ -1,0 +1,53 @@
+{
+  "schema": "knife-small-alpha-preservation-v1",
+  "entries": [
+    {
+      "archive": "jallpac",
+      "index": 2785,
+      "name": "IMG2153.NXZ",
+      "raw_sha256": "7d5d0d20dcb33149f7427265bbf69dc897e48c135488de529a1daf03f5a7cc24",
+      "logical": [
+        97,
+        113
+      ],
+      "physical": [
+        73,
+        85
+      ],
+      "codec": 7,
+      "reason": "Reviewed against original artwork: small alpha detail already at its nominal 540p sampling density; retain existing pixels to avoid changing edge coverage."
+    },
+    {
+      "archive": "jallpachd",
+      "index": 2785,
+      "name": "IMG2153.NXZ",
+      "raw_sha256": "bda2cb9a423df18bfa96dbf9c0623b9f6fe84c3dabb41c5a5050805236b3a640",
+      "logical": [
+        146,
+        170
+      ],
+      "physical": [
+        73,
+        85
+      ],
+      "codec": 7,
+      "reason": "Reviewed against original artwork: small alpha detail already at its nominal 540p sampling density; retain existing pixels to avoid changing edge coverage."
+    },
+    {
+      "archive": "jallpachd",
+      "index": 2323,
+      "name": "IMG1672.NXZ",
+      "raw_sha256": "e388f79346b7b2afe2882ce808a1a9666607590d69878f78c0c36a109c66a417",
+      "logical": [
+        82,
+        43
+      ],
+      "physical": [
+        41,
+        22
+      ],
+      "codec": 9,
+      "reason": "Reviewed against original artwork: small alpha detail already at its nominal 540p sampling density; retain existing pixels to avoid changing edge coverage."
+    }
+  ]
+}

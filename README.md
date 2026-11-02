@@ -8,7 +8,7 @@
 
 ## 截图
 
-以下均为实机截图（960×544 直出；左上角是调试用性能 HUD，正式版默认不打印日志）：
+以下均为实机截图（960×544 直出；左上角是调试用性能 HUD，默认构建不打印日志；本地画质更新包显式开启采集）：
 
 | | |
 |---|---|
@@ -60,24 +60,25 @@ python3 tools/build-vita.py game release # 构建正式版 VPK
 | `ux0:data/WitchontheHolyNight/shader-cache/` | 运行时编译的 shader 缓存（自动生成；首次启动会慢几秒） |
 | `ux0:data/WitchontheHolyNight/perf-enable.txt` 等 | 可选的性能开关，默认关闭；见 [性能采集与分析](doc/06-性能采集与分析.md) |
 
-**从旧版升级**：在 Vita 上把整个 `ux0:data/knife-woh-540p/` 目录**重命名**为 `ux0:data/WitchontheHolyNight/`（素材、存档、性能开关一起搬过去）；不方便整目录改名时至少要把 `assets/` 与 `saves/` 移到新根。旧路径不再读取；旧的 shader 缓存目录 `ux0:/data/knife-vita/` 也可以直接删除，新缓存会重新生成。
+
 
 ## 素材兼容性
 
-当前引擎匹配 **r7 native540 codec9** 素材包，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
+当前引擎匹配 **native540 codec9 全剧情图库清晰度更新（2026-11-01）**，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
 
 ```text
-4cd6342dc7a97bc702964f89cc72ecfbfdc36455072fc143af10d7f99f57a816
+97e0ebd7e9c30905356462293a4d1420d0422309972ae9cda69c516462cd879a
 ```
 
 - 素材需由使用者自备的 Switch 游戏数据（及相应汉化资源）转换得到；原始 NSP、未经转换的 romfs、旧 codec8 包和其他分辨率版本不能直接替代。
 - VPK 不含游戏素材。已经安装匹配素材包时，仅重编引擎不需要重新复制素材；素材清单变化时 EBOOT 会做启动校验。
 - 本移植的开机感谢页改变了 `parts.hed`、`parts.mrg` 与清单，**升级到带感谢页的版本时这 3 个文件要一起更新**，否则启动会提示 `WRONG FILE SIZE` / `WRONG ASSET VERSION`。
+- 全剧情图库清晰度更新从原始图像重做了 **21,237 个条目**。显示与合成仍为 960×540；平移、放大的长图保留画面外像素，单张像素总量不超过原有 960×1080 解码预算。更新这一版时需一起替换 `jallpac.hed/.mrg`、`jallpachd.hed/.mrg`、清单与 EBOOT；规则和复现工具见 [全图清晰度处理](tools/quality540/README.md)。
 - 启动出现 `ASSETS REQUIRED` 等提示时，先核对素材完整性与清单版本；更新流程见 [更新素材元数据](doc/03-构建与工具链.md#83-更新素材元数据)。
 
 ## 操作
 
-本版起采用**日式（亚洲）布局**：○ 确认、× 取消。旧版本相反（西式布局）。
+本版起采用**日式（亚洲）布局**：○ 确认、× 取消。
 
 | Vita 输入 | 剧情中的常用操作 |
 |---|---|
@@ -99,7 +100,7 @@ python3 tools/build-vita.py game release # 构建正式版 VPK
 |---|---|
 | [knife/](knife/) | Rust 工作区：游戏逻辑、格式解析、渲染抽象、音频与 Vita 平台层 |
 | [knife/vita/](knife/vita/) | GXM C 后端、Cg 源码、生成的运行时着色器与系统图片 |
-| [tools/](tools/) | 本地构建、打包、素材处理、开机感谢页与质检脚本 |
+| [tools/](tools/README.md) | 本地构建、打包、素材处理、开机感谢页与质检脚本 |
 | [doc/](doc/README.md) | 技术文档索引：架构、渲染、资源、优化、构建、性能、限制、素材 |
 | [doc/screenshots/](doc/screenshots/) | README 使用的实机截图 |
 | `release/`、`.work/`、`dist/` | 本机产物、缓存与自备素材，不入库 |
@@ -112,29 +113,26 @@ python3 tools/build-vita.py game release # 构建正式版 VPK
 | [02-渲染与GPU后端](doc/02-渲染与GPU后端.md) | GXM 后端结构、批次/arena、纹理池、运行时 shader 编译与缓存 |
 | [03-构建与工具链](doc/03-构建与工具链.md) | 构建脚本、SDK/WSL 探测、VPK 打包、素材元数据更新、排错 |
 | [04-资源调度与缓存](doc/04-资源调度与缓存.md) | 资源生命周期、atlas 共享、GXT Ready、图像 worker、音频通道 |
-| [05-优化记录与实测数据](doc/05-优化记录与实测数据.md) | 20 项优化开关、历史真机对照与验证状态 |
+| [05-优化记录与实测数据](doc/05-优化记录与实测数据.md) | 28 项优化开关、历史真机对照与验证状态 |
 | [06-性能采集与分析](doc/06-性能采集与分析.md) | 优化开关/profile、采集框架、日志格式与分析工具 |
 | [07-已知限制与未验证项](doc/07-已知限制与未验证项.md) | 尚未验证的能力、平台/构建/许可限制 |
 | [08-素材与安装](doc/08-素材与安装.md) | 素材清单、从原始数据制作、安装路径与更新流程 |
+| [09-仓库维护与清理](doc/09-仓库维护与清理.md) | 唯一资源目录、产物保留、可清理项与验证规则 |
 
 文档入口见 [doc/README.md](doc/README.md)；机器可读证据保留在 [doc/evidence/](doc/evidence/)。
 
+本地资源只保留两份：`dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/`（运行包，约 3.40 GiB）和 `dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-image-source/`（可编辑图片，约 5.64 GiB）。历史素材、转换中间图、回滚资源和额外的素材压缩包不长期保留。最新 ELF/map 留在 `.work/vita/game-release-540p/` 用于崩溃定位；验证结果只保留小体积记录。
+
 ## 已知限制
 
-- 960×540 终版的真机 FPS/帧时间尚未系统实测；仓库中 r2/r3/r4 的实测数据对应 270p 时期（480×270 scene + 720×404 composite），只作结构证据，见 [05](doc/05-优化记录与实测数据.md)、[07](doc/07-已知限制与未验证项.md)。
+- 最新全图库清晰度包尚未完成实机画面、帧时间与显存峰值回归。r2/r3/r4 数据来自 480×270 scene + 720×404 composite；2026-11-01 的后续 540p 优化记录也不能代替新素材包的同场景测量，见 [05](doc/05-优化记录与实测数据.md)、[07](doc/07-已知限制与未验证项.md)。
 - 游戏素材、字体与汉化资源需自备；仓库与 VPK 都不包含。
 - 部分菜单/提示字形沿用 Switch 版贴图（对应关系见「操作」），不随本移植改为 Vita 符号。
 - 存档、设置与真机行为的完整兼容矩阵以 [07](doc/07-已知限制与未验证项.md) 与代码为准。
 
 ## 致谢
 
-**特别感谢 @Zarathustra、@listen** —— 感谢两位朋友为这个项目长达数年的辛苦付出。
 
-开机感谢页第 1 页列出了所有支持者；以下为两页原图（源图与重新打包脚本在 [tools/credit-intro](tools/credit-intro/README.md)）：
-
-| | |
-|---|---|
-| ![感谢每一位支持者](tools/credit-intro/credit_1_supporters.png) | ![特别感谢](tools/credit-intro/credit_2_special_thanks.png) |
 
 此外感谢上游引擎 [AuroraWright/knife](https://github.com/AuroraWright/knife) 及其逆向与文档工作，以及 SceShaccCgExt、VitaSDK 与所有第三方依赖的作者。
 

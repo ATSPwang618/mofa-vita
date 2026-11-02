@@ -23,7 +23,7 @@
 ## 更换美术后重建
 
 1. 用同规格 PNG 覆盖 `credit_*.png`（**960×544、8-bit RGBA、非交错**；任何尺寸都能被全屏拉伸，但 960×544 是像素 1:1 的原生尺寸）。
-2. 追加归档并更新清单（首次运行会把补丁前的 `parts.hed`/`parts.mrg` 备份到 `.work/credit-intro/backup-original/`）：
+2. 更新归档并同步清单。首次由两条目归档追加时，会建立 `.work/credit-intro/backup-original/`；已有四条目时直接替换感谢页，保留前两条原始内容。旧备份已清理时也可运行：
 
    ```bash
    python3 tools/credit-intro/apply_credit_intro.py          # 写入 dist/.../assets 的 parts 归档与清单
@@ -41,7 +41,7 @@
 4. 重建 VPK（元数据在编译期嵌入 EBOOT）：
 
    ```bash
-   KNIFE_BUILD_TAG=540p-r9-credit-intro python3 tools/build-vita.py game release
+   KNIFE_BUILD_TAG=540p-credit-update-20261102 python3 tools/build-vita.py game release
    ```
 
    构建机与前置条件见 [doc/03-构建与工具链.md](../../doc/03-构建与工具链.md)；素材变更与元数据的关系见 [doc/08-素材与安装.md](../../doc/08-素材与安装.md) §1、§6。
@@ -56,13 +56,21 @@
 
 只重编 EBOOT、不换这三个文件，或只换素材、不重编 EBOOT，都会在启动校验处失败——两者是同一套契约。
 
-## 回滚
+## 临时备份与回退美术
 
-1. 从 `.work/credit-intro/backup-original/` 恢复 `parts.hed`、`parts.mrg` 到 `dist/.../assets/`。
-2. 重跑上文的「重生成三件套」，让清单/profile/索引回到旧契约。
-3. 重编 VPK。
+临时备份不需要长期保留：现有四条目归档本身包含前两条原始内容，`--check` 不会重建备份或写入素材。首次追加产生的备份在验证完成后可清理，遵循 [仓库维护规则](../../doc/09-仓库维护与清理.md)。
+
+回退感谢页美术时，从 Git 历史取回本项目自己的旧 PNG，重新运行更新脚本、生成三件套并构建配套 EBOOT。不要直接把两条目的原始 `parts` 覆盖到需要四条目的当前引擎。
+
+脚本回归检查：
+
+```bash
+python3 -B -m unittest discover -s tools/credit-intro -p test_apply_credit_intro.py -v
+```
+
+覆盖清理备份后的只读检查，以及替换已有感谢页时原始条目和清单的完整性。
 
 ## 备注
 
-- `dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-image-source/parts/manifest.json` 是**打补丁前**的解包快照（2 条目），不要用它去重打 parts；`parts` 归档的权威内容以 `dist/.../assets/parts.*` 为准。
+- 当前可编辑工程的 `parts/manifest.json` 已同步为 **4 条目**，包含两张感谢页；运行时归档的权威内容仍以 `dist/.../assets/parts.*` 为准。运行脚本修改素材后，可编辑导出图也应同步更新。
 - 图片以 PNG 原字节存入 `KIMG` codec 7（UNORM 直通），与归档里原版 `caution` 条目同口径；`apply_credit_intro.py` 只会剥掉 `eXIf`/`tEXt` 等元数据块，不改像素数据。

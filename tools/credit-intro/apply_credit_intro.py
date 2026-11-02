@@ -25,6 +25,8 @@ The images are the project's own artwork (`credit_1_supporters.png`,
 `credit_2_special_thanks.png` next to this script), not game data. The first
 apply copies the untouched `parts.hed` / `parts.mrg` to
 `.work/credit-intro/backup-original/` so the change can be reverted.
+After cleanup, an already patched archive supplies its original entries 0..1;
+checking or replacing the credit pages does not require a persistent backup.
 """
 import argparse
 import gzip
@@ -317,24 +319,27 @@ def main(argv=None):
     hed = (assets / "parts.hed").read_bytes()
     mrg = (assets / "parts.mrg").read_bytes()
     backup_hed, backup_mrg = args.backup / "parts.hed", args.backup / "parts.mrg"
-    applied = len(parse_hed(hed)) > FIRST_NEW_ENTRY
-    if applied:
-        assert backup_hed.is_file() and backup_mrg.is_file(), (
-            f"{assets} already has the credit entries but {args.backup} has no original to compare with")
+    entries = parse_hed(hed)
+    assert len(entries) in (FIRST_NEW_ENTRY, FIRST_NEW_ENTRY + len(IMAGES)), "unexpected parts entry count"
+    applied = len(entries) > FIRST_NEW_ENTRY
+    if applied and (backup_hed.exists() or backup_mrg.exists()):
+        assert backup_hed.is_file() and backup_mrg.is_file(), "incomplete parts backup"
         base_hed, base_mrg = backup_hed.read_bytes(), backup_mrg.read_bytes()
+    elif applied:
+        end = 0
+        for offset, stored, _ in entries[:FIRST_NEW_ENTRY]:
+            assert offset * SECTOR == end and stored > 0, "original parts entries are not contiguous"
+            end = (offset + stored) * SECTOR
+        assert end <= len(mrg), "original parts entries run past parts.mrg"
+        base_hed = hed[:FIRST_NEW_ENTRY * 8] + b"\xff" * 8
+        base_mrg = mrg[:end]
     else:
         base_hed, base_mrg = hed, mrg
 
     rebuilt_mrg, rebuilt_hed = build_archive(base_mrg, base_hed)
     manifest_text = (assets / MARKER).read_text(encoding="utf-8")
-    if applied:
-        # Already applied: rebuilding from the same manifest must be a no-op, which also
-        # proves the record formatting and the totals were patched in place.
-        expected_mrg, expected_hed = rebuilt_mrg, rebuilt_hed
-        expected_manifest = patch_manifest(manifest_text, hed, mrg, hed, mrg)
-    else:
-        expected_mrg, expected_hed = rebuilt_mrg, rebuilt_hed
-        expected_manifest = patch_manifest(manifest_text, base_hed, base_mrg, rebuilt_hed, rebuilt_mrg)
+    expected_mrg, expected_hed = rebuilt_mrg, rebuilt_hed
+    expected_manifest = patch_manifest(manifest_text, hed, mrg, rebuilt_hed, rebuilt_mrg)
 
     if args.check:
         problems = []
@@ -358,6 +363,7 @@ def main(argv=None):
         args.backup.mkdir(parents=True, exist_ok=True)
         (args.backup / "parts.hed").write_bytes(base_hed)
         (args.backup / "parts.mrg").write_bytes(base_mrg)
+    if (hed, mrg, manifest_text) != (expected_hed, expected_mrg, expected_manifest):
         (assets / "parts.mrg").write_bytes(expected_mrg)
         (assets / "parts.hed").write_bytes(expected_hed)
         (assets / MARKER).write_text(expected_manifest, encoding="utf-8", newline="")

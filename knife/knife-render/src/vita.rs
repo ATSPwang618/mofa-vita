@@ -1540,11 +1540,14 @@ impl Renderer {
         kind: DeferredKind,
     ) -> Result<TexRef> {
         ensure!(logical.iter().all(|v| *v != 0), "deferred logical dimensions must be nonzero");
-        // Two bilingual source strips are 960x1080; other compact atlases fit
-        // within 960x540. This is an input extent bound, not a display size.
-        let max_size = if matches!(&kind, DeferredKind::Image { .. }) { [2048, 2048] } else { [960, 1080] };
+        // Native compressed pan/zoom art may cross either old axis bound while
+        // retaining the existing 960x1080 CPU pixel budget. Targets stay 540p.
+        let compressed = matches!(&kind, DeferredKind::GxtAltered { .. });
+        let max_size = if compressed || matches!(&kind, DeferredKind::Image { .. }) { [2048, 2048] } else { [960, 1080] };
         ensure!(physical[0] != 0 && physical[1] != 0
             && physical[0] <= max_size[0] && physical[1] <= max_size[1], "deferred atlas dimensions exceed compact bounds");
+        ensure!(!compressed || u64::from(physical[0]) * u64::from(physical[1]) <= 960 * 1080,
+            "deferred GXT exceeds compact decoded pixel budget");
         ensure!(bytes.encoded_len() != 0, "deferred image has no encoded bytes");
         ensure!(bytes.encoded_len() <= DEFERRED_SOURCE_BYTES, "deferred image exceeds encoded entry bound");
         let total = self.device.encoded_bytes.get().checked_add(bytes.retained_len())

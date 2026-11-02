@@ -27,7 +27,7 @@ try {
             $SourceAssets = Join-Path $taskRoot 'dist/Witch-on-the-Holy-Night-Chengkong-540p-x64/assets'
         }
         if (-not (Test-Path -LiteralPath $SourceAssets -PathType Container)) {
-            throw 'Original conversion inputs were removed from the final 540p project. Use -SourceAssets with a separately prepared input directory to regenerate assets. To rebuild only the EXE, omit -PrepareAssets. To verify retained files, run python tools/verify_current_compact.py.'
+            throw 'Original conversion inputs are not retained in the final Vita project. Use -SourceAssets with separately prepared desktop inputs. To rebuild only the EXE, omit -PrepareAssets. For the current Vita assets, use python tools/generate_vita_asset_profile_540.py --check.'
         }
     }
     $buildArgs = $wslArgs + @('--', 'bash', './tools/build-compact.sh')

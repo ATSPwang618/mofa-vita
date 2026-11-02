@@ -67,13 +67,14 @@ python3 tools/build-vita.py game release # 构建正式版 VPK
 当前引擎匹配 **native540 codec9 全剧情图库清晰度更新（2026-11-01）**，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
 
 ```text
-97e0ebd7e9c30905356462293a4d1420d0422309972ae9cda69c516462cd879a
+35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189
 ```
 
 - 素材需由使用者自备的 Switch 游戏数据（及相应汉化资源）转换得到；原始 NSP、未经转换的 romfs、旧 codec8 包和其他分辨率版本不能直接替代。
 - VPK 不含游戏素材。已经安装匹配素材包时，仅重编引擎不需要重新复制素材；素材清单变化时 EBOOT 会做启动校验。
 - 本移植的开机感谢页改变了 `parts.hed`、`parts.mrg` 与清单，**升级到带感谢页的版本时这 3 个文件要一起更新**，否则启动会提示 `WRONG FILE SIZE` / `WRONG ASSET VERSION`。
 - 全剧情图库清晰度更新从原始图像重做了 **21,237 个条目**。显示与合成仍为 960×540；平移、放大的长图保留画面外像素，单张像素总量不超过原有 960×1080 解码预算。更新这一版时需一起替换 `jallpac.hed/.mrg`、`jallpachd.hed/.mrg`、清单与 EBOOT；规则和复现工具见 [全图清晰度处理](tools/quality540/README.md)。
+- 当前配套包已同步用户替换的 `movie/logo.mp4`（2026-11-02）。替换视频也会改变素材校验身份，需更新清单、内嵌元数据并重编 EBOOT；只覆盖 MP4 会触发 `WRONG FILE SIZE` 或 `WRONG ASSET VERSION`。
 - 启动出现 `ASSETS REQUIRED` 等提示时，先核对素材完整性与清单版本；更新流程见 [更新素材元数据](doc/03-构建与工具链.md#83-更新素材元数据)。
 
 ## 操作

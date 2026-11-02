@@ -1,0 +1,74 @@
+{
+  "build_tag": "540p-86c1fd8-logo-20261102",
+  "source_head": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+  "old_logo": {
+    "path": "movie/logo.mp4",
+    "bytes": 336200,
+    "sha256": "34137eac81996def746518c7a00e4612cd41c63809a4d90c11fbfc42cfd86a84"
+  },
+  "new_logo": {
+    "path": "movie/logo.mp4",
+    "bytes": 215765,
+    "sha256": "6bb49ee83aa8cc0f666db91d08583f5b7c9f656029a2bb4dc376fb844808aba0"
+  },
+  "old_manifest_sha256": "97e0ebd7e9c30905356462293a4d1420d0422309972ae9cda69c516462cd879a",
+  "new_manifest_sha256": "35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189",
+  "manifest_bytes": 1604250,
+  "old_payload_bytes": 3632234157,
+  "new_payload_bytes": 3632113722,
+  "other_asset_files_verified": 9563,
+  "video_reencoded": false,
+  "pc_full_decode_passed": true,
+  "hardware_playback_verified": false,
+  "files": {
+    "eboot.bin": {
+      "bytes": 9787911,
+      "sha256": "b0e6eaf6f0e9464a66046cf2504f3dbc08d31425ad0f91e142ed036a539ef074"
+    },
+    "knife-vita-game-540p.vpk": {
+      "bytes": 7153552,
+      "sha256": "8fd6d51aa2136ff0ba40bb9313c531cac131dcbf7bed2194fd33d5abb89e31ca"
+    }
+  },
+  "build_source_files_verified": 306,
+  "version_in_elf": true,
+  "vpk_crc_ok": true,
+  "vpk_eboot_identical": true,
+  "as_of": "2026-11-02",
+  "scope": "User-supplied logo MP4 identity, generated startup/atlas/stream metadata and matching ARM package; inherited image quality resources unchanged.",
+  "video": {
+    "codec": "h264",
+    "profile": "Main",
+    "level": 31,
+    "width": 960,
+    "height": 540,
+    "frame_rate": "30/1",
+    "duration_seconds": 6.0,
+    "audio_codec": "aac",
+    "audio_profile": "LC",
+    "audio_sample_rate": 48000,
+    "audio_channels": 2
+  },
+  "update_files": [
+    "assets/movie/logo.mp4",
+    "assets/vita-540p-assets.json",
+    "eboot.bin (or matching VPK)"
+  ],
+  "game_startup_check": {
+    "implementation": "knife-platform-vita::asset_check::check_assets",
+    "host_example": "check_assets",
+    "passed": true,
+    "files": 37,
+    "read_bytes": 4434498,
+    "hardware_run": false
+  },
+  "post_build_cleanup": {
+    "automatic_review_rejected": true,
+    "reason": "blocked by policy",
+    "retained_paths": [
+      "release/knife-vita-game-540p.vpk",
+      ".work/vita/game-release-540p/knife.velf"
+    ],
+    "retained_bytes": 16937367
+  }
+}

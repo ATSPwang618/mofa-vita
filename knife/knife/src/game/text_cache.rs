@@ -54,6 +54,13 @@ impl Pool {
 
     pub fn bytes(&self) -> usize { self.bytes }
 
+    /// A failed preparation submitted none of this frame's producers. Discard
+    /// their memo entries so an unrendered target cannot become a later hit.
+    pub fn invalidate(&mut self) {
+        self.entries.clear(); self.bytes = 0;
+        self.previous.clear(); self.observed.clear(); self.gauges();
+    }
+
     /// Current-frame readers stay pinned. Native texture retirement supplies the
     /// GPU completion fence after the last recorded command releases its handle.
     pub fn trim(&mut self, keep_bytes: usize) {

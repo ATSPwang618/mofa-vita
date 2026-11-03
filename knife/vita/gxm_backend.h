@@ -91,7 +91,8 @@ int32_t kv_gxm_begin_batch(KvGxm *g, uint32_t basic_quads, uint32_t effect_verti
    Omitted plans retain conservative ordering. Draw validates missed hazards. */
 int32_t kv_gxm_scene_plan(KvGxm *g, KvGxmTexture *target,
     const KvGxmTexture *const *reads, uint32_t count, uint32_t kind);
-/* Physical pool slack and retired owners remain included in cdram_available. */
+/* Small pooled slices charge 64-byte granules; >=256 KiB payloads own whole
+   256 KiB-aligned pages so their tail cannot pin large retired image pages. */
 int32_t kv_gxm_texture_charge(uint32_t payload_bytes, uint32_t *out);
 /* Explicit memory-pressure reclamation; wait=0 only polls completed owners. */
 int32_t kv_gxm_reclaim(KvGxm *g, uint32_t wait);
@@ -113,11 +114,15 @@ int32_t kv_gxm_dev_swap_display_surface(KvGxm *g, KvGxmTexture *texture);
 /* Copies the completed front buffer, tightly packed RGBA8, 960x544. */
 int32_t kv_gxm_readback(KvGxm *g, uint8_t *rgba, uint32_t capacity);
 int32_t kv_gxm_stats(const KvGxm *g, KvGxmStats *out);
-/* Creating thread only. Returns the tighter of this owner's remaining CDRAM
-   policy (including its parameter reserve) and the kernel's current free
-   CDRAM bytes. A query/owner/accounting failure returns an error, never a
+/* Creating thread only. Includes fully empty pool pages reclaimable before
+   growth and the largest contiguous reusable span, without summing live-page
+   holes. New mapping remains bounded by both policy and kernel free bytes.
+   A query/owner/accounting failure returns an error, never a
    fabricated allowance; no reservation against concurrent OS users is implied. */
 int32_t kv_gxm_cdram_available(const KvGxm *g, uint32_t *out);
+/* Last texture create failed specifically at CDRAM budget/kernel allocation.
+   Validation, mapping, descriptor and unsafe rollback errors are not retryable. */
+uint32_t kv_gxm_texture_allocation_failed(const KvGxm *g);
 const char *kv_gxm_error(const KvGxm *g);
 /* Drains GPU/display work before retiring resources. Failure retains the owner
    for another destroy call only; all rendering is disabled after the attempt. */

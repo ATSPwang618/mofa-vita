@@ -1,0 +1,144 @@
+{
+  "schema": "knife-vita-required-target-recovery-v1",
+  "verified_at": "2026-11-03T15:35:28.320813+00:00",
+  "build_tag": "540p-d734b38-targetfix-20261103",
+  "branch": "perf/render",
+  "base_commit": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+  "changes_local_only": true,
+  "remote_observation": {
+    "perf/render": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+    "remote_writes_performed": false
+  },
+  "crash": {
+    "core": "psp2core-1793706965-0x0000092a39-eboot.bin.psp2dmp",
+    "core_sha256": "5fcae05f89724819a21faf0ae41de74a00944ac3d72a97052087d457fa2f17e1",
+    "log_sha256_at_analysis": "33476d057d222317cfbe786194a4f1895b59d183c89d8f9ada63a787dc37f93a",
+    "build_tag": "540p-d734b38-prebudget-20261102",
+    "eboot_sha256": "515081089d046052d6360ee93632e4077cf00da1d5bb39952654581e4d2b0d6e",
+    "module_fingerprint": "0xed8bf386",
+    "cause": "old frame scene-target expect -> Rust panic -> SIGABRT -> _kill_r udf #255",
+    "native_error": "0x80024309 SCE_KERNEL_ERROR_NO_FREE_PHYSICAL_PAGE_CDRAM",
+    "requested_target": {
+      "physical": [
+        960,
+        540
+      ],
+      "format": "RGBA8",
+      "native_charge_bytes": 2097152
+    },
+    "limits": [
+      "last performance memory sample preceded panic by about 5 seconds",
+      "core cannot uniquely prove fragmentation or assign all live memblocks to owners",
+      "no observed save-write/verification corruption; no exact target slot proven"
+    ]
+  },
+  "repair": {
+    "changed_rust_files": 9,
+    "spare_capture_reuse": "exact logical/physical dimensions; exclude active stage/scene/canvas identities; transfer ownership without allocating",
+    "required_roles": [
+      "old frame",
+      "noise rt40",
+      "ghost frame/channels",
+      "blur",
+      "group pixel/mask",
+      "menu defocus captures",
+      "screen capture"
+    ],
+    "optional_ui": [
+      "menu/save backdrop",
+      "archive glow",
+      "CG variant capture",
+      "sound light",
+      "save previews"
+    ],
+    "recovery": "typed clean pressure only; one game optional-cache cleanup and fence then one bounded retry cycle",
+    "max_native_allocation_attempts_per_cycle": 10,
+    "max_cycles_per_required_target_request": 2,
+    "failure_behavior": "discard unsubmitted encoder; restore previous complete stage/canvas and capture/noise state; pause script with resource UI",
+    "preview_behavior": "required targets first; keep request pending and publish only after successful submission",
+    "gpu_sync_policy": "extra retirement wait only on allocation pressure; ordinary frame sync unchanged",
+    "unchanged": [
+      "native GXM C backend",
+      "960x540 scene/composite",
+      "60 FPS pacer",
+      "memory budgets",
+      "DXT image data",
+      "asset identity",
+      "save format"
+    ]
+  },
+  "validation": {
+    "red_regression_log": ".work/vita/target-recovery-20261103/red-target.log",
+    "red_regression": "required target failure lacked FramePreparationError; assertion failed before repair",
+    "renderer_host_tests": {
+      "passed": 114,
+      "failed": 0,
+      "serial": true,
+      "new_cases": 8,
+      "ring_capture_cycles": 64
+    },
+    "test_log": ".work/vita/target-recovery-20261103/render-tests.log",
+    "arm_build": true,
+    "package_check": true,
+    "package_entries": 21,
+    "source_input_hashes": 308,
+    "build_artifact_hashes": 10,
+    "native_C_changed": false,
+    "native_C_tests_rerun": false,
+    "runtime_verified": false,
+    "hardware_verified": false,
+    "host_test_limit": "strict native recorder tests allocation, ownership and command submission; does not execute GXM shaders or measure device performance"
+  },
+  "assets": {
+    "manifest_sha256": "5481d818422dd8a7fe37fa9cd45dbd7a6d805bd9a14749c69ab5f27bd831e7eb",
+    "payload_files": 9564,
+    "payload_bytes": 2201729082,
+    "full_payload_hash_verification": true,
+    "asset_changes_in_this_repair": false,
+    "retransfer_needed_if_manifest_matches": false
+  },
+  "settings": {
+    "title_id": "KNIF00540",
+    "attribute2": 12,
+    "heap_bytes": 268435456,
+    "build_quiet": false,
+    "performance_console": true,
+    "scene": [
+      960,
+      540
+    ],
+    "composite": [
+      960,
+      540
+    ],
+    "scanout": [
+      960,
+      544
+    ],
+    "fps_cap": 60
+  },
+  "artifacts": [
+    {
+      "path": ".work/vita/game-release-540p/eboot.bin",
+      "bytes": 9826131,
+      "sha256": "78326978b0ef4adf81f7a69579e676a477893244d4554a5336b146f949c1f70e",
+      "delivered_path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\eboot.bin"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife-vita-game-540p.vpk",
+      "bytes": 7169667,
+      "sha256": "5035bb41c6109cb021a5ed6f2c376f39e167ceb24c9724db0dba861724d3bc2f",
+      "delivered_path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\knife-vita-game-540p.vpk"
+    }
+  ],
+  "build_receipt": {
+    "path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\vita-game-release-540p-build.json",
+    "sha256": "61fd11debb1b1640bd5dafea98fe6b23463c63120a4951bdea3b0c5ac79cb9ba"
+  },
+  "pre_fix_symbols": {
+    "path": ".work/vita/target-recovery-20261103/pre-fix-sources-symbols.zip",
+    "bytes": 5458834,
+    "sha256": "dcffc8fd984f493186f92c8096596cb955156d6f8023ab4c74b4f9b78fee53d6"
+  }
+}

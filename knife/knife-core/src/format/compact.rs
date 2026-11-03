@@ -120,7 +120,8 @@ pub fn parse_atlas(data: &[u8]) -> Result<Vec<(&str, &[u8])>> {
         out.push((name, image));
         p = end;
     }
-    ensure!(p == data.len(), "unexpected bytes after KATL atlas");
+    ensure!(p == data.len() || (data.len() == p.next_multiple_of(2048)
+        && data[p..].iter().all(|&byte| byte == 0)), "unexpected bytes after KATL atlas");
     Ok(out)
 }
 
@@ -217,8 +218,31 @@ mod tests {
         for cut in [0, 11, 12, 20, atlas.len() - 1] {
             assert!(parse_atlas(&atlas[..cut]).is_err());
         }
-        atlas.extend_from_slice(&[0]);
+        atlas.extend_from_slice(&[1]);
         assert!(parse_atlas(&atlas).is_err());
+    }
+
+    #[test]
+    fn raw_atlas_accepts_only_its_zero_sector_padding() {
+        let image = fixture();
+        let mut atlas = b"KATL".to_vec();
+        for word in [1u32, 1, 5, image.len() as u32] {
+            atlas.extend_from_slice(&word.to_le_bytes());
+        }
+        atlas.extend_from_slice(b"thumb");
+        atlas.extend_from_slice(&image);
+        let exact = atlas.len();
+        let padded = exact.next_multiple_of(2048);
+        atlas.resize(padded, 0);
+        let entries = parse_atlas(&atlas).expect("raw archives pad KATL to a sector");
+        assert_eq!(entries[0], ("thumb", image.as_slice()));
+        atlas[padded - 1] = 1;
+        assert!(parse_atlas(&atlas).is_err(), "nonzero tail must be rejected");
+        atlas[padded - 1] = 0;
+        atlas.resize(padded + 2048, 0);
+        assert!(parse_atlas(&atlas).is_err(), "extra sectors are not padding");
+        atlas.truncate(exact + 1);
+        assert!(parse_atlas(&atlas).is_err(), "arbitrary zero tails are not sector padding");
     }
 
     #[test]

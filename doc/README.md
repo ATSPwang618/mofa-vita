@@ -1,6 +1,6 @@
 # 技术文档索引
 
-文档对应 `perf/render` 基线 `86c1fd8` 加本地启动视频校验更新，最后整理于 **2026-11-02**。当前交付版本是 `540p-86c1fd8-logo-20261102`；素材清单身份以 [08](08-素材与安装.md) 和源码内嵌 profile 为准。
+文档对应 `perf/render` 基线 `d734b38` 加本地修复，最后整理于 **2026-11-04**。当前交付版本是 `540p-d734b38-uifix-20261104`，Extra 图集按成员直接读取，继承 BGM 一秒 PCM 预读及读档/转场目标恢复；素材清单身份以 [08](08-素材与安装.md) 和源码内嵌 profile 为准。
 
 代码是实现事实来源。旧文档内的行号只辅助定位，以当前文件、常量和函数名为准。历史捕获、构建验证与实机验证分开表述：r2/r3/r4 使用旧的 480×270/720×404，后续 540p 优化记录也不能替代本次新素材包的实机回归。
 
@@ -17,18 +17,34 @@
 | [07-已知限制与未验证项](07-已知限制与未验证项.md) | 当前画质包尚需实机验证的内容与工具限制 |
 | [08-素材与安装](08-素材与安装.md) | 当前清单、素材处理、设备路径与配套更新 |
 | [09-仓库维护与清理](09-仓库维护与清理.md) | 资源唯一位置、产物保留、清理范围和校验规则 |
+| [10-资源加载失败修复](10-资源加载失败修复.md) | Scene 3 / PC 1148 定位、共用上传恢复、回归边界与设备复测 |
+| [11-高清纹理显存与崩溃修复](11-高清纹理显存与崩溃修复.md) | 最新 core、长立绘占用对比、页碎片修复、PVR 限制及回退 |
+| [12-透明调色板纹理排查](12-透明调色板纹理排查.md) | 全库颜色/alpha 统计、P4/P8 精确保留候选及实际 GPU 收益边界 |
+| [13-VitaDeck日志接收修复](13-VitaDeck日志接收修复.md) | 实机 EBOOT 身份、PC 长连接阻塞、接收补丁和日志保存 |
+| [14-演出材质离线显存限额](14-演出材质离线显存限额.md) | 全库预处理、20,181 个条目缩小、单张 RGBA 1 MiB 限额与配套更新 |
+| [15-读档与转场目标分配恢复](15-读档与转场目标分配恢复.md) | old frame 崩溃定位、备用目标复用、有限回收、未提交帧回退与 targetfix 交付 |
+| [16-BGM预读缓冲调整](16-BGM预读缓冲调整.md) | Opus BGM 一秒预读、300 KiB 单路增量、播放控制与 bgmbuf 验证 |
+| [17-书库与图录加载修复](17-书库与图录加载修复.md) | 整图集峰值、四个 raw KATL、675 张成员直接读取、缓存回收和配套资源更新 |
 
 工具分类见 [tools/README.md](../tools/README.md)；感谢页维护见 [credit-intro](../tools/credit-intro/README.md)；全剧情图库处理见 [quality540](../tools/quality540/README.md)。
 
 ## 证据
 
-[`evidence/`](evidence/) 保留五份机器可读摘要：
+[`evidence/`](evidence/) 保留十三份机器可读摘要：
 
 - `09-render-audit-evidence.json`：历史渲染审计。
 - `10-asset-copy-evidence.json`：历史资源复制链。
 - `12-hardware-render-evidence.json`：历史真机基线及捕获身份。
 - `13-native540-art-quality.json`：全图库重建时的构建、逐图解码与存储记录。
-- `14-logo-media-update.json`：当前启动视频更新、素材身份与配套 ARM 包记录。
+- `14-logo-media-update.json`：启动视频更新、素材身份与当时配套 ARM 包记录。
+- `15-resource-upload-recovery.json`：第一轮分配恢复、全归档元数据核验、回归与当时配套 ARM 包记录。
+- `16-high-art-memory-crash.json`：最新 core、高清立绘占用、页碎片回归及当前 ARM 包记录。
+- `17-texture-alpha-palette-audit.json`：全库透明度、完整 RGBA 颜色计数、当前纹理格式与调色板候选统计。
+- `18-vitadeck-log-reception.json`：日志接收阻塞复现、实际安装补丁、程序身份与实机日志恢复。
+- `19-offline-story-memory-budget.json`：全库离线缩小、独立解码、发布预算检查和 prebudget 包身份。
+- `20-save-load-target-recovery.json`：读档 core 身份、必需捕获恢复、114 项渲染测试与 targetfix 交付身份。
+- `21-bgm-pcm-buffer.json`：第二章断供证据、BGM 队列调整、29 项音频测试与 bgmbuf 交付身份。
+- `22-extra-ui-direct-ranges.json`：书库/图录失败窗口、675 张成员字节核验、直接读取分配上界、回收回归与 uifix 交付身份。
 
 旧 `doc/archive/` 可从提交 `a670193` 查询。旧探针 JSON、失效的 Windows 打包/交付记录及临时日志不再散放于当前工作树。证据内的旧工件路径是当时的身份记录，不保证相应临时副本仍保留。
 

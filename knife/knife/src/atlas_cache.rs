@@ -255,6 +255,24 @@ impl AtlasCache {
             knife_perf::add(Metric::CpuSourceHotRetained, bytes as u64, count as u64);
         }
     }
+    /// Page teardown drops only cold owners and queued speculation. Never free
+    /// an active read's reservation or invalidate another live ByteView.
+    pub fn discard_idle(&self, archive: &Archive, index: usize) -> usize {
+        let key = (archive.cache_identity(), index);
+        let mut state = match self.shared.state.try_lock() {
+            Ok(state) => state, Err(TryLockError::Poisoned(e)) => e.into_inner(), Err(_) => return 0,
+        };
+        state.jobs.retain(|job| job.key != key || job.demand);
+        if let Some(i) = state.entries.iter().position(|entry| entry.key == key && entry.bytes.is_unpinned()) {
+            let entry = state.entries.remove(i).unwrap();
+            let released = entry.bytes.allocation_len();
+            state.bytes -= released;
+            knife_perf::add(Metric::SourceCacheDropped, released as u64, 2);
+            Self::gauges(&state);
+            return released;
+        }
+        0
+    }
     pub fn range(&self, archive: Arc<Archive>, index: usize, offset: usize, len: usize) -> Result<ByteView> {
         let view = self.whole(archive, index)?.range(offset, len).context("shared atlas range outside entry")?;
         knife_perf::add(Metric::StageHit, len as u64, view.allocation_len() as u64);

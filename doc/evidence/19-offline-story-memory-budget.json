@@ -1,0 +1,115 @@
+{
+  "schema": "knife-offline-story-memory-delivery-v1",
+  "build_tag": "540p-d734b38-prebudget-20261102",
+  "source_manifest_sha256": "35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189",
+  "manifest_sha256": "5481d818422dd8a7fe37fa9cd45dbd7a6d805bd9a14749c69ab5f27bd831e7eb",
+  "assets_payload_bytes": 2201729082,
+  "assets_saved_bytes": 1430384640,
+  "policy": {
+    "rgba_allocation_cap": 1048576,
+    "maximum_width": 960,
+    "maximum_height_per_strip": 540,
+    "scope": "all story colour textures, irrespective of previously observed runtime use",
+    "language_strip_names": 84,
+    "whole_owner_also_bounded": true
+  },
+  "images_resized": 20181,
+  "by_archive": {
+    "jallpac": 9743,
+    "jallpachd": 10368,
+    "allpacml": 35,
+    "allpachdml": 35
+  },
+  "output_formats": {
+    "DXT1": 3748,
+    "DXT5": 15914,
+    "PNG": 519
+  },
+  "offline_verification": {
+    "schema": "knife-offline-story-memory-verification-v1",
+    "checks": {
+      "runtime_files_hashed": 9564,
+      "unselected_entries_byte_identical": 13645,
+      "resized_entries_decoded": 20181,
+      "logical_sizes_preserved": 20181,
+      "decoded_pixels": 3846795934
+    },
+    "source_manifest_sha256": "35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189",
+    "manifest_sha256": "5481d818422dd8a7fe37fa9cd45dbd7a6d805bd9a14749c69ab5f27bd831e7eb",
+    "images_resized": 20181,
+    "max_rgba_allocation": 1048576,
+    "elapsed_seconds": 100.52,
+    "on_device_test": false
+  },
+  "native_decoder": {
+    "images": 19662,
+    "pixels": 3711928653,
+    "pixel_crc_matches": true,
+    "four_row_windows_checked": true
+  },
+  "profile_budget_guard": {
+    "checked_colour_entries": 28604,
+    "protected_control_entries": 5198,
+    "max_rgba_allocation_bytes": 1048576,
+    "old_high_art_rejected": true
+  },
+  "tests_passed": 6,
+  "build_source_inputs_verified": 308,
+  "eboot": {
+    "bytes": 9802491,
+    "sha256": "515081089d046052d6360ee93632e4077cf00da1d5bb39952654581e4d2b0d6e"
+  },
+  "vpk": {
+    "bytes": 7160869,
+    "sha256": "873d9431f33341507222d5f4c04d99730a092d288b5802d170e688ca1367ec9d"
+  },
+  "changed_asset_files": [
+    "jallpac.hed",
+    "jallpac.mrg",
+    "jallpachd.hed",
+    "jallpachd.mrg",
+    "allpacml.hed",
+    "allpacml.mrg",
+    "allpachdml.hed",
+    "allpachdml.mrg",
+    "vita-540p-assets.json"
+  ],
+  "on_device_test_performed": false,
+  "runtime_resampling_added": false,
+  "editable_images_modified": false,
+  "report": ".work/vita/offline-texture-budget-20261102/staged/resample-report.json.gz",
+  "final_local_verification": {
+    "runtime_payload_files_verified": 9564,
+    "runtime_payload_bytes": 2201729082,
+    "editable_input_files_identical": 29868,
+    "editable_input_payload_bytes": 6034846364,
+    "build_sources_verified": 308,
+    "build_artifacts_verified": 10,
+    "vpk_crc_ok": true,
+    "eboot_matches_vpk": true,
+    "sizes": {
+      "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita": {
+        "bytes": 2220366928,
+        "gib": 2.0679
+      },
+      "dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-image-source": {
+        "bytes": 6053863457,
+        "gib": 5.6381
+      },
+      ".work/vita/offline-texture-budget-20261102/staged": {
+        "bytes": 4530950,
+        "gib": 0.0042
+      }
+    },
+    "elapsed_seconds": 25.72,
+    "on_device_test": false
+  },
+  "offline_tool_sha256": {
+    "tools/quality540/limit_runtime_art.py": "d4292b6199ba8fcdc8c6af1f0c973034532f68cc802e2efd97495d989fd5250f",
+    "tools/quality540/verify_runtime_art.py": "730d8dfd10daad67395508bb416325c37de468eae899fd3ba44ae72c0fda86d0",
+    "tools/quality540/test_limit_runtime_art.py": "3701d1c54e57a28cbd9978e3fb0f9ce676f4d1d5729119d1ccac249eedaf0740",
+    "tools/vita_image_metadata.py": "5b0d335cab7bea824e07ad93f81b871d53d44a4ace2cd3c8e5268cf310669be7",
+    "tools/generate_vita_asset_profile_540.py": "270042a461287030f0b9cad2cbc04edc9304d59a26cef2e0d261df5447013901",
+    "knife/knife-core/examples/verify_budgeted_art.rs": "965bb1a9ca7fc7848ed5378a4d0dc8c2adc3cca0c970b7ee706e2324e92e89bb"
+  }
+}

@@ -422,6 +422,20 @@ impl Archive {
         }
     }
 
+    /// Required seekable UI path: refuse an NX entry instead of silently doing
+    /// a full compressed read/inflate for every thumbnail. Only the member is
+    /// allocated, and header/extent checks still precede the card read.
+    pub fn read_direct_range(&self, index: usize, offset: usize, len: usize) -> Result<Vec<u8>> {
+        let entry = self.entries.get(index).context("missing archive entry")?;
+        ensure!(!entry.name.eq_ignore_ascii_case("NOFILE.EXISTS"), "missing archive entry");
+        let plan = self.entry_plan(entry, None)?;
+        ensure!(plan.kind.is_none(), "direct UI range requires offline raw KATL; entry is still NX compressed");
+        let end = offset.checked_add(len).context("direct range overflow")?;
+        ensure!(end <= plan.sizes.stored_bytes, "direct range outside archive entry");
+        let start = entry.offset.checked_add(offset as u64).context("direct archive offset overflow")?;
+        Ok(self.mrg.read_range(start, len)?.into_owned())
+    }
+
     pub fn read_by_name(&self, name: &str) -> Result<Vec<u8>> {
         let i = self
             .find(name)
@@ -622,5 +636,21 @@ mod range_tests {
         let archive = fixture.open();
         assert_eq!(archive.read_uncompressed_range(0, 120, 4).unwrap(), b"KIMG");
         assert!(archive.read_uncompressed_range(0, 2047, 2).is_err());
+    }
+
+    #[test]
+    fn direct_ui_range_never_inflates_a_compressed_entry_or_exceeds_bounds() {
+        let mut payload = vec![0u8; 2048];
+        payload[120..124].copy_from_slice(b"KIMG");
+        let raw = Fixture::new(&payload);
+        let archive = raw.open();
+        assert_eq!(archive.read_direct_range(0, 120, 4).unwrap(), b"KIMG");
+        assert!(archive.read_direct_range(0, 2047, 2).is_err());
+        assert!(archive.read_direct_range(0, usize::MAX, 4).is_err());
+        for gzip in [false, true] {
+            let nx = Fixture::new(&wrapped(&payload, gzip));
+            let error = nx.open().read_direct_range(0, 120, 4).unwrap_err();
+            assert!(error.to_string().contains("still NX compressed"));
+        }
     }
 }

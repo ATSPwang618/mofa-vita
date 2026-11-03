@@ -8,10 +8,17 @@ use knife_perf::{Gauge, Metric, Scope};
 
 pub(super) const FRAMES: usize = 960;
 const CHANNELS: usize = 8;
-// Close to the native port's two 5120-frame buffers, without changing the
-// mixer's 20ms envelopes or AudioOut format/latency contract.
-const QUEUED: usize = 10;
-const BLOCKS: usize = QUEUED + 2;
+const DEFAULT_QUEUED: usize = 10;
+const BGM_QUEUED: usize = 50;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Buffering { Default, Bgm }
+impl Buffering {
+    pub(super) fn queued(self) -> usize {
+        match self { Self::Default => DEFAULT_QUEUED, Self::Bgm => BGM_QUEUED }
+    }
+    fn blocks(self) -> usize { self.queued() + 2 }
+    fn bytes(self) -> usize { self.blocks() * FRAMES * size_of::<[f32; 2]>() }
+}
 static WORKERS: AtomicUsize = AtomicUsize::new(0);
 static NEXT_STREAM: AtomicUsize = AtomicUsize::new(1);
 
@@ -71,15 +78,18 @@ pub(super) struct Pump {
     label: Arc<str>, wait: Option<WaitEpisode>,
 }
 impl Pump {
-    pub(super) fn spawn_named<F, R>(name: &str, open: F) -> Result<Self, String>
+    pub(super) fn spawn_named<F, R>(name: &str, buffering: Buffering, open: F) -> Result<Self, String>
     where F: FnOnce() -> Result<R, String> + Send + 'static, R: Reader + 'static {
         let channel = Arc::new(Channel { _permit: Permit::acquire()?, bytes: AtomicUsize::new(0) });
         let worker_channel = channel.clone();
         let label = stream_label(name);
         let worker_label = label.clone();
         let wait = Some(WaitEpisode::new(Metric::AudioStreamStartWall));
-        let (sender, ready) = mpsc::sync_channel(QUEUED);
-        let (recycle, free) = mpsc::sync_channel(BLOCKS);
+        let (sender, ready) = mpsc::sync_channel(buffering.queued());
+        let (recycle, free) = mpsc::sync_channel(buffering.blocks());
+        tracing::info!(stream = %label, queued_blocks = buffering.queued(),
+            prefetch_ms = buffering.queued() * 20, pcm_pool_bytes = buffering.bytes(),
+            "Audio stream PCM buffering");
         let cancel = Arc::new(AtomicBool::new(false));
         let stopped = cancel.clone();
         let worker = thread::Builder::new().name("knife-audio-stream".into())
@@ -101,8 +111,8 @@ impl Pump {
                 // Allocate once on the channel worker, not every mixer block.
                 let make_pool = || -> Result<Vec<Block>, String> {
                     let mut pool = Vec::new();
-                    pool.try_reserve_exact(BLOCKS).map_err(|_| "audio packet pool allocation")?;
-                    for _ in 0..BLOCKS {
+                    pool.try_reserve_exact(buffering.blocks()).map_err(|_| "audio packet pool allocation")?;
+                    for _ in 0..buffering.blocks() {
                         let mut pcm = Vec::new();
                         pcm.try_reserve_exact(FRAMES).map_err(|_| "audio PCM allocation")?;
                         pcm.resize(FRAMES, [0.0; 2]);
@@ -120,8 +130,8 @@ impl Pump {
                         return;
                     }
                 };
-                owner.bytes.store(BLOCKS * FRAMES * 8, Ordering::Relaxed);
-                knife_perf::gauge_add(Gauge::AudioStreamBufferBytes, (BLOCKS * FRAMES * 8) as u64);
+                owner.bytes.store(buffering.bytes(), Ordering::Relaxed);
+                knife_perf::gauge_add(Gauge::AudioStreamBufferBytes, buffering.bytes() as u64);
                 loop {
                     if stopped.load(Ordering::Acquire) { break; }
                     let mut block = match initial.pop() {
@@ -243,12 +253,77 @@ mod tests {
         assert_eq!(WORKERS.load(Ordering::Acquire), 0);
     }
     #[test]
+    fn bgm_prefill_survives_700ms_of_pcm_demand_while_its_reader_is_blocked() {
+        let _lock = SERIAL.lock().unwrap(); drain_workers();
+        struct Gated {
+            at: usize, gate_at: usize, entered: mpsc::Sender<()>, resume: Receiver<()>,
+        }
+        impl Reader for Gated {
+            fn mono(&self) -> bool { false }
+            fn read(&mut self, out: &mut [[f32; 2]]) -> Result<usize, String> {
+                if self.at == self.gate_at {
+                    self.entered.send(()).unwrap(); self.resume.recv().unwrap();
+                }
+                for sample in out.iter_mut() {
+                    *sample = [self.at as f32, -(self.at as f32)]; self.at += 1;
+                }
+                Ok(out.len())
+            }
+        }
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let mut pump = Pump::spawn_named("BGM-regression", Buffering::Bgm, move || Ok(Gated {
+            at: 0, gate_at: FRAMES * Buffering::Bgm.queued(), entered: entered_tx, resume: resume_rx,
+        })).unwrap();
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let mut observed = 0;
+        for n in 0..FRAMES * 35 {
+            match pump.sample() {
+                Poll::Sample(value, false) => {
+                    assert_eq!(value, [n as f32, -(n as f32)]); observed += 1;
+                }
+                Poll::Pending => break,
+                _ => panic!("buffered music must retain its samples"),
+            }
+        }
+        let mut tail = 0;
+        for n in FRAMES * 35..FRAMES * Buffering::Bgm.queued() {
+            match pump.sample() {
+                Poll::Sample(value, false) => {
+                    assert_eq!(value, [n as f32, -(n as f32)]); tail += 1;
+                }
+                _ => break,
+            }
+        }
+        let exhausted = matches!(pump.sample(), Poll::Pending);
+        // No wall-clock sleep: with the reader held at a barrier, consume the
+        // exact 33,600 frames a real mixer would request during a 700ms stall.
+        let bytes = pump._channel.bytes.load(Ordering::Relaxed);
+        resume_tx.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(2);
+        let resumed = loop {
+            match pump.sample() {
+                Poll::Sample(value, false) => break value,
+                Poll::Pending => thread::yield_now(), _ => panic!("reader did not resume"),
+            }
+            assert!(Instant::now() < until);
+        };
+        drop(pump); drain_workers();
+        assert_eq!(observed, FRAMES * 35, "BGM queue exhausted before 700ms of PCM demand");
+        assert_eq!(tail, FRAMES * 15);
+        assert!(exhausted, "the queue must be finite even while the decoder is blocked");
+        let next = (FRAMES * Buffering::Bgm.queued()) as f32;
+        assert_eq!(resumed, [next, -next], "resume must not skip or repeat source samples");
+        assert_eq!(bytes, 399_360);
+        assert!(bytes <= 400 * 1024, "one BGM pool must remain below 400KiB");
+    }
+    #[test]
     fn blocked_open_does_not_block_poll_or_another_channel_and_late_cancel_is_safe() {
         let _lock = SERIAL.lock().unwrap(); drain_workers();
         let (tx, rx) = mpsc::channel();
-        let mut blocked = Pump::spawn_named("test-stream", move || { rx.recv().unwrap(); Ok(Sequence { at: 0, end: 1 }) }).unwrap();
+        let mut blocked = Pump::spawn_named("test-stream", Buffering::Default, move || { rx.recv().unwrap(); Ok(Sequence { at: 0, end: 1 }) }).unwrap();
         for _ in 0..1000 { assert!(matches!(blocked.sample(), Poll::Pending)); }
-        let mut other = Pump::spawn_named("test-stream", || Ok(Sequence { at: 0, end: 7 })).unwrap();
+        let mut other = Pump::spawn_named("test-stream", Buffering::Default, || Ok(Sequence { at: 0, end: 7 })).unwrap();
         let until = Instant::now() + Duration::from_secs(2); let mut n = 0;
         loop { match other.sample() {
             Poll::Sample(v, false) => { assert_eq!(v, [n as f32, -(n as f32)]); n += 1; }
@@ -259,26 +334,30 @@ mod tests {
     #[test]
     fn recycled_pool_preserves_pcm_across_queue_backpressure_and_partial_eof() {
         let _lock = SERIAL.lock().unwrap(); drain_workers();
-        let total = FRAMES * (BLOCKS + 5) + 37;
-        let mut pump = Pump::spawn_named("test-stream", move || Ok(Sequence { at: 0, end: total })).unwrap();
-        let mut n = 0; let until = Instant::now() + Duration::from_secs(3);
-        loop { match pump.sample() {
-            Poll::Sample(v, false) => { assert_eq!(v, [n as f32, -(n as f32)]); n += 1; }
-            Poll::End => break, Poll::Pending => thread::yield_now(), _ => panic!("bad packet")
-        } assert!(Instant::now() < until); }
-        assert_eq!(n, total); drop(pump); drain_workers();
+        for buffering in [Buffering::Default, Buffering::Bgm] {
+            let total = FRAMES * (buffering.blocks() + 5) + 37;
+            let mut pump = Pump::spawn_named("test-stream", buffering, move || Ok(Sequence { at: 0, end: total })).unwrap();
+            let mut n = 0; let until = Instant::now() + Duration::from_secs(3);
+            loop { match pump.sample() {
+                Poll::Sample(v, false) => { assert_eq!(v, [n as f32, -(n as f32)]); n += 1; }
+                Poll::End => break, Poll::Pending => thread::yield_now(), _ => panic!("bad packet")
+            } assert!(Instant::now() < until); }
+            assert_eq!(n, total);
+            assert_eq!(pump._channel.bytes.load(Ordering::Relaxed), buffering.bytes());
+            drop(pump); drain_workers();
+        }
     }
     #[test]
     fn failed_open_is_terminal_and_channels_are_bounded() {
         let _lock = SERIAL.lock().unwrap(); drain_workers();
-        let mut pump = Pump::spawn_named("test-stream", || -> Result<Sequence, String> { Err("broken ogg".into()) }).unwrap();
+        let mut pump = Pump::spawn_named("test-stream", Buffering::Default, || -> Result<Sequence, String> { Err("broken ogg".into()) }).unwrap();
         let until = Instant::now() + Duration::from_secs(2);
         loop { match pump.sample() { Poll::Failed(e) => { assert_eq!(e, "broken ogg"); break; },
             Poll::Pending => thread::yield_now(), _ => panic!("not an error") }
             assert!(Instant::now() < until); }
         drop(pump); drain_workers();
-        let held: Vec<_> = (0..CHANNELS).map(|_| Pump::spawn_named("test-stream", || Ok(Sequence { at: 0, end: usize::MAX })).unwrap()).collect();
-        assert!(Pump::spawn_named("test-stream", || Ok(Sequence { at: 0, end: 0 })).is_err());
+        let held: Vec<_> = (0..CHANNELS).map(|_| Pump::spawn_named("test-stream", Buffering::Default, || Ok(Sequence { at: 0, end: usize::MAX })).unwrap()).collect();
+        assert!(Pump::spawn_named("test-stream", Buffering::Default, || Ok(Sequence { at: 0, end: 0 })).is_err());
         drop(held); drain_workers();
     }
     #[test]
@@ -293,7 +372,7 @@ mod tests {
                 out[0] = [0.25,0.25]; self.at.set(1); Ok(1)
             }
         }
-        let mut pump = Pump::spawn_named("test-stream", || Ok(Local { at: std::rc::Rc::new(std::cell::Cell::new(0)),
+        let mut pump = Pump::spawn_named("test-stream", Buffering::Default, || Ok(Local { at: std::rc::Rc::new(std::cell::Cell::new(0)),
             thread: thread::current().id() })).unwrap();
         let until = Instant::now() + Duration::from_secs(2);
         while !pump.worker.as_ref().unwrap().is_finished() {

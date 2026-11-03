@@ -8,6 +8,8 @@ pub struct Member {
 pub struct Atlas {
     pub index:usize,pub entry:&'static str,pub offset:u64,
     pub stored_sectors:u16,pub unpacked_sectors:u16,pub decoded_bytes:usize,
+    /// Raw KATL permits a checked seek/read of one member, with no NX inflate.
+    pub direct:bool,
     pub members:&'static [Member],
 }
 include!("../data/vita_atlas_index_540p.rs");

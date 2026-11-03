@@ -335,6 +335,20 @@ impl WTex {
         self.map.get(&id).cloned()
     }
 
+    #[cfg(target_os = "vita")]
+    fn release_extra_except(&mut self, page: u32) {
+        let keep: &[&str] = match page {
+            38 => &["EXTRA_PARTS", "CG_PARTS"], 39 => &["EXTRA_PARTS", "SOUND_PARTS"],
+            40 => &["ARCHIVE_PARTS", "ARCHTHUMB_PARTS"], _ => &[],
+        };
+        let unused = |stem: &str| ["EXTRA_PARTS", "CG_PARTS", "SOUND_PARTS", "ARCHIVE_PARTS", "ARCHTHUMB_PARTS"]
+            .contains(&stem) && !keep.contains(&stem);
+        self.map.retain(|id, _| !self.ids.get(id).is_some_and(|(stem,_)| unused(stem)));
+        self.ids.retain(|_, (stem,_)| !unused(stem));
+        self.atlases.retain(|stem, _| !unused(stem));
+        self.retry_after.retain(|stem, _| !unused(stem));
+    }
+
     /// jp_9ACB0(1) after a language change: every loaded resource again (jp_9A940 picks each atlas's
     /// language file anew).
     pub fn relang(&mut self, game: &Game, r: &Renderer) {

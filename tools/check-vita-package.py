@@ -64,7 +64,9 @@ def check(path, title_id="KNIF00002", release=False):
             if sfo.get(key) != value:
                 raise ValueError(f"incorrect {key}: {sfo.get(key)!r}")
         profile = "540p"
-        if release and (profile not in sfo.get("TITLE", "") or "DEV" in sfo["TITLE"]):
+        # TITLE is user-facing and may omit the resolution. The fixed release
+        # TITLE_ID binds the 540p profile independently of that display name.
+        if release and (sfo["TITLE_ID"] != "KNIF00540" or "DEV" in sfo.get("TITLE", "")):
             raise ValueError(f"release package must identify the {profile} profile")
         if not release and "DEV" not in sfo.get("TITLE", ""):
             raise ValueError("development probe must be identified in title")

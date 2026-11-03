@@ -893,6 +893,14 @@ impl Ui {
         let k = if a.ch == 0 { 1.0 } else { 0.25 };
         let alpha = (a.ph[0].sin() + 1.0) * 0.5 * k;
         if !glow.is_empty() && alpha > 0.0 {
+            #[cfg(target_os = "vita")]
+            if self.w.arc.rt.is_none() {
+                let Ok(target) = game.vita_scene_target(r, W as u32, H as u32, "archive glow") else { return };
+                self.w.arc.rt = Some(target.tex);
+            }
+            #[cfg(target_os = "vita")]
+            let rt = self.w.arc.rt.as_ref().unwrap().clone();
+            #[cfg(not(target_os = "vita"))]
             let rt = self.w.arc.rt.get_or_insert_with(|| r.create_scene_target(W as u32, H as u32, "archive glow").tex).clone();
             game.ui_passes.push((RenderTarget { tex: rt.clone() }, Some([0.0; 4]), glow));
             let mut q = Quad::rect(rt, [0.0, 0.0, W, H], [1.0, 1.0, 1.0, alpha]);

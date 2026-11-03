@@ -1,0 +1,209 @@
+{
+  "schema": "knife-extra-ui-direct-ranges-v1",
+  "verified_at": "2026-11-03T23:39:37.449081+00:00",
+  "build_tag": "540p-d734b38-uifix-20261104",
+  "branch": "perf/render",
+  "base_commit": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+  "changes_local_only": true,
+  "committed": false,
+  "pushed": false,
+  "remote_read_only_observation": {
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+    "perf/render": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8"
+  },
+  "trigger": {
+    "log_sha256": "42ff0a3ca483f7dd42445b033079b2b8cb340c7c6469fde601e140e0cebc138a",
+    "failed_page": 38,
+    "failed_frames": [
+      77320,
+      77910,
+      78489,
+      79079
+    ],
+    "prior_archive_ready_frame": 76445,
+    "cg_decoded_bytes": 25037579,
+    "cg_stored_sector_bytes": 9525248,
+    "limitation": "Original log lacks the exact malloc/pinned-budget error; not claimed as uniquely proven."
+  },
+  "change": {
+    "offlined_outer_nx": true,
+    "raw_atlases": 4,
+    "image_payloads_changed": false,
+    "story_assets_changed": false,
+    "audio_changed": false,
+    "render_algorithm_changed": false,
+    "whole_cg_preparation_removed": true,
+    "direct_members_require_no_nx": true,
+    "extra_page_idle_owners_released": true,
+    "active_source_and_gpu_owners_preserved": true,
+    "detailed_events": "ui_source_event includes build/page/status/owner gauges and bounded error chain"
+  },
+  "preservation": {
+    "schema": "knife-extra-ui-byte-preservation-v1",
+    "result": "PASS",
+    "members": 675,
+    "unchanged_other_ui_entries": 30,
+    "archive_names_order_unchanged": true,
+    "texture_sizes_codecs_and_bytes_unchanged": true,
+    "changed_asset_files": [
+      "allui.hed",
+      "allui.mrg",
+      "vita-540p-assets.json"
+    ],
+    "changed_entries": [
+      {
+        "index": 49,
+        "entry": "CG_PARTS.NXZ",
+        "before": 9525248,
+        "after": 25038848,
+        "exact_katl_bytes": 25037579,
+        "members": 401,
+        "byte_identical_kimg": true
+      },
+      {
+        "index": 61,
+        "entry": "ARCHIVE_PARTS_EN.NXZ",
+        "before": 3166208,
+        "after": 15190016,
+        "exact_katl_bytes": 15188504,
+        "members": 69,
+        "byte_identical_kimg": true
+      },
+      {
+        "index": 62,
+        "entry": "ARCHIVE_PARTS_ZC.NXZ",
+        "before": 3170304,
+        "after": 15190016,
+        "exact_katl_bytes": 15188157,
+        "members": 69,
+        "byte_identical_kimg": true
+      },
+      {
+        "index": 65,
+        "entry": "ARCHTHUMB_PARTS.NXZ",
+        "before": 4327424,
+        "after": 8753152,
+        "exact_katl_bytes": 8751171,
+        "members": 136,
+        "byte_identical_kimg": true
+      }
+    ],
+    "old_manifest_sha256": "5481d818422dd8a7fe37fa9cd45dbd7a6d805bd9a14749c69ab5f27bd831e7eb",
+    "new_manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+    "old_allui_mrg_bytes": 37550080,
+    "new_allui_mrg_bytes": 81532928,
+    "changed_streams": 0,
+    "verified_stream_names": 9470,
+    "other_manifest_file_records_unchanged": true
+  },
+  "real_file_worker": {
+    "atlases": 4,
+    "members": 675,
+    "member_bytes": 64152514,
+    "card_bytes": 64163314,
+    "inflations": 0,
+    "max_member": 1048672,
+    "max_allocation": 1048688
+  },
+  "validation": {
+    "core_tests": 48,
+    "render_tests": 114,
+    "worker_and_ownership_tests": 5,
+    "offline_packer_tests": 5,
+    "source_input_hashes": 309,
+    "artifact_hashes": 10,
+    "arm_build": true,
+    "vpk_crc": true,
+    "vpk_eboot_matches": true,
+    "build_tag_embedded": true,
+    "manifest_and_generated_indices_match": true,
+    "runtime_verified": false,
+    "hardware_verified": false,
+    "limits": [
+      "Host file reads and allocation maximum do not establish Vita timing or total process peak.",
+      "Full desktop game tests have an existing GROUP_SHAPES cfg error; targeted harness imports production source.",
+      "Source pin, failure/retry and direct-read behavior are exercised; no physical GPU pixels."
+    ]
+  },
+  "delivery": {
+    "directory": "/mnt/d/AI-CODEX/mofa-vita/dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita",
+    "title_id": "KNIF00540",
+    "device_eboot": "ux0:app/KNIF00540/eboot.bin",
+    "device_assets": "ux0:data/WitchontheHolyNight/assets/",
+    "asset_retransfer_required": true,
+    "changed_assets": [
+      {
+        "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/allui.hed",
+        "bytes": 568,
+        "sha256": "c5f000179a0eff92c78e9f24eec3ea11d8746a2cbe6309c5dd701fceff938628"
+      },
+      {
+        "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/allui.mrg",
+        "bytes": 81532928,
+        "sha256": "71590fb5ddba4193ecf78d1effab630d6247daf0b5b67c36527e9adda89c8502"
+      },
+      {
+        "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/vita-540p-assets.json",
+        "bytes": 1556381,
+        "sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3"
+      }
+    ],
+    "manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+    "other_asset_records_unchanged": true,
+    "payload_bytes": 2245711930,
+    "asset_file_count": 9564
+  },
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9848139,
+      "sha256": "7af8f0ca357298673a20b87bb9d98963fd57c16290385ca78d49e599291d28bb"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-game-540p.vpk",
+      "bytes": 7177729,
+      "sha256": "b382a5a5d4afe6b07ea34b8840c82d74cea1d725ecf90ee3391dcee2e360cfcf"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/vita-game-release-540p-build.json",
+      "bytes": 65608,
+      "sha256": "33cb799f2ea7333205ab147e9e0a7a22a7df71e3b8b02b3de81558c0f4fb97d2"
+    }
+  ],
+  "logs": [
+    {
+      "path": ".work/vita/extra-ui-20261104/core-tests.log",
+      "bytes": 4983,
+      "sha256": "7cdf3f2c4976fb480494d0557f605484084731b964bebf70f7209e973d6fee44"
+    },
+    {
+      "path": ".work/vita/extra-ui-20261104/render-tests.log",
+      "bytes": 15217,
+      "sha256": "d5145dafe0b7c56223c5fccef8fcb9faeb5961c832ca85f4caea078298788372"
+    },
+    {
+      "path": ".work/vita/extra-ui-20261104/packer-tests.log",
+      "bytes": 972,
+      "sha256": "28ad676e64dc8c47777bec55fbfa77e732183cc858dffabb1e7287508cde4839"
+    },
+    {
+      "path": ".work/vita/extra-ui-20261104/host-tests-2/output.log",
+      "bytes": 1432,
+      "sha256": "504a3c457dce158290518f43c03761eb900cfca538ede310f794382a148f4a50"
+    }
+  ],
+  "source_checks": {
+    "knife/knife/src/assets.rs": "50cfb1ddd271f3302ccb499b009ed996a1be163d084d9f1be6d7cc03121b43d8",
+    "knife/knife/src/atlas_cache.rs": "718f63470bcfb021cdabc54ef0b33c136e7ea6b260d1ad323b805746aa72f8ec",
+    "knife/knife-core/src/format/archive.rs": "1d22710d6ed89455af26606d054f7b8191b85ae0c29a1b121e79509149fc8d2f",
+    "knife/knife-core/src/format/compact.rs": "f632c25c03a0d0ddfc2a106ac7b64c24436cf0d1e5ed67b8124353db2a4330fb",
+    "knife/knife/src/vita_atlas_index.rs": "3da792c0a35acf91d89ec1406cc4ef545a4f42e1354b147c9de434f54090e777",
+    "knife/knife/data/vita_atlas_index_540p.rs": "120cda42ac38a05bf34cc49c3c5d24d2761ac89fc6af5c0f156fe819d98e6099",
+    "knife/knife-render/src/byte_view.rs": "dbe1312905d4f100c3b1d31fdeeda8d22ac566a8c0b2734ea23fa910323f689c"
+  },
+  "local_rollback_zip": {
+    "path": ".work/vita/extra-ui-20261104/before-ui-fix.zip",
+    "bytes": 58574266,
+    "sha256": "797aeb123edb425226453af24350676316bdd9a810521d010d2575d16f8664ea"
+  }
+}

@@ -119,6 +119,10 @@ pub struct Trace {
     pub external_cdram_bytes: usize,
     pub fail_next_retirement: bool,
     pub fail_next_compressed_create: bool,
+    /// Driver allocation failures despite a successful free-memory query.
+    pub fail_texture_allocations: usize,
+    pub texture_allocation_attempts: usize,
+    pub pressure_waits: usize,
     pub fail_next_seal: bool,
     /// Test a finite native render-target budget independently of pixel bytes.
     pub render_target_limit: Option<usize>,
@@ -139,13 +143,33 @@ pub struct Gxm {
     next_id: usize,
     /// Last barrier decision, so tests can assert the model runs.
     pub last_finish_before: bool,
+    last_texture_allocation_failed: bool,
 }
 
 impl Gxm {
     pub fn begin_batch(&mut self, _basic_quads: usize, _effect_vertices: usize) -> Result<(), String> { Ok(()) }
-    pub fn reclaim_retired(&mut self, _wait: bool) -> Result<(), String> { Ok(()) }
+    pub fn reclaim_retired(&mut self, wait: bool) -> Result<(), String> {
+        if wait { self.control.borrow_mut().pressure_waits += 1; }
+        Ok(())
+    }
+    pub fn texture_allocation_failed(&self) -> bool { self.last_texture_allocation_failed }
+    fn allocate_texture(&mut self, bytes: usize) -> Result<(), String> {
+        self.control.borrow_mut().texture_allocation_attempts += 1;
+        if bytes > self.available_cdram()? {
+            self.last_texture_allocation_failed = true;
+            return Err("mock native CDRAM allocation budget exceeded".into());
+        }
+        let mut control = self.control.borrow_mut();
+        if control.fail_texture_allocations != 0 {
+            control.fail_texture_allocations -= 1;
+            self.last_texture_allocation_failed = true;
+            return Err("injected native CDRAM allocation failure".into());
+        }
+        Ok(())
+    }
     pub fn texture_charge(bytes: u32) -> Result<u32, String> {
-        let granule = if knife_perf::optimizations::enabled(knife_perf::optimizations::TEXTURE_POOL) { 64 } else { 256 * 1024 };
+        let granule = if knife_perf::optimizations::enabled(knife_perf::optimizations::TEXTURE_POOL)
+            && bytes < 256 * 1024 { 64 } else { 256 * 1024 };
         bytes.checked_add(granule - 1).map(|v| v & !(granule - 1)).ok_or("texture charge overflow".into())
     }
     pub fn plan_scene(&mut self, target: Option<&TextureId>, reads: &[TextureId], kind: u32) -> Result<(), String> {
@@ -175,6 +199,7 @@ impl Gxm {
             textures: HashMap::new(),
             next_id: 0,
             last_finish_before: true,
+            last_texture_allocation_failed: false,
         })
     }
     #[allow(clippy::too_many_arguments)]
@@ -189,6 +214,7 @@ impl Gxm {
         linear: bool,
         render_target: bool,
     ) -> Result<TextureId, String> {
+        self.last_texture_allocation_failed = false;
         if width == 0 || width > 2048 || height == 0 || height > 2048 {
             return Err("mock texture dimensions".into());
         }
@@ -198,9 +224,7 @@ impl Gxm {
             return Err("mock texture format".into());
         }
         let charge = Self::texture_charge(((width + 7) & !7) * height * bpp)? as usize;
-        if charge > self.available_cdram()? {
-            return Err("mock native CDRAM allocation budget exceeded".into());
-        }
+        self.allocate_texture(charge)?;
         if render_target && self.control.borrow().render_target_limit.is_some_and(|limit|
             self.textures.values().filter(|texture| texture.target).count() >= limit) {
             return Err("mock native render-target budget exceeded".into());
@@ -239,12 +263,11 @@ impl Gxm {
         Ok(TextureId(id))
     }
     pub fn create_gxt_texture(&mut self, file: &[u8], srgb: bool, linear: bool) -> Result<TextureId, String> {
+        self.last_texture_allocation_failed = false;
         let gxt = GxtTexture::parse(file).map_err(|e| e.to_string())?;
         let payload_bytes = gxt.data.len();
         let allocation_bytes = Self::texture_charge(u32::try_from(payload_bytes).map_err(|_| "GXT allocation overflow")?)? as usize;
-        if allocation_bytes > self.available_cdram()? {
-            return Err("mock compressed CDRAM allocation budget exceeded".into());
-        }
+        self.allocate_texture(allocation_bytes)?;
         if std::mem::take(&mut self.control.borrow_mut().fail_next_compressed_create) {
             return Err("injected native compressed create failure".into());
         }

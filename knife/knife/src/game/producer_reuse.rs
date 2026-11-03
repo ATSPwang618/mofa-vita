@@ -1,7 +1,10 @@
 //! Content versions belong to producer outputs, not animation phase flags.
 //! Only complete/discardable outputs may rotate; inherited history never does.
 use std::sync::{Arc, Weak};
+#[cfg(not(test))]
 use knife_render::{CommandEncoder, GpuTexture, Quad, RenderTarget, Renderer};
+#[cfg(test)]
+use crate::vita::{CommandEncoder, GpuTexture, Quad, RenderTarget, Renderer};
 use knife_perf::{Gauge, Metric, memory_budget};
 
 #[derive(Default)]
@@ -45,6 +48,21 @@ pub(super) struct Ring {
 }
 impl Ring {
     pub fn bytes(&self) -> usize { self.bytes }
+    /// Give a spare output to a required capture before allocating more CDRAM.
+    /// A surface still read/written by the frame must never become its capture.
+    pub fn take_for_capture(&mut self, logical: [u32; 2], physical: [u32; 2],
+        excluded: &[usize], role: u64) -> Option<RenderTarget>
+    {
+        let spare = self.spare.as_ref()?;
+        if [spare.tex.width, spare.tex.height] != logical || spare.tex.physical_size() != physical
+            || excluded.contains(&spare.tex.render_identity().0) { return None; }
+        let target = self.spare.take();
+        let bytes = std::mem::take(&mut self.bytes);
+        self.retry_after = self.clock.saturating_add(8);
+        knife_perf::add(Metric::TargetRingRelease, bytes as u64, role);
+        tracing::info!(role, reused_bytes = bytes, "Reusing target ring spare for required capture");
+        target
+    }
     pub fn release(&mut self, role: u64) -> usize {
         let released = std::mem::take(&mut self.bytes);
         self.spare = None;

@@ -751,6 +751,14 @@ impl Ui {
         pen.fill(&mut cap, &white, 0.0, 0.0, 640.0, 448.0);
         let mut view = old.view;
         Self::wcg_view_quads(c, &white, &mut cap, &mut view, old.pic.as_ref(), old.var, c.pic_a, false);
+        #[cfg(target_os = "vita")]
+        if c.rt.is_none() {
+            let Ok(target) = game.vita_scene_target(r, W as u32, H as u32, "cg capture") else { return };
+            c.rt = Some(target.tex);
+        }
+        #[cfg(target_os = "vita")]
+        let rt = c.rt.as_ref().unwrap().clone();
+        #[cfg(not(target_os = "vita"))]
         let rt = c.rt.get_or_insert_with(|| r.create_scene_target(W as u32, H as u32, "cg capture").tex).clone();
         game.ui_passes.push((RenderTarget { tex: rt.clone() }, Some([0.0, 0.0, 0.0, 1.0]), cap));
         out.push(Quad::rect(rt, [0.0, 0.0, W, H], [1.0, 1.0, 1.0, c.xf]));

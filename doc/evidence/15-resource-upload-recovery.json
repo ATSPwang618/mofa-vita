@@ -1,0 +1,188 @@
+{
+  "schema": "knife-resource-upload-recovery-v1",
+  "as_of": "2026-11-02",
+  "source_head": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+  "source_branch": "perf/render",
+  "changes_committed": false,
+  "remote_writes_performed": false,
+  "build_tag": "540p-d734b38-resourcefix-20261102",
+  "reported_failure": {
+    "build_tag": "540p-86c1fd8-logo-20261102",
+    "scene": 3,
+    "pc": 1148,
+    "command": "SCH2",
+    "image": "YAM_A_00_01_01",
+    "archive": "jallpac",
+    "index": 11318,
+    "native_block_failed_bytes": 4128768,
+    "log": {
+      "bytes": 1110242,
+      "sha256": "c599a162a9d658423043bfececbc9011daa512a8ef514bfb87f549fe1880e3f2"
+    },
+    "limitation": "Old generic registration/upload error omitted native return code; exact instantaneous kernel or policy cause remains undetermined."
+  },
+  "recovery": {
+    "only_clean_cdram_allocation_failures": true,
+    "initial_completion_retry": 1,
+    "maximum_idle_evictions": 8,
+    "maximum_allocation_attempts": 10,
+    "complete_pending_frame_pinned": true,
+    "encoded_and_decoded_owners_reused": true,
+    "normal_success_additional_waits": 0,
+    "cache_budgets_changed": false,
+    "resource_error_preserves_native_cause": true
+  },
+  "validation": {
+    "initial_red_regressions_failed": 3,
+    "renderer_tests_passed": 104,
+    "renderer_test_threads": 1,
+    "renderer_parallel_limitation": "Process-wide optimization switches interfere between concurrent tests; full suite verified serially.",
+    "native_host_cases": 95,
+    "native_host_checks": 1343,
+    "native_host_failures": 0,
+    "native_host_sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer",
+      "LeakSanitizer"
+    ],
+    "native_backend_snapshot_files_verified": 13,
+    "build_source_files_verified": 306,
+    "build_artifacts_verified": 10,
+    "vpk_crc_ok": true,
+    "vpk_eboot_identical": true,
+    "build_tag_and_recovery_text_in_elf": true,
+    "asset_profile_check_passed": true,
+    "startup_key_files": 37,
+    "startup_read_bytes": 4434498,
+    "package_title_and_negative_checks": {
+      "current_title_without_resolution": "PASS",
+      "wrong_title_id_rejected": "incorrect TITLE_ID: 'KNIF00270'",
+      "development_title_rejected": "release package must identify the 540p profile",
+      "non_engine_payload_rejected": "unexpected non-engine payload: assets/invalid-extra.bin",
+      "wrong_memory_mode_rejected": "incorrect ATTRIBUTE2: 12"
+    }
+  },
+  "texture_layout_audit": {
+    "schema": "knife-resource-upload-layout-audit-v1",
+    "archives": {
+      "allui": {
+        "images": 1043,
+        "unique_images": 1041,
+        "codecs": {
+          "9": 801,
+          "7": 230,
+          "2": 12
+        },
+        "gxt_images_crossing_legacy_axis": 0,
+        "maximum_graded_linear_page_bytes": 2097152
+      },
+      "jallpac": {
+        "images": 22148,
+        "unique_images": 17104,
+        "codecs": {
+          "9": 17463,
+          "7": 121,
+          "2": 4491,
+          "1": 73
+        },
+        "gxt_images_crossing_legacy_axis": 4221,
+        "maximum_graded_linear_page_bytes": 4194304
+      },
+      "jallpachd": {
+        "images": 11406,
+        "unique_images": 11366,
+        "codecs": {
+          "9": 10935,
+          "7": 15,
+          "2": 411,
+          "1": 45
+        },
+        "gxt_images_crossing_legacy_axis": 4791,
+        "maximum_graded_linear_page_bytes": 4194304
+      },
+      "allpacml": {
+        "images": 163,
+        "unique_images": 158,
+        "codecs": {
+          "9": 69,
+          "2": 91,
+          "7": 3
+        },
+        "gxt_images_crossing_legacy_axis": 0,
+        "maximum_graded_linear_page_bytes": 786432
+      },
+      "allpachdml": {
+        "images": 85,
+        "unique_images": 81,
+        "codecs": {
+          "9": 5,
+          "2": 80
+        },
+        "gxt_images_crossing_legacy_axis": 0,
+        "maximum_graded_linear_page_bytes": 262144
+      },
+      "parts": {
+        "images": 4,
+        "unique_images": 4,
+        "codecs": {
+          "9": 1,
+          "7": 3
+        },
+        "gxt_images_crossing_legacy_axis": 0,
+        "maximum_graded_linear_page_bytes": 2097152
+      }
+    },
+    "violations": [],
+    "failed_image": {
+      "archive": "jallpac",
+      "index": 11318,
+      "name": "YAM_A_00_01_01.NXZ",
+      "physical": [
+        503,
+        2048
+      ],
+      "logical": [
+        1021,
+        4146
+      ],
+      "codec": 9,
+      "kimg_sha256": "d8475cb5db45831e5be14a630a39ba24d4e055ba88c55feb588ad44e05e75789",
+      "decoded_rgba_sha256": "c33c1b5ed150b43318621a303c5e0626b849410ef7131ca2b8b7a149f1dbb979",
+      "runtime_dxt_matches_project_png": true,
+      "linear_upload_bytes": 4128768,
+      "rounded_page_bytes": 4194304
+    },
+    "manifest_sha256": "35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189",
+    "passed": true
+  },
+  "image_records": 34849,
+  "unique_images_by_archive_entry": 29754,
+  "files": {
+    "eboot.bin": {
+      "bytes": 9787987,
+      "sha256": "c134d6470b04a806588e3f95e3c041343b647e069ecc12d8b2702ed0d5bce707"
+    },
+    "knife-vita-game-540p.vpk": {
+      "bytes": 7155718,
+      "sha256": "6d9183d31af4512756fc6677216966301c88a7d971d2f0134b0dcb889a8585e2"
+    }
+  },
+  "asset_files_changed": false,
+  "scene_pixels": [
+    960,
+    540
+  ],
+  "composite_pixels": [
+    960,
+    540
+  ],
+  "title_id": "KNIF00540",
+  "attribute2": 12,
+  "update_files": [
+    "eboot.bin (or matching knife-vita-game-540p.vpk)"
+  ],
+  "hardware_retest_performed": false,
+  "verification_scope": "Host fault injection, real native C compiled against VitaSDK declarations with mocked driver calls, resource validation, and ARM packaging; no on-device execution of the new build.",
+  "local_build_receipt": ".work/vita/game-release-540p/vita-game-release-540p-build.json",
+  "native_host_receipt": ".work/vita/gxm-compressed/20261102T015832Z-315/receipt.json"
+}

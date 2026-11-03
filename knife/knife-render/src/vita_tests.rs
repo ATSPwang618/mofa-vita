@@ -9,6 +9,8 @@ mod group_cache;
 mod group_batch;
 #[path = "../../knife/src/game/ui_pass_cache.rs"]
 mod ui_pass_cache;
+#[path = "../../knife/src/game/producer_reuse.rs"]
+mod producer_reuse;
 
 /// Bytes one scene target occupies after the 256 KiB CDRAM granule, in either variant.
 fn scene_bytes() -> usize {
@@ -512,6 +514,223 @@ fn frame_admission_reclaims_idle_cg_without_redecoding_or_submitting_partial_gam
 }
 
 #[test]
+fn required_capture_recovers_from_actual_failure_despite_reported_free_memory() {
+    for composite in [false, true] {
+        let (r, control) = setup();
+        let mut optional = Some(r.create_scene_target(CANVAS_W, CANVAS_H, "optional spare"));
+        let idle_id = optional.as_ref().unwrap().tex.native.resident_id().unwrap().0;
+        assert!(r.vita_cache_headroom().unwrap() > scene_bytes());
+        control.borrow_mut().fail_texture_allocations = 2;
+        control.borrow_mut().events.clear();
+        let before = control.borrow().texture_allocation_attempts;
+        let mut callbacks = 0;
+        let reclaim = || { callbacks += 1; drop(optional.take()); scene_bytes() };
+        let target = if composite {
+            r.try_create_composite_target_reclaim(CANVAS_W, CANVAS_H, "screen capture", reclaim)
+        } else { r.try_create_scene_target_reclaim(CANVAS_W, CANVAS_H, "old frame", reclaim) }.unwrap();
+        assert_eq!(target.tex.physical_size(), [RENDER_W, RENDER_H]);
+        assert_eq!(callbacks, 1);
+        let trace = control.borrow();
+        assert_eq!(trace.texture_allocation_attempts - before, 3);
+        assert_eq!(trace.pressure_waits, 2);
+        assert!(matches!(trace.events[0], Event::Destroy(id) if id == idle_id));
+        assert!(matches!(trace.events[1], Event::Create { target: true, .. }));
+    }
+}
+
+#[test]
+fn required_scene_targets_can_reclaim_optional_memory_when_admission_itself_fails() {
+    // Full captures and the half/quarter logical defocus pair have different
+    // physical allocation charges but use the same pressure recovery.
+    for (logical, label) in [([CANVAS_W, CANVAS_H], "old frame"),
+        ([CANVAS_W / 2, CANVAS_H / 2], "filter defocus"),
+        ([CANVAS_W / 4, CANVAS_H / 4], "backbuffer defocus")] {
+        let (r, control) = setup();
+        let mut optional = Some(r.create_scene_target(CANVAS_W, CANVAS_H, "optional spare"));
+        let headroom = r.vita_cache_headroom().unwrap();
+        control.borrow_mut().external_cdram_bytes = headroom;
+        let before = control.borrow().texture_allocation_attempts;
+        let mut callbacks = 0;
+        let target = r.try_create_scene_target_reclaim(logical[0], logical[1], label, || {
+            callbacks += 1; drop(optional.take()); scene_bytes()
+        }).unwrap();
+        assert_eq!(target.tex.physical_size(), scene_size(logical[0], logical[1]));
+        assert_eq!(callbacks, 1);
+        assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
+        assert_eq!(r.vita_cache_headroom().unwrap(), scene_bytes() - r.vita_target_allocation_bytes(&target).unwrap());
+    }
+}
+
+#[test]
+fn required_capture_persistent_failure_has_one_cache_cleanup_and_a_bounded_exit() {
+    for releases_memory in [false, true] {
+        let (mut r, control) = setup();
+        let retained = r.create_scene_target(CANVAS_W, CANVAS_H, "complete canvas");
+        let mut optional = Some(r.create_scene_target(CANVAS_W, CANVAS_H, "optional spare"));
+        control.borrow_mut().events.clear();
+        control.borrow_mut().fail_texture_allocations = usize::MAX;
+        let before = control.borrow().texture_allocation_attempts;
+        let mut callbacks = 0;
+        let error = r.try_create_scene_target_reclaim(CANVAS_W, CANVAS_H, "old frame", || {
+            callbacks += 1;
+            if releases_memory { drop(optional.take()); scene_bytes() } else { 0 }
+        }).err().unwrap();
+        assert!(error.downcast_ref::<FramePreparationError>().is_some());
+        assert_eq!(callbacks, 1);
+        assert_eq!(control.borrow().texture_allocation_attempts - before, if releases_memory { 4 } else { 2 });
+        assert!(!control.borrow().events.iter().any(|e|
+            matches!(e, Event::Begin { .. } | Event::Copy { .. } | Event::Present(_))));
+        r.try_present(r.encoder(), &retained).unwrap();
+        assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))));
+    }
+}
+
+#[test]
+fn required_capture_does_not_retry_or_clear_caches_for_non_memory_driver_errors() {
+    let (r, control) = setup();
+    let _retained = r.create_scene_target(CANVAS_W, CANVAS_H, "complete canvas");
+    control.borrow_mut().render_target_limit = Some(r.device.gxm.borrow().live_render_targets());
+    let before = control.borrow().texture_allocation_attempts;
+    let error = r.try_create_scene_target_reclaim(CANVAS_W, CANVAS_H, "old frame", || {
+        panic!("a non-memory driver error must not clear caches")
+    }).err().unwrap();
+    assert!(error.downcast_ref::<FramePreparationError>().is_some());
+    assert!(error.downcast_ref::<TextureMemoryPressure>().is_none());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
+    assert_eq!(control.borrow().pressure_waits, 0);
+}
+
+#[test]
+fn required_capture_recovery_stops_when_optional_retirement_fails() {
+    let (r, control) = setup();
+    let mut optional = Some(r.create_scene_target(CANVAS_W, CANVAS_H, "optional spare"));
+    control.borrow_mut().fail_texture_allocations = 2;
+    let before = control.borrow().texture_allocation_attempts;
+    let error = r.try_create_scene_target_reclaim(CANVAS_W, CANVAS_H, "old frame", || {
+        control.borrow_mut().fail_next_retirement = true;
+        drop(optional.take()); scene_bytes()
+    }).err().unwrap();
+    assert!(format!("{error:#}").contains("retirement failed"));
+    assert!(error.downcast_ref::<FramePreparationError>().is_some());
+    assert!(error.downcast_ref::<TextureMemoryPressure>().is_none());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 2,
+        "uncertain native retirement must not be followed by another allocation");
+}
+
+#[test]
+fn repeated_ring_capture_and_release_returns_to_the_same_native_memory_baseline() {
+    let mask = knife_perf::optimizations::mask();
+    knife_perf::optimizations::set(mask | knife_perf::optimizations::TARGET_RING);
+    let (mut r, control) = setup();
+    let mut stage = r.create_scene_target(CANVAS_W, CANVAS_H, "stage");
+    let canvas = r.create_composite_target(CANVAS_W, CANVAS_H, "canvas");
+    let baseline = r.vita_cache_headroom().unwrap();
+    let mut ring = producer_reuse::Ring::default();
+    for _ in 0..64 {
+        for _ in 0..8 { ring.rotate(&r, &r.encoder(), &mut stage, &[], 1); }
+        assert_eq!(ring.bytes(), scene_bytes());
+        let old = ring.take_for_capture([CANVAS_W, CANVAS_H], [RENDER_W, RENDER_H],
+            &[stage.tex.render_identity().0, canvas.tex.render_identity().0], 1).unwrap();
+        let attempts = control.borrow().texture_allocation_attempts;
+        let mut enc = r.encoder(); r.copy_target(&mut enc, &stage, &old);
+        r.try_present(enc, &canvas).unwrap();
+        assert_eq!(control.borrow().texture_allocation_attempts, attempts);
+        drop(old); r.vita_reclaim_idle().unwrap();
+        assert_eq!(r.vita_cache_headroom().unwrap(), baseline, "no capture/ring owner may leak across cycles");
+        assert_eq!(r.device.gxm.borrow().live_render_targets(), 2);
+    }
+    knife_perf::optimizations::set(mask);
+}
+
+#[test]
+fn ring_capture_transfer_reuses_storage_and_excludes_incompatible_or_live_surfaces() {
+    let mask = knife_perf::optimizations::mask();
+    knife_perf::optimizations::set(mask | knife_perf::optimizations::TARGET_RING);
+    let (mut r, control) = setup();
+    let mut stage = r.create_scene_target(CANVAS_W, CANVAS_H, "stage");
+    let canvas = r.create_composite_target(CANVAS_W, CANVAS_H, "canvas");
+    let original_id = stage.tex.render_identity().0;
+    let mut ring = producer_reuse::Ring::default();
+    ring.rotate(&r, &r.encoder(), &mut stage, &[], 1);
+    assert_eq!(ring.bytes(), scene_bytes());
+    assert_ne!(stage.tex.render_identity().0, original_id);
+    let attempts = control.borrow().texture_allocation_attempts;
+    let logical = [CANVAS_W, CANVAS_H]; let physical = [RENDER_W, RENDER_H];
+    assert!(ring.take_for_capture([1, 1], physical, &[], 1).is_none());
+    assert!(ring.take_for_capture(logical, [1, 1], &[], 1).is_none());
+    assert!(ring.take_for_capture(logical, physical, &[original_id], 1).is_none());
+    assert_eq!(ring.bytes(), scene_bytes());
+    let old = ring.take_for_capture(logical, physical,
+        &[stage.tex.render_identity().0, canvas.tex.render_identity().0], 1).unwrap();
+    assert_eq!(old.tex.render_identity().0, original_id);
+    assert_eq!(ring.bytes(), 0);
+    assert_eq!(ring.release(1), 0, "capture owns its storage; releasing the empty ring must not retire it");
+    control.borrow_mut().events.clear();
+    let mut enc = r.encoder(); r.copy_target(&mut enc, &stage, &old);
+    r.try_present(enc, &canvas).unwrap();
+    assert_eq!(control.borrow().texture_allocation_attempts, attempts);
+    assert!(control.borrow().events.iter().any(|e| matches!(e, Event::Copy { src, dst } if src != dst)));
+    assert!(!control.borrow().events.iter().any(|e| matches!(e, Event::Create { .. } | Event::Destroy(_))));
+    knife_perf::optimizations::set(mask);
+}
+
+#[test]
+fn required_target_allocation_failure_is_recoverable_before_recorded_commands_run() {
+    let (mut r, control) = setup();
+    let canvas = r.create_scene_target(CANVAS_W, CANVAS_H, "previous complete canvas");
+    let mut pending = r.encoder();
+    r.try_draw(&mut pending, &canvas, Some([1.; 4]), &[]).unwrap();
+    let before = control.borrow().texture_allocation_attempts;
+    control.borrow_mut().events.clear();
+    control.borrow_mut().fail_texture_allocations = usize::MAX;
+    let error = r.try_create_scene_target(CANVAS_W, CANVAS_H, "old frame").err().unwrap();
+    assert!(error.downcast_ref::<FramePreparationError>().is_some(),
+        "a required target failure must use the same retained-frame recovery as deferred uploads: {error:#}");
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 2);
+    drop(pending);
+    assert!(control.borrow().events.is_empty(), "recording must not modify the retained canvas");
+    r.try_present(r.encoder(), &canvas).unwrap();
+    assert_eq!(control.borrow().events.len(), 1);
+    assert!(matches!(control.borrow().events[0], Event::Present(_)));
+}
+
+#[test]
+fn frame_preparation_pressure_is_recoverable_before_any_frame_submission() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "previous complete canvas");
+    let tex = r.defer_altered([2, 2], [2, 2], Arc::from([2, 117]), "missing", decode_deferred_test).unwrap();
+    let mut enc = r.encoder();
+    r.try_draw(&mut enc, &canvas, None, &[Quad::rect(tex, [0., 0., 2., 2.], [1.; 4])]).unwrap();
+    let available = r.vita_cache_headroom().unwrap();
+    control.borrow_mut().external_cdram_bytes = available;
+    control.borrow_mut().events.clear();
+    let error = r.try_present(enc, &canvas).unwrap_err();
+    assert!(error.downcast_ref::<FramePreparationError>().is_some());
+    assert!(format!("{error:#}").contains("native CDRAM headroom"));
+    assert!(control.borrow().events.is_empty(), "the previous complete stage remains untouched");
+    let allocations = control.borrow().texture_allocation_attempts;
+    let retained = r.encoder();
+    r.try_present(retained, &canvas).unwrap();
+    assert_eq!(control.borrow().texture_allocation_attempts, allocations);
+    assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))),
+        "the previous canvas remains displayable without allocating another texture");
+}
+
+#[test]
+fn submitted_driver_failure_is_not_a_safe_frame_preparation_error() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "driver-failure-canvas");
+    let mut enc = r.encoder();
+    r.try_draw(&mut enc, &canvas, None,
+        &[Quad::rect(r.white.clone(), [0., 0., 2., 2.], [1.; 4])]).unwrap();
+    control.borrow_mut().fail_next_draw = true;
+    let error = r.try_present(enc, &canvas).unwrap_err();
+    assert!(error.downcast_ref::<FramePreparationError>().is_none(),
+        "an already submitted frame cannot be restored as if no GPU writes occurred");
+    assert!(control.borrow().events.iter().any(|event| matches!(event, Event::Begin { .. })));
+}
+
+#[test]
 fn frame_admission_keeps_complete_frame_pins_and_does_not_retry_native_upload_failure() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
@@ -811,6 +1030,112 @@ fn immediate_native_encoded_upload_fits_one_allocation_instead_of_a_double_bake_
 }
 
 #[test]
+fn allocation_failure_retries_long_and_wide_graded_art_without_losing_pixels() {
+    for [width, height] in [[503, 2048], [2048, 503], [1314, 788], [960, 540]] {
+        let (r, control) = setup();
+        let pixels = vec![117; (width * height * 4) as usize];
+        control.borrow_mut().fail_texture_allocations = 1;
+        let before = control.borrow().texture_allocation_attempts;
+        let texture = r.try_upload_baked(width, height, &pixels, "graded-art").unwrap();
+        assert_eq!(texture.physical_size(), [width, height]);
+        let id = texture.native.resident_id().unwrap();
+        assert_eq!(r.device.call(|g| g.read_texture(&id)).unwrap(), pixels);
+        assert_eq!(control.borrow().texture_allocation_attempts - before, 2);
+        assert_eq!(control.borrow().pressure_waits, 1);
+        assert!(!control.borrow().events.iter().any(|e| matches!(e, Event::Destroy(_))));
+    }
+}
+
+#[test]
+fn allocation_failure_reclaims_idle_gxt_and_preserves_every_current_frame_texture() {
+    for format in [0x8500_0000, 0x8700_0000] {
+        let (mut r, control) = setup();
+        let canvas = r.create_target(2, 2, "allocation-recovery-canvas");
+        let bytes = gxt_fixture([4, 4], format);
+        let make = || defer_test_gxt(&r, &bytes, {
+            let bytes = bytes.clone(); Rc::new(move || Ok(bytes.clone()))
+        }).unwrap();
+        let idle = make();
+        let active = make();
+        let missing = make();
+        submit_deferred(&mut r, &canvas, &[idle.clone(), active.clone()]).unwrap();
+        let idle_id = idle.native.resident_id().unwrap().0;
+        let active_id = active.native.resident_id().unwrap().0;
+        control.borrow_mut().events.clear();
+        control.borrow_mut().fail_texture_allocations = 2;
+        let before = control.borrow().texture_allocation_attempts;
+        submit_deferred(&mut r, &canvas, &[active.clone(), missing.clone()]).unwrap();
+        assert!(idle.native.resident_id().is_err());
+        assert_eq!(active.native.resident_id().unwrap().0, active_id);
+        assert!(missing.native.resident_id().is_ok());
+        let trace = control.borrow();
+        assert_eq!(trace.texture_allocation_attempts - before, 3);
+        assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Destroy(id) if *id == idle_id)).count(), 1);
+        assert!(!trace.events.iter().any(|e| matches!(e, Event::Destroy(id) if *id == active_id)));
+        assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::CreateCompressed { .. })).count(), 1);
+        assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Present(_))).count(), 1);
+    }
+}
+
+#[test]
+fn allocation_failure_stops_after_bounded_recovery_and_keeps_active_frame_intact() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "allocation-failure-canvas");
+    let bytes = gxt_fixture([4, 4], 0x8700_0000);
+    let make = || defer_test_gxt(&r, &bytes, {
+        let bytes = bytes.clone(); Rc::new(move || Ok(bytes.clone()))
+    }).unwrap();
+    let active = make();
+    let missing = make();
+    submit_deferred(&mut r, &canvas, &[active.clone()]).unwrap();
+    let active_id = active.native.resident_id().unwrap().0;
+    control.borrow_mut().events.clear();
+    control.borrow_mut().fail_texture_allocations = usize::MAX;
+    let before = control.borrow().texture_allocation_attempts;
+    let error = submit_deferred(&mut r, &canvas, &[active.clone(), missing.clone()]).unwrap_err();
+    assert!(format!("{error:#}").contains("injected native CDRAM allocation failure"));
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 2);
+    assert_eq!(active.native.resident_id().unwrap().0, active_id);
+    assert!(missing.native.resident_id().is_err());
+    assert!(control.borrow().events.is_empty(), "a failed preparation must not submit a partial frame");
+}
+
+#[test]
+fn allocation_failure_cannot_churn_the_complete_idle_cache() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "allocation-limit-canvas");
+    let idle = (0..12).map(|value| r.defer_altered([2, 2], [2, 2],
+        Arc::from([2, value]), "idle", decode_deferred_test).unwrap()).collect::<Vec<_>>();
+    submit_deferred(&mut r, &canvas, &idle).unwrap();
+    control.borrow_mut().events.clear();
+    control.borrow_mut().fail_texture_allocations = usize::MAX;
+    let before = control.borrow().texture_allocation_attempts;
+    let error = r.try_upload_baked(503, 2048, &vec![117; 503 * 2048 * 4], "persistent-failure").err().unwrap();
+    assert!(format!("{error:#}").contains("10 bounded attempts"));
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 10);
+    assert_eq!(idle.iter().filter(|tex| tex.native.resident_id().is_ok()).count(), 4);
+    assert!(!control.borrow().events.iter().any(|e| matches!(e, Event::Create { .. } | Event::Present(_))));
+}
+
+#[test]
+fn allocation_failure_retries_a_decoded_reload_without_reading_or_decoding_twice() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "reload-recovery-canvas");
+    let reads = Rc::new(Cell::new(0));
+    let load = { let reads = reads.clone(); Rc::new(move || {
+        reads.set(reads.get() + 1); Ok(vec![2, 117])
+    }) };
+    let tex = r.defer_altered_reload([2, 2], [2, 2], 2, "decoded-reload", load, decode_deferred_test).unwrap();
+    control.borrow_mut().fail_texture_allocations = 1;
+    let before = control.borrow().texture_allocation_attempts;
+    submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+    assert_eq!(reads.get(), 1);
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 2);
+    let id = tex.native.resident_id().unwrap();
+    assert_eq!(r.device.call(|g| g.read_texture(&id)).unwrap(), vec![117; 16]);
+}
+
+#[test]
 fn immediate_r8_upload_uses_one_block_and_does_not_evict_an_idle_image() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
@@ -1044,7 +1369,7 @@ fn deferred_cache_evicts_inactive_resources_but_pins_the_whole_frame() {
     draw(&mut r, &[a.clone()]).unwrap();
     assert_ne!(a.native.resident_id().unwrap().0, first_a);
     control.borrow_mut().events.clear();
-    assert!(draw(&mut r, &[a.clone(), b.clone(), c.clone()]).unwrap_err().to_string().contains("deferred texture budget"));
+    assert!(format!("{:#}", draw(&mut r, &[a.clone(), b.clone(), c.clone()]).unwrap_err()).contains("deferred texture budget"));
     assert!(control.borrow().events.is_empty(), "over-budget frame must fail before any GPU commands");
 }
 

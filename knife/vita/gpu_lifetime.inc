@@ -298,7 +298,11 @@ static int require_scene_read(KvGxm *g, const KvGxmTexture *texture) {
 }
 int32_t kv_gxm_texture_charge(uint32_t payload_bytes, uint32_t *out) {
     if (!out || !payload_bytes) return KV_BAD_ARGUMENT;
-    const uint32_t alignment = (kv_render_options() & KV_OPT_TEXTURE_POOL) ? 64U : 256U * 1024U;
+    /* Small glyph/UI slices share 256 KiB pages. A larger image owns its
+       complete kernel page: a tiny long-lived glyph in its padding must not
+       keep a mostly empty 4 MiB portrait page mapped after that image retires. */
+    const uint32_t alignment = (kv_render_options() & KV_OPT_TEXTURE_POOL)
+        && payload_bytes < 256U * 1024U ? 64U : 256U * 1024U;
     if (payload_bytes > UINT32_MAX - alignment + 1U) return KV_BAD_ARGUMENT;
     *out = (payload_bytes + alignment - 1U) & ~(alignment - 1U);
     return 0;
@@ -345,6 +349,12 @@ static int texture_pixels_alloc(KvGxm *g, Block *out, uint32_t requested) {
     CHECK(g, collect_retired_textures(g));
     TexturePage *page = NULL; PoolSpan *span = NULL;
     for (page = g->texture_pages; page; page = page->next) {
+        /* A retired large page may remain cached. Do not let a later glyph
+           split it, or let a smaller image leave a tail for that glyph.
+           Large requests reuse only an empty page of the exact charged size. */
+        if (bytes < 256U * 1024U) {
+            if (page->storage.size != 256U * 1024U) continue;
+        } else if (page->used || page->storage.size != bytes) continue;
         for (span = page->spans; span; span = span->next)
             if (span->available && span->size >= bytes) break;
         if (span) break;

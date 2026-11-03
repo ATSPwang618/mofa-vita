@@ -1317,6 +1317,13 @@ impl Game {
     fn stch_image_needed(&mut self, r: &Renderer, name: &str, bake: crate::grade::Bake)
         -> Option<Arc<crate::assets::Image>>
     {
+        if self.resource_command.is_none() && !self.assets.image_cached(name, bake)
+            && r.vita_cache_headroom().is_ok_and(|n|
+                n < 4 * 1024 * 1024 + knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES)
+        {
+            self.text_cache.trim(0);
+            self.vita_release_optional_render_targets(r);
+        }
         match self.assets.poll_image_needed(r, name, bake) {
             crate::assets::ImageNeeded::Ready(image) => Some(image),
             crate::assets::ImageNeeded::Pending => {
@@ -6400,7 +6407,7 @@ impl Game {
             + &table.iter().map(|((p, m), n)| format!("{p}/{m}:{n}")).collect::<Vec<_>>().join(" ")
     }
 
-    fn render_stage(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) {
+    fn render_stage(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) -> anyhow::Result<()> {
         use crate::stage::Draw;
         #[cfg(target_os = "vita")]
         self.group_cache.begin_frame();
@@ -6413,7 +6420,10 @@ impl Game {
             if r.vita_cache_headroom().unwrap_or(0) < bytes * 2 + knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES {
                 self.vita_release_optional_render_targets(r);
             }
-            self.group_targets(r, enc);
+            let pair = [self.vita_scene_target(r, CANVAS_W, CANVAS_H, "group pixel")?,
+                self.vita_scene_target(r, CANVAS_W, CANVAS_H, "group mask")?];
+            for rt in &pair { r.draw(enc, rt, Some([0.0; 4]), &[]); }
+            self.group_rt = Some(pair);
         }
         #[cfg(target_os = "vita")]
         {
@@ -6502,7 +6512,7 @@ impl Game {
             }
             if deterministic && !alias && self.stage_producer.matches(&key, &self.stage_rt) {
                 knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
-                return;
+                return Ok(());
             }
             let upcoming: Vec<Quad> = inputs.iter().map(|q| (*q).clone()).collect();
             self.stage_ring.rotate(r, enc, &mut self.stage_rt, &upcoming, 1);
@@ -6513,6 +6523,7 @@ impl Game {
         self.render_stage_draws(r, enc, draws);
         #[cfg(target_os = "vita")]
         self.stage_producer.finish(&self.stage_rt);
+        Ok(())
     }
 
     fn render_stage_draws(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
@@ -6803,8 +6814,11 @@ impl Game {
         self.group_cache.draw(r, enc, pair, kind, fresh, quads, cache_groups);
     }
 
-    fn group_targets(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) -> &[RenderTarget; 2] {
+    fn group_targets(&mut self, _r: &mut Renderer, _enc: &mut CommandEncoder) -> &[RenderTarget; 2] {
+        // Vita allocates fallibly at render_stage entry, before any group draw.
+        #[cfg(not(target_os = "vita"))]
         if self.group_rt.is_none() {
+            let (r, enc) = (_r, _enc);
             let t = ["group pixel", "group mask"].map(|n| r.create_scene_target(CANVAS_W, CANVAS_H, n));
             for rt in &t {
                 r.draw(enc, rt, Some([0.0; 4]), &[]);
@@ -6899,6 +6913,18 @@ impl Game {
 
     pub fn render(&mut self, r: &mut Renderer, overlay: &mut dyn FnMut(&mut Self, &Renderer, &mut Vec<Quad>)) {
         #[cfg(target_os = "vita")]
+        let previous = (
+            RenderTarget { tex: self.stage_rt.tex.clone() },
+            RenderTarget { tex: self.canvas.tex.clone() },
+            self.scene_is_stage, self.snapshot,
+            self.old_rt.as_ref().filter(|_| self.snapshot || self.trans.is_some())
+                .map(|rt| RenderTarget { tex: rt.tex.clone() }),
+            self.freeze.as_ref().map(|freeze| freeze.capture),
+            self.noise_rt.as_ref().map(|rt| RenderTarget { tex: rt.tex.clone() }),
+        );
+        #[cfg(target_os = "vita")]
+        let mut prepared_previews = Vec::new();
+        #[cfg(target_os = "vita")]
         self.text_cache.begin_frame();
         #[cfg(target_os = "vita")]
         self.ui_pass_cache.begin_frame();
@@ -6919,307 +6945,445 @@ impl Game {
             self.menu_quarter = None;
             self.menu_captured = false;
         }
-        #[cfg(target_os = "vita")]
-        {
-            // Captures/history are required and may arrive after several quiet
-            // frames. Give them priority before their first native allocation.
-            let missing = usize::from(self.snapshot && self.old_rt.is_none())
-                + usize::from(self.noise_rt.is_none() && self.stage.noise_pass().is_some())
-                + if self.ghost.active() { usize::from(self.ghost_rt.is_none()) * 2
-                    + usize::from(self.blur_rt.is_none()) } else { 0 };
-            let bytes = r.vita_target_allocation_bytes(&self.stage_rt).unwrap_or(3 * 1024 * 1024);
-            if missing != 0 && r.vita_cache_headroom().unwrap_or(0)
-                < bytes * missing + knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES
-            { self.vita_release_optional_render_targets(r); }
-        }
-        let mut enc = r.encoder();
-        self.render_previews(r, &mut enc);
-        #[cfg(target_os = "vita")]
-        let resources_waiting = self.resource_waiting();
-        #[cfg(not(target_os = "vita"))]
-        let resources_waiting = false;
-        if self.snapshot && !resources_waiting {
+        let result = (|| -> anyhow::Result<()> {
             #[cfg(target_os = "vita")]
-            let old = self.old_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "old frame"));
+            if self.snapshot && self.old_rt.is_none() && !self.resource_waiting() {
+                let logical = [CANVAS_W, CANVAS_H];
+                let physical = self.stage_rt.tex.physical_size();
+                let excluded = [self.stage_rt.tex.render_identity().0, self.scene_rt.tex.render_identity().0,
+                    self.canvas.tex.render_identity().0];
+                self.old_rt = self.stage_ring.take_for_capture(logical, physical, &excluded, 1)
+                    .or_else(|| self.canvas_ring.take_for_capture(logical, physical, &excluded, 2));
+                producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
+            }
+            #[cfg(target_os = "vita")]
+            {
+                // Captures/history are required and may arrive after several quiet
+                // frames. Give them priority before their first native allocation.
+                let missing = usize::from(self.snapshot && self.old_rt.is_none())
+                    + usize::from(self.noise_rt.is_none() && self.stage.noise_pass().is_some())
+                    + if self.ghost.active() { usize::from(self.ghost_rt.is_none()) * 2
+                        + usize::from(self.blur_rt.is_none()) } else { 0 };
+                let bytes = r.vita_target_allocation_bytes(&self.stage_rt).unwrap_or(3 * 1024 * 1024);
+                if missing != 0 && r.vita_cache_headroom().unwrap_or(0)
+                    < bytes * missing + knife_perf::memory_budget::GPU_CACHE_SPARE_BYTES
+                { self.vita_release_optional_render_targets(r); }
+            }
+            let mut enc = r.encoder();
             #[cfg(not(target_os = "vita"))]
-            let old = &self.old_rt;
-            let previous = if self.scene_is_stage { &self.stage_rt } else { &self.scene_rt };
-            r.copy_target(&mut enc, previous, old);
-            self.snapshot = false;
-        }
-        // RT40 is inherited history, not a rotating/discardable output. Witch
-        // jp_35FC0 publishes one noise event per native 9/6/3-frame tick. Do not
-        // alpha-accumulate that same event again on render-only/paused frames.
-        if !resources_waiting {
-            if let Some(q) = self.stage.noise_pass() {
-                let fresh = self.noise_rt.is_none();
-                let rt = self.noise_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "noise rt40"));
+            self.render_previews(r, &mut enc);
+            #[cfg(target_os = "vita")]
+            let resources_waiting = self.resource_waiting();
+            #[cfg(not(target_os = "vita"))]
+            let resources_waiting = false;
+            if self.snapshot && !resources_waiting {
                 #[cfg(target_os = "vita")]
-                let event = self.stage.noise_event_key().map(|(n, tick)| {
-                    let mut key = vec![n as u64, tick as u64]; key.extend(q.render_key()); key
-                });
-                #[cfg(target_os = "vita")]
-                let held = knife_perf::optimizations::enabled(knife_perf::optimizations::PRODUCER_REUSE)
-                    && !fresh && event.as_ref().is_some_and(|key| self.noise_event.as_ref()
-                        .is_some_and(|(previous, version)| previous == key && *version == rt.tex.render_identity()));
-                #[cfg(not(target_os = "vita"))]
-                let held = false;
-                if !held {
-                    if fresh {
-                        let full = Quad::rect(q.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
-                        r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
-                    }
-                    r.draw(&mut enc, rt, None, &[q]);
-                    #[cfg(target_os = "vita")]
-                    { self.noise_event = event.map(|key| (key, rt.tex.render_identity())); }
+                if self.old_rt.is_none() {
+                    self.old_rt = Some(self.vita_scene_target(r, CANVAS_W, CANVAS_H, "old frame")?);
                 }
-                self.stage.noise_rt = Some(rt.tex.clone());
-            }
-        }
-        if !resources_waiting { self.render_choice_glow(r, &mut enc); }
-        // Vita may overwrite scene with group scratch here. Preserve the
-        // capture above -> all group readers -> stage-to-scene copy order.
-        #[cfg(target_os = "vita")]
-        if resources_waiting {
-            // A pending STCH has not committed its layer. Present the previous
-            // complete stage rather than intermediate PGST/STCP dispatch state.
-            knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
-        } else { self.render_stage(r, &mut enc); }
-        #[cfg(not(target_os = "vita"))]
-        self.render_stage(r, &mut enc);
-        // Target 0 draws in bucket order (sprite +16, sub_D2378), each bucket in queue order: bucket 1 takes the
-        // stage (sub_3BBA0, task 20), the FADE(40) effect (sub_2FC50, task 60) and the text pass's FCLN effect
-        // (task 80: sub_391A0 queues it before its first sub_B04E0(9)); a FADS's capture sprite (sub_A46F0, task
-        // 50) is bucket 9, so it lies over all three, and what it shows is target 0 as it was, effects included
-        // (035 ARC02_1's crossfade under FADE(40, -250): Switch region means 0.31 from this order, 1.38 with the
-        // effect over the mixed frame, whose overlay of the frame with itself darkened the middle of the fade)
-        let focus_quads = if !resources_waiting && self.focus.active() && self.var("F963") != 1 {
-            if self.focus_tex.is_none() {
-                self.focus_tex = self.assets.ui_textures(r, "EFFECT_PARTS").ok().and_then(|t| {
-                    let find = |n: &str| t.iter().find(|(name, _)| name == n).map(|(_, t)| t.clone());
-                    Some([find("FallNote0")?, find("FallNote1")?, find("FallNote2")?, find("FocusLine")?])
-                });
-            }
-            self.focus_tex.as_ref().map_or_else(Vec::new, |tex| self.focus.quads(tex))
-        } else { Vec::new() };
-        // No scene writer: its copy would only be sampled once by the canvas blit.
-        // Keep stage read-only and remember its identity for a later FADS capture.
-        let direct_stage = if resources_waiting { self.scene_is_stage } else {
-            cfg!(target_os = "vita")
-                && knife_perf::optimizations::enabled(knife_perf::optimizations::DIRECT_STAGE)
-                && !self.ghost.active() && !(self.focus.active() && self.var("F963") != 1)
-        };
-        self.scene_is_stage = direct_stage;
-        let ghost_trans = self.trans.as_ref().map(|t| (t.t / t.dur).clamp(0.0, 1.0));
-        #[cfg(target_os = "vita")]
-        let scene_key = {
-            let (id, generation) = self.stage_rt.tex.render_identity();
-            let mut key = vec![knife_perf::optimizations::mask() as u64, id as u64, generation];
-            key.extend(self.ghost.render_key(ghost_trans));
-            for q in &focus_quads { let values = q.render_key(); key.push(values.len() as u64); key.extend(values); }
-            key
-        };
-        #[cfg(target_os = "vita")]
-        let scene_reused = resources_waiting || (!direct_stage && self.scene_producer.matches(&scene_key, &self.scene_rt));
-        #[cfg(not(target_os = "vita"))]
-        let scene_reused = false;
-        if scene_reused { knife_perf::add(knife_perf::Metric::SceneProducerReuse, 0, 1); }
-        if direct_stage {
-            knife_perf::add(knife_perf::Metric::DirectStage, 0, 0);
-        } else if !scene_reused {
-            r.copy_target(&mut enc, &self.stage_rt, &self.scene_rt);
-        }
-        // sub_3C490 draws the FADE(40) effect over the composed frame, before the text
-        if !scene_reused && self.ghost.active() {
-            let [src, out] = self.ghost_rt.get_or_insert_with(|| {
-                [r.create_scene_target(CANVAS_W, CANVAS_H, "ghost frame"), r.create_scene_target(CANVAS_W, CANVAS_H, "ghost channels")]
-            });
-            let trans = self.trans.as_ref().map(|t| (t.t / t.dur).clamp(0.0, 1.0));
-            #[cfg(target_os = "vita")]
-            let blur = self.blur_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "blur"));
-            #[cfg(not(target_os = "vita"))]
-            let blur = &self.blur_rt;
-            self.ghost.render(r, &mut enc, &self.scene_rt, [src, blur, out], trans);
-        }
-        if !scene_reused && !focus_quads.is_empty() {
-            r.draw(&mut enc, &self.scene_rt, None, &focus_quads);
-        }
-        #[cfg(target_os = "vita")]
-        if !direct_stage && !scene_reused {
-            let stage_input = Quad::rect(self.stage_rt.tex.clone(),
-                [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
-            let inputs: Vec<&Quad> = std::iter::once(&stage_input).chain(focus_quads.iter()).collect();
-            self.scene_producer.commit(scene_key, &inputs, &self.scene_rt);
-        }
-        #[cfg(target_os = "vita")]
-        {
-            if !resources_waiting { self.canvas_ring.rotate(r, &enc, &mut self.canvas, &[], 2); }
-            producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
-        }
-        match &self.trans {
-            Some(t) => {
-                let p = if t.hold { 0.0 } else { (t.t / t.dur).clamp(0.0, 1.0) };
-                let rule = t.rule.clone();
                 #[cfg(target_os = "vita")]
-                let old = self.old_rt.as_ref().expect("FADS transition requires its captured old frame");
+                let old = self.old_rt.as_ref().unwrap();
                 #[cfg(not(target_os = "vita"))]
                 let old = &self.old_rt;
-                r.transition(&mut enc, &self.canvas, &old.tex,
-                    if direct_stage { &self.stage_rt.tex } else { &self.scene_rt.tex },
-                    rule.as_deref(), p, self.stage.rule_soft);
+                let previous = if self.scene_is_stage { &self.stage_rt } else { &self.scene_rt };
+                r.copy_target(&mut enc, previous, old);
+                self.snapshot = false;
             }
-            None => r.blit_target(&mut enc,
-                if direct_stage { &self.stage_rt } else { &self.scene_rt }, &self.canvas),
-        }
-        let witch = crate::assets::witch();
-        #[cfg(target_os = "vita")]
-        let text_finished = self.paused || !self.page.visible ||
-            (self.page.revealed as usize >= self.page.order &&
-                (self.page.waiting || matches!(self.wait, Wait::Click | Wait::Message { .. } | Wait::Voice | Wait::Time { .. })));
-        let mut ui = Vec::new();
-        if witch {
-            // WoH's sub_7FCA0 captures target 0 after the text pass: the window and text are blurred with the scene
-            // (Switch: the page's lines show through the system menu's backdrop, blurred)
-            if !self.movie_by_ui {
-                ui.extend(self.movie_quad());
+            // RT40 is inherited history, not a rotating/discardable output. Witch
+            // jp_35FC0 publishes one noise event per native 9/6/3-frame tick. Do not
+            // alpha-accumulate that same event again on render-only/paused frames.
+            if !resources_waiting {
+                if let Some(q) = self.stage.noise_pass() {
+                    let fresh = self.noise_rt.is_none();
+                    #[cfg(target_os = "vita")]
+                    if fresh { self.noise_rt = Some(self.vita_scene_target(r, CANVAS_W, CANVAS_H, "noise rt40")?); }
+                    #[cfg(target_os = "vita")]
+                    let rt = self.noise_rt.as_ref().unwrap();
+                    #[cfg(not(target_os = "vita"))]
+                    let rt = self.noise_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "noise rt40"));
+                    #[cfg(target_os = "vita")]
+                    let event = self.stage.noise_event_key().map(|(n, tick)| {
+                        let mut key = vec![n as u64, tick as u64]; key.extend(q.render_key()); key
+                    });
+                    #[cfg(target_os = "vita")]
+                    let held = knife_perf::optimizations::enabled(knife_perf::optimizations::PRODUCER_REUSE)
+                        && !fresh && event.as_ref().is_some_and(|key| self.noise_event.as_ref()
+                            .is_some_and(|(previous, version)| previous == key && *version == rt.tex.render_identity()));
+                    #[cfg(not(target_os = "vita"))]
+                    let held = false;
+                    if !held {
+                        if fresh {
+                            let full = Quad::rect(q.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
+                            r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
+                        }
+                        r.draw(&mut enc, rt, None, &[q]);
+                        #[cfg(target_os = "vita")]
+                        { self.noise_event = event.map(|key| (key, rt.tex.render_identity())); }
+                    }
+                    self.stage.noise_rt = Some(rt.tex.clone());
+                }
             }
-            ui.extend(self.story_movie.as_ref().and_then(|t| t.cover_quad(r)));
-            ui.extend(self.ui_quads(r));
+            if !resources_waiting { self.render_choice_glow(r, &mut enc); }
+            // Vita may overwrite scene with group scratch here. Preserve the
+            // capture above -> all group readers -> stage-to-scene copy order.
+            #[cfg(target_os = "vita")]
+            if resources_waiting {
+                // A pending STCH has not committed its layer. Present the previous
+                // complete stage rather than intermediate PGST/STCP dispatch state.
+                knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
+            } else { self.render_stage(r, &mut enc)?; }
+            #[cfg(not(target_os = "vita"))]
+            self.render_stage(r, &mut enc)?;
+            // Target 0 draws in bucket order (sprite +16, sub_D2378), each bucket in queue order: bucket 1 takes the
+            // stage (sub_3BBA0, task 20), the FADE(40) effect (sub_2FC50, task 60) and the text pass's FCLN effect
+            // (task 80: sub_391A0 queues it before its first sub_B04E0(9)); a FADS's capture sprite (sub_A46F0, task
+            // 50) is bucket 9, so it lies over all three, and what it shows is target 0 as it was, effects included
+            // (035 ARC02_1's crossfade under FADE(40, -250): Switch region means 0.31 from this order, 1.38 with the
+            // effect over the mixed frame, whose overlay of the frame with itself darkened the middle of the fade)
+            let focus_quads = if !resources_waiting && self.focus.active() && self.var("F963") != 1 {
+                if self.focus_tex.is_none() {
+                    self.focus_tex = self.assets.ui_textures(r, "EFFECT_PARTS").ok().and_then(|t| {
+                        let find = |n: &str| t.iter().find(|(name, _)| name == n).map(|(_, t)| t.clone());
+                        Some([find("FallNote0")?, find("FallNote1")?, find("FallNote2")?, find("FocusLine")?])
+                    });
+                }
+                self.focus_tex.as_ref().map_or_else(Vec::new, |tex| self.focus.quads(tex))
+            } else { Vec::new() };
+            // No scene writer: its copy would only be sampled once by the canvas blit.
+            // Keep stage read-only and remember its identity for a later FADS capture.
+            let direct_stage = if resources_waiting { self.scene_is_stage } else {
+                cfg!(target_os = "vita")
+                    && knife_perf::optimizations::enabled(knife_perf::optimizations::DIRECT_STAGE)
+                    && !self.ghost.active() && !(self.focus.active() && self.var("F963") != 1)
+            };
+            self.scene_is_stage = direct_stage;
+            let ghost_trans = self.trans.as_ref().map(|t| (t.t / t.dur).clamp(0.0, 1.0));
+            #[cfg(target_os = "vita")]
+            let scene_key = {
+                let (id, generation) = self.stage_rt.tex.render_identity();
+                let mut key = vec![knife_perf::optimizations::mask() as u64, id as u64, generation];
+                key.extend(self.ghost.render_key(ghost_trans));
+                for q in &focus_quads { let values = q.render_key(); key.push(values.len() as u64); key.extend(values); }
+                key
+            };
+            #[cfg(target_os = "vita")]
+            let scene_reused = resources_waiting || (!direct_stage && self.scene_producer.matches(&scene_key, &self.scene_rt));
+            #[cfg(not(target_os = "vita"))]
+            let scene_reused = false;
+            if scene_reused { knife_perf::add(knife_perf::Metric::SceneProducerReuse, 0, 1); }
+            if direct_stage {
+                knife_perf::add(knife_perf::Metric::DirectStage, 0, 0);
+            } else if !scene_reused {
+                r.copy_target(&mut enc, &self.stage_rt, &self.scene_rt);
+            }
+            // sub_3C490 draws the FADE(40) effect over the composed frame, before the text
+            if !scene_reused && self.ghost.active() {
+                #[cfg(target_os = "vita")]
+                {
+                    if self.ghost_rt.is_none() {
+                        self.ghost_rt = Some([
+                            self.vita_scene_target(r, CANVAS_W, CANVAS_H, "ghost frame")?,
+                            self.vita_scene_target(r, CANVAS_W, CANVAS_H, "ghost channels")?]);
+                    }
+                    if self.blur_rt.is_none() {
+                        self.blur_rt = Some(self.vita_scene_target(r, CANVAS_W, CANVAS_H, "blur")?);
+                    }
+                }
+                #[cfg(target_os = "vita")]
+                let [src, out] = self.ghost_rt.as_ref().unwrap();
+                #[cfg(not(target_os = "vita"))]
+                let [src, out] = self.ghost_rt.get_or_insert_with(|| {
+                    [r.create_scene_target(CANVAS_W, CANVAS_H, "ghost frame"), r.create_scene_target(CANVAS_W, CANVAS_H, "ghost channels")]
+                });
+                let trans = self.trans.as_ref().map(|t| (t.t / t.dur).clamp(0.0, 1.0));
+                #[cfg(target_os = "vita")]
+                let blur = self.blur_rt.as_ref().unwrap();
+                #[cfg(not(target_os = "vita"))]
+                let blur = &self.blur_rt;
+                self.ghost.render(r, &mut enc, &self.scene_rt, [src, blur, out], trans);
+            }
+            if !scene_reused && !focus_quads.is_empty() {
+                r.draw(&mut enc, &self.scene_rt, None, &focus_quads);
+            }
+            #[cfg(target_os = "vita")]
+            if !direct_stage && !scene_reused {
+                let stage_input = Quad::rect(self.stage_rt.tex.clone(),
+                    [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
+                let inputs: Vec<&Quad> = std::iter::once(&stage_input).chain(focus_quads.iter()).collect();
+                self.scene_producer.commit(scene_key, &inputs, &self.scene_rt);
+            }
+            #[cfg(target_os = "vita")]
+            {
+                if !resources_waiting { self.canvas_ring.rotate(r, &enc, &mut self.canvas, &[], 2); }
+                producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
+            }
+            #[cfg(target_os = "vita")]
+            let capture_ready = self.old_rt.is_some();
+            #[cfg(not(target_os = "vita"))]
+            let capture_ready = true;
+            match &self.trans {
+                Some(t) if capture_ready => {
+                    let p = if t.hold { 0.0 } else { (t.t / t.dur).clamp(0.0, 1.0) };
+                    let rule = t.rule.clone();
+                    #[cfg(target_os = "vita")]
+                    let old = self.old_rt.as_ref().expect("FADS transition requires its captured old frame");
+                    #[cfg(not(target_os = "vita"))]
+                    let old = &self.old_rt;
+                    r.transition(&mut enc, &self.canvas, &old.tex,
+                        if direct_stage { &self.stage_rt.tex } else { &self.scene_rt.tex },
+                        rule.as_deref(), p, self.stage.rule_soft);
+                }
+                _ => r.blit_target(&mut enc,
+                    if direct_stage { &self.stage_rt } else { &self.scene_rt }, &self.canvas),
+            }
+            let witch = crate::assets::witch();
+            #[cfg(target_os = "vita")]
+            let text_finished = self.paused || !self.page.visible ||
+                (self.page.revealed as usize >= self.page.order &&
+                    (self.page.waiting || matches!(self.wait, Wait::Click | Wait::Message { .. } | Wait::Voice | Wait::Time { .. })));
+            let mut ui = Vec::new();
+            if witch {
+                // WoH's sub_7FCA0 captures target 0 after the text pass: the window and text are blurred with the scene
+                // (Switch: the page's lines show through the system menu's backdrop, blurred)
+                if !self.movie_by_ui {
+                    ui.extend(self.movie_quad());
+                }
+                ui.extend(self.story_movie.as_ref().and_then(|t| t.cover_quad(r)));
+                ui.extend(self.ui_quads(r));
+                if !ui.is_empty() {
+                    #[cfg(target_os = "vita")]
+                    self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui, text_finished);
+                    #[cfg(not(target_os = "vita"))]
+                    r.draw(&mut enc, &self.canvas, None, &ui);
+                    ui.clear();
+                }
+            }
+            if self.menu_blur.is_some() && !self.menu_captured && !witch {
+                // sub_A46F0 copies target 0 in the frame the blur starts, before the composites that frame queued:
+                // sub_391A0 draws the window and text into layers 29 / 30 and composites them later (sub_B06C0 ->
+                // sub_9FAD0's list), but sub_84E50 draws a choice's backdrop straight into target 0. So the capture is
+                // the scene with the choice backdrop and no window or text (Switch EN: the system menu over a page
+                // mean abs 1.41 without the window against 28.6 with it; over the first choice 1.44 with the
+                // backdrop alone, 6.43 with the window instead; the backlog's 0.75 black leaves 0.417 =
+                // 0.25 / (1 - 102/255) of the windowed page)
+                let a = if self.touch_hidden { 0.0 } else { self.page.alpha };
+                if let Some(q) = self.choice_backdrop(r, a) {
+                    r.draw(&mut enc, &self.canvas, None, &[q]);
+                }
+            }
+            match self.menu_blur {
+                Some(a) => {
+                    #[cfg(target_os = "vita")]
+                    {
+                        if !witch && self.menu_rt.is_none() {
+                            self.menu_rt = Some(self.vita_scene_target(r, CANVAS_W, CANVAS_H, "menu blur")?);
+                        }
+                        if !self.menu_captured {
+                            if witch && self.menu_quarter.is_none() {
+                                let (qw, qh) = (CANVAS_W / 4, CANVAS_H / 4);
+                                self.menu_quarter = Some([
+                                    self.vita_scene_target(r, qw, qh, "backbuffer defocus")?,
+                                    self.vita_scene_target(r, qw, qh, "defocus pass")?]);
+                            } else if !witch && self.assets.build == knife_core::exe::Build::Overseas && self.menu_half.is_none() {
+                                let (hw, hh) = (CANVAS_W / 2, CANVAS_H / 2);
+                                self.menu_half = Some([
+                                    self.vita_scene_target(r, hw, hh, "filter defocus")?,
+                                    self.vita_scene_target(r, hw, hh, "defocus pass")?]);
+                            } else if !witch && self.assets.build != knife_core::exe::Build::Overseas && self.blur_rt.is_none() {
+                                self.blur_rt = Some(self.vita_scene_target(r, CANVAS_W, CANVAS_H, "blur")?);
+                            }
+                        }
+                    }
+                    // Witch already captures and filters at quarter resolution.
+                    // Vita can sample that capture directly into the canvas, saving
+                    // a full-size persistent target and its upsample render pass.
+                    #[cfg(target_os = "vita")]
+                    let rt = self.menu_rt.as_ref().filter(|_| !witch);
+                    #[cfg(not(target_os = "vita"))]
+                    let rt = if cfg!(target_os = "vita") && witch {
+                        None
+                    } else {
+                        Some(&*self.menu_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "menu blur")))
+                    };
+                    if !self.menu_captured {
+                        if witch {
+                            // sub_7FDB0: the capture drawn at 0.25 into the Defocus buffer (jp_A5330(-2)), sub_78810(1.25)'s
+                            // meshes: 2 ceil(3.75) + 1 = 9 copies of the 480 x 270 image shifted by whole pixels, each at
+                            // its gaussian weight, added horizontally then vertically (sub_7C8D0), and the quarter drawn
+                            // back over the screen (jp_A5690, uv 0..0.25)
+                            let (qw, qh) = (CANVAS_W / 4, CANVAS_H / 4);
+                            #[cfg(target_os = "vita")]
+                            let [a, b] = self.menu_quarter.as_ref().unwrap();
+                            #[cfg(not(target_os = "vita"))]
+                            let [a, b] = self.menu_quarter.get_or_insert_with(|| {
+                                [r.create_scene_target(qw, qh, "backbuffer defocus"), r.create_scene_target(qw, qh, "defocus pass")]
+                            });
+                            let full = Quad::rect(self.canvas.tex.clone(), [0.0, 0.0, qw as f32, qh as f32], [1.0; 4]);
+                            r.draw(&mut enc, a, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
+                            r.blur(&mut enc, &a.tex, b, [1.0, 0.0], 1.25, BlurMode::FullAdd);
+                            r.blur(&mut enc, &b.tex, a, [0.0, 1.0], 1.25, BlurMode::FullAdd);
+                            if let Some(rt) = rt {
+                                let up = Quad::rect(a.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
+                                r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[up]);
+                            }
+                        } else if self.assets.build == knife_core::exe::Build::Overseas {
+                            let rt = rt.expect("Overseas menu blur requires its full-size capture");
+                            // sub_9EC50 (its sigma argument unused): the capture scaled to the half-size "filter
+                            // Defocus" buffer, then sub_9CCD0(1.25)'s meshes, 2 ceil(3.75) + 1 = 9 quads offset
+                            // sigma sqrt(2 pi) k / 1920 (/ 1080) in UV, each at its weight, horizontally and then
+                            // vertically (shader 55, through the backbuffer and copied back), then scaled up 2x
+                            let (hw, hh) = (CANVAS_W / 2, CANVAS_H / 2);
+                            #[cfg(target_os = "vita")]
+                            let [a, b] = self.menu_half.as_ref().unwrap();
+                            #[cfg(not(target_os = "vita"))]
+                            let [a, b] = self.menu_half.get_or_insert_with(|| {
+                                [r.create_scene_target(hw, hh, "filter defocus"), r.create_scene_target(hw, hh, "defocus pass")]
+                            });
+                            let full = Quad::rect(self.canvas.tex.clone(), [0.0, 0.0, hw as f32, hh as f32], [1.0; 4]);
+                            r.draw(&mut enc, a, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
+                            let step = 1.25 * (2.0 * std::f32::consts::PI).sqrt() * hw as f32 / 1920.0;
+                            r.blur(&mut enc, &a.tex, b, [step, 0.0], 1.25, BlurMode::Uv);
+                            r.blur(&mut enc, &b.tex, a, [0.0, step], 1.25, BlurMode::Uv);
+                            let up = Quad::rect(a.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
+                            r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[up]);
+                        } else {
+                            let rt = rt.expect("menu blur requires its full-size capture");
+                            // sub_A0A90(0, 0, 2.25): sigma 2.25 taps spaced 1.75 px (of 1920), horizontally, vertically,
+                            // horizontally again and vertically again (targets +107, +214, +107, +321)
+                            let step = 1.75 * CANVAS_W as f32 / 1920.0;
+                            #[cfg(target_os = "vita")]
+                            let blur = self.blur_rt.as_ref().unwrap();
+                            #[cfg(not(target_os = "vita"))]
+                            let blur = &self.blur_rt;
+                            r.blur(&mut enc, &self.canvas.tex, blur, [step, 0.0], 2.25, BlurMode::FullAdd);
+                            r.blur(&mut enc, &blur.tex, rt, [0.0, step], 2.25, BlurMode::FullAdd);
+                            r.blur(&mut enc, &rt.tex, blur, [step, 0.0], 2.25, BlurMode::FullAdd);
+                            r.blur(&mut enc, &blur.tex, rt, [0.0, step], 2.25, BlurMode::FullAdd);
+                        }
+                        self.menu_captured = true;
+                    }
+                    // sub_A2680: shader 17 forcealpha, the fade as a colour byte ((unsigned)(a * 255))
+                    let tex = if let Some(rt) = rt {
+                        rt.tex.clone()
+                    } else {
+                        self.menu_quarter.as_ref().expect("Witch menu blur requires its quarter-size capture")[0].tex.clone()
+                    };
+                    let mut q = Quad::rect(tex, [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0, 1.0, 1.0, (a.min(1.0) * 255.0).floor() / 255.0]);
+                    q.shade = Shade::ForceAlpha;
+                    r.draw(&mut enc, &self.canvas, None, &[q]);
+                }
+                None => self.menu_captured = false,
+            }
+            if !witch {
+                if !self.movie_by_ui {
+                    ui.extend(self.movie_quad());
+                }
+                ui.extend(self.story_movie.as_ref().and_then(|t| t.cover_quad(r)));
+                ui.extend(self.ui_quads(r));
+            }
+            overlay(self, r, &mut ui);
+            for (rt, clear, quads) in std::mem::take(&mut self.ui_passes) {
+                #[cfg(target_os = "vita")]
+                self.ui_pass_cache.draw(r, &mut enc, &rt, clear, &quads)
+                    .expect("recording cached Vita UI producer");
+                #[cfg(not(target_os = "vita"))]
+                r.draw(&mut enc, &rt, clear, &quads);
+            }
             if !ui.is_empty() {
                 #[cfg(target_os = "vita")]
                 self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui, text_finished);
                 #[cfg(not(target_os = "vita"))]
                 r.draw(&mut enc, &self.canvas, None, &ui);
-                ui.clear();
             }
-        }
-        if self.menu_blur.is_some() && !self.menu_captured && !witch {
-            // sub_A46F0 copies target 0 in the frame the blur starts, before the composites that frame queued:
-            // sub_391A0 draws the window and text into layers 29 / 30 and composites them later (sub_B06C0 ->
-            // sub_9FAD0's list), but sub_84E50 draws a choice's backdrop straight into target 0. So the capture is
-            // the scene with the choice backdrop and no window or text (Switch EN: the system menu over a page
-            // mean abs 1.41 without the window against 28.6 with it; over the first choice 1.44 with the
-            // backdrop alone, 6.43 with the window instead; the backlog's 0.75 black leaves 0.417 =
-            // 0.25 / (1 - 102/255) of the windowed page)
-            let a = if self.touch_hidden { 0.0 } else { self.page.alpha };
-            if let Some(q) = self.choice_backdrop(r, a) {
-                r.draw(&mut enc, &self.canvas, None, &[q]);
+            #[cfg(target_os = "vita")]
+            if self.freeze.is_some() && self.freeze_rt.is_none() {
+                self.freeze_rt = Some(r.try_create_composite_target_reclaim(CANVAS_W, CANVAS_H,
+                    "screen capture", || self.vita_trim_target_caches())?);
             }
-        }
-        match self.menu_blur {
-            Some(a) => {
-                // Witch already captures and filters at quarter resolution.
-                // Vita can sample that capture directly into the canvas, saving
-                // a full-size persistent target and its upsample render pass.
-                let rt = if cfg!(target_os = "vita") && witch {
-                    None
+            if let Some(f) = &mut self.freeze {
+                #[cfg(target_os = "vita")]
+                let rt = self.freeze_rt.as_ref().unwrap();
+                #[cfg(not(target_os = "vita"))]
+                let rt = self.freeze_rt.get_or_insert_with(|| r.create_composite_target(CANVAS_W, CANVAS_H, "screen capture"));
+                if f.capture {
+                    // sub_A2550 takes the frame being finished
+                    r.copy_target(&mut enc, &self.canvas, rt);
+                    f.capture = false;
                 } else {
-                    Some(&*self.menu_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "menu blur")))
-                };
-                if !self.menu_captured {
-                    if witch {
-                        // sub_7FDB0: the capture drawn at 0.25 into the Defocus buffer (jp_A5330(-2)), sub_78810(1.25)'s
-                        // meshes: 2 ceil(3.75) + 1 = 9 copies of the 480 x 270 image shifted by whole pixels, each at
-                        // its gaussian weight, added horizontally then vertically (sub_7C8D0), and the quarter drawn
-                        // back over the screen (jp_A5690, uv 0..0.25)
-                        let (qw, qh) = (CANVAS_W / 4, CANVAS_H / 4);
-                        let [a, b] = self.menu_quarter.get_or_insert_with(|| {
-                            [r.create_scene_target(qw, qh, "backbuffer defocus"), r.create_scene_target(qw, qh, "defocus pass")]
-                        });
-                        let full = Quad::rect(self.canvas.tex.clone(), [0.0, 0.0, qw as f32, qh as f32], [1.0; 4]);
-                        r.draw(&mut enc, a, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
-                        r.blur(&mut enc, &a.tex, b, [1.0, 0.0], 1.25, BlurMode::FullAdd);
-                        r.blur(&mut enc, &b.tex, a, [0.0, 1.0], 1.25, BlurMode::FullAdd);
-                        if let Some(rt) = rt {
-                            let up = Quad::rect(a.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
-                            r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[up]);
-                        }
-                    } else if self.assets.build == knife_core::exe::Build::Overseas {
-                        let rt = rt.expect("Overseas menu blur requires its full-size capture");
-                        // sub_9EC50 (its sigma argument unused): the capture scaled to the half-size "filter
-                        // Defocus" buffer, then sub_9CCD0(1.25)'s meshes, 2 ceil(3.75) + 1 = 9 quads offset
-                        // sigma sqrt(2 pi) k / 1920 (/ 1080) in UV, each at its weight, horizontally and then
-                        // vertically (shader 55, through the backbuffer and copied back), then scaled up 2x
-                        let (hw, hh) = (CANVAS_W / 2, CANVAS_H / 2);
-                        let [a, b] = self.menu_half.get_or_insert_with(|| {
-                            [r.create_scene_target(hw, hh, "filter defocus"), r.create_scene_target(hw, hh, "defocus pass")]
-                        });
-                        let full = Quad::rect(self.canvas.tex.clone(), [0.0, 0.0, hw as f32, hh as f32], [1.0; 4]);
-                        r.draw(&mut enc, a, Some([0.0, 0.0, 0.0, 1.0]), &[full]);
-                        let step = 1.25 * (2.0 * std::f32::consts::PI).sqrt() * hw as f32 / 1920.0;
-                        r.blur(&mut enc, &a.tex, b, [step, 0.0], 1.25, BlurMode::Uv);
-                        r.blur(&mut enc, &b.tex, a, [0.0, step], 1.25, BlurMode::Uv);
-                        let up = Quad::rect(a.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0; 4]);
-                        r.draw(&mut enc, rt, Some([0.0, 0.0, 0.0, 1.0]), &[up]);
-                    } else {
-                        let rt = rt.expect("menu blur requires its full-size capture");
-                        // sub_A0A90(0, 0, 2.25): sigma 2.25 taps spaced 1.75 px (of 1920), horizontally, vertically,
-                        // horizontally again and vertically again (targets +107, +214, +107, +321)
-                        let step = 1.75 * CANVAS_W as f32 / 1920.0;
-                        #[cfg(target_os = "vita")]
-                        let blur = self.blur_rt.get_or_insert_with(|| r.create_scene_target(CANVAS_W, CANVAS_H, "blur"));
-                        #[cfg(not(target_os = "vita"))]
-                        let blur = &self.blur_rt;
-                        r.blur(&mut enc, &self.canvas.tex, blur, [step, 0.0], 2.25, BlurMode::FullAdd);
-                        r.blur(&mut enc, &blur.tex, rt, [0.0, step], 2.25, BlurMode::FullAdd);
-                        r.blur(&mut enc, &rt.tex, blur, [step, 0.0], 2.25, BlurMode::FullAdd);
-                        r.blur(&mut enc, &blur.tex, rt, [0.0, step], 2.25, BlurMode::FullAdd);
-                    }
-                    self.menu_captured = true;
+                    let q = Quad::rect(rt.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0, 1.0, 1.0, f.alpha.clamp(0.0, 1.0)]);
+                    r.draw(&mut enc, &self.canvas, None, &[q]);
                 }
-                // sub_A2680: shader 17 forcealpha, the fade as a colour byte ((unsigned)(a * 255))
-                let tex = if let Some(rt) = rt {
-                    rt.tex.clone()
-                } else {
-                    self.menu_quarter.as_ref().expect("Witch menu blur requires its quarter-size capture")[0].tex.clone()
-                };
-                let mut q = Quad::rect(tex, [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0, 1.0, 1.0, (a.min(1.0) * 255.0).floor() / 255.0]);
-                q.shade = Shade::ForceAlpha;
-                r.draw(&mut enc, &self.canvas, None, &[q]);
             }
-            None => self.menu_captured = false,
-        }
-        if !witch {
-            if !self.movie_by_ui {
-                ui.extend(self.movie_quad());
-            }
-            ui.extend(self.story_movie.as_ref().and_then(|t| t.cover_quad(r)));
-            ui.extend(self.ui_quads(r));
-        }
-        overlay(self, r, &mut ui);
-        for (rt, clear, quads) in std::mem::take(&mut self.ui_passes) {
             #[cfg(target_os = "vita")]
-            self.ui_pass_cache.draw(r, &mut enc, &rt, clear, &quads)
-                .expect("recording cached Vita UI producer");
-            #[cfg(not(target_os = "vita"))]
-            r.draw(&mut enc, &rt, clear, &quads);
-        }
-        if !ui.is_empty() {
-            #[cfg(target_os = "vita")]
-            self.text_cache.draw_ui(r, &mut enc, &self.canvas, &ui, text_finished);
-            #[cfg(not(target_os = "vita"))]
-            r.draw(&mut enc, &self.canvas, None, &ui);
-        }
-        if let Some(f) = &mut self.freeze {
-            let rt = self.freeze_rt.get_or_insert_with(|| r.create_composite_target(CANVAS_W, CANVAS_H, "screen capture"));
-            if f.capture {
-                // sub_A2550 takes the frame being finished
-                r.copy_target(&mut enc, &self.canvas, rt);
-                f.capture = false;
-            } else {
-                let q = Quad::rect(rt.tex.clone(), [0.0, 0.0, CANVAS_W as f32, CANVAS_H as f32], [1.0, 1.0, 1.0, f.alpha.clamp(0.0, 1.0)]);
-                r.draw(&mut enc, &self.canvas, None, &[q]);
+            {
+                // Optional save thumbnails follow all required scene/history/UI
+                // captures; they may wait instead of competing for their storage.
+                prepared_previews = self.render_previews(r, &mut enc);
+                let canvas = RenderTarget { tex: self.canvas.tex.clone() };
+                r.try_present_with_admission(enc, &canvas, |reserve| {
+                    match self.assets.admit_frame_upload(reserve) {
+                        Ok(()) => Ok(()),
+                        Err(error) => {
+                            let before = self.text_cache.bytes();
+                            self.text_cache.trim(0);
+                            let released = self.vita_drop_optional_render_targets()
+                                + before.saturating_sub(self.text_cache.bytes());
+                            if released == 0 { return Err(error); }
+                            // The renderer pins all commands and performs the actual
+                            // retirement fence before observing recovered headroom.
+                            self.assets.admit_frame_upload(reserve)
+                        }
+                    }
+                })?;
             }
-        }
+            #[cfg(not(target_os = "vita"))]
+            r.present(enc, &self.canvas);
+            Ok(())
+        })();
         #[cfg(target_os = "vita")]
-        if let Err(error) = r.try_present_with_admission(enc, &self.canvas,
-            |reserve| self.assets.admit_frame_upload(reserve))
-        {
-            panic!("submitting Vita game frame: {error:#}\nscene={} pc={}\n{}",
-                self.scene_index, self.pc, self.dump_layers());
+        match result {
+            Ok(()) => {
+                // Publish only successfully submitted outputs. A discarded encoder
+                // must never leave an uninitialized save preview in the menu.
+                for (slot, texture) in prepared_previews {
+                    self.preview_queue.retain(|(queued, ..)| *queued != slot);
+                    self.previews.insert(slot, texture);
+                }
+            }
+            Err(error) => {
+                drop(prepared_previews);
+                if error.downcast_ref::<knife_render::FramePreparationError>().is_none() {
+                    panic!("submitting Vita game frame: {error:#}\nscene={} pc={}\n{}",
+                        self.scene_index, self.pc, self.dump_layers());
+                }
+                // Preparation submitted no game commands: preserve previous
+                // complete targets and pause dispatch using the existing load
+                // failure UI. A later menu load resets the resource context.
+                (self.stage_rt, self.canvas, self.scene_is_stage, self.snapshot, self.old_rt) =
+                    (previous.0, previous.1, previous.2, previous.3, previous.4);
+                if let (Some(freeze), Some(capture)) = (&mut self.freeze, previous.5) {
+                    freeze.capture = capture;
+                }
+                self.noise_rt = previous.6;
+                self.stage.noise_rt = self.noise_rt.as_ref().map(|rt| rt.tex.clone());
+                self.ui_passes.clear();
+                self.vita_drop_optional_render_targets();
+                self.text_cache.invalidate(); self.ui_pass_cache.clear();
+                self.stage_producer = Default::default(); self.scene_producer = Default::default();
+                self.noise_event = None; self.menu_captured = false;
+                self.stage_dirty = true;
+                self.resource_command.get_or_insert((self.scene_index, self.pc));
+                if self.resource_error.is_none() { self.resource_event("failed", &format!("frame preparation: {error:#}")); }
+                self.resource_error = Some(format!("frame preparation: {error:#}"));
+                self.resource_pending = true;
+                let held = r.encoder();
+                if let Err(fatal) = r.try_present(held, &self.canvas) {
+                    panic!("presenting retained Vita frame: {fatal:#}");
+                }
+            }
         }
         #[cfg(not(target_os = "vita"))]
-        r.present(enc, &self.canvas);
+        result.expect("recording game frame");
     }
 
     // ---- save / load --------------------------------------------------------------
@@ -7841,14 +8005,14 @@ impl Game {
     /// Draw the queued previews: the layers as a stage on black into a `PREVIEW_TARGET` surface, then scaled to
     /// `PREVIEW_SIZE`.
     /// A preview waits until the worker threads have decoded the images it is missing.
-    fn render_previews(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) {
+    fn render_previews(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) -> Vec<(usize, TexRef)> {
         #[cfg(not(target_os = "vita"))]
         while let Ok(d) = self.preview_decoded.1.try_recv() {
             self.preview_decoding.remove(d.key());
             self.assets.finish_decoded(r, d);
         }
         if self.preview_queue.is_empty() {
-            return;
+            return Vec::new();
         }
         let mut ready = Vec::new();
         for (slot, mut layers, pic) in std::mem::take(&mut self.preview_queue) {
@@ -7888,12 +8052,27 @@ impl Game {
             }
         }
         if ready.is_empty() {
-            return;
+            return Vec::new();
         }
         // the "thumbnail surface" sub_89AD0 draws into (sub_A5C10)
         let (tw, th) = PREVIEW_TARGET;
+        #[cfg(target_os = "vita")]
+        if self.preview_rt.is_none() {
+            match r.try_create_scene_target(tw, th, "preview") {
+                Ok(target) => self.preview_rt = Some(target),
+                Err(_) => { self.preview_queue.extend(ready); return Vec::new(); }
+            }
+        }
+        #[cfg(target_os = "vita")]
+        let rt = self.preview_rt.as_ref().unwrap().tex.clone();
+        #[cfg(not(target_os = "vita"))]
         let rt = self.preview_rt.get_or_insert_with(|| r.create_scene_target(tw, th, "preview")).tex.clone();
+        let mut prepared = Vec::new();
         for (slot, layers, pic) in ready {
+            // Keep the request until this encoder is successfully submitted.
+            // Vita admits at most one ready preview per frame.
+            #[cfg(target_os = "vita")]
+            self.preview_queue.push((slot, layers.clone(), pic.clone()));
             let scale = tw as f32 / CANVAS_W as f32;
             let quads: Vec<Quad> = if let Some(p) = pic {
                 // the one layer sub_884F0 then sets up: the picture at 0, 0, zoom 2 / 3, white, no parent, its
@@ -7916,10 +8095,19 @@ impl Game {
             r.draw(enc, &full, Some([0.0, 0.0, 0.0, 1.0]), &quads);
             // sub_4F240 draws the target bilinearly into the 248x140 slot picture (82.7 x 57.9 of 640x448)
             let (pw, ph) = PREVIEW_SIZE;
+            #[cfg(target_os = "vita")]
+            let out = match r.try_create_target(pw, ph, "preview") {
+                Ok(target) => target, Err(_) => continue,
+            };
+            #[cfg(not(target_os = "vita"))]
             let out = r.create_target(pw, ph, "preview");
             r.draw(enc, &out, Some([0.0, 0.0, 0.0, 1.0]), &[Quad::rect(rt.clone(), [0.0, 0.0, pw as f32, ph as f32], [1.0; 4])]);
+            #[cfg(target_os = "vita")]
+            prepared.push((slot, out.tex));
+            #[cfg(not(target_os = "vita"))]
             self.previews.insert(slot, out.tex);
         }
+        prepared
     }
 
     /// The record's stage as sub_884F0 keeps it, in canvas units.
@@ -8546,15 +8734,37 @@ fn message_end(text: &str) -> (String, bool) {
 
 #[cfg(target_os = "vita")]
 impl Game {
+    pub(crate) fn vita_scene_target(&mut self, renderer: &Renderer, width: u32, height: u32,
+        label: &str) -> anyhow::Result<RenderTarget>
+    {
+        renderer.try_create_scene_target_reclaim(width, height, label, || self.vita_trim_target_caches())
+    }
+
+    /// One pressure-only release shared by required captures and frame admission.
+    /// Active command readers retain their own owners until recording is dropped
+    /// or the native fence completes; returned bytes are a release request.
+    fn vita_trim_target_caches(&mut self) -> usize {
+        let before = self.text_cache.bytes();
+        self.text_cache.trim(0);
+        self.vita_drop_optional_render_targets() + before.saturating_sub(self.text_cache.bytes())
+    }
+
     /// Required resource jobs take precedence over optional render residency.
     /// Recorded GPU owners remain pinned until the native retirement fence.
     pub(crate) fn vita_release_optional_render_targets(&mut self, renderer: &Renderer) -> usize {
+        let released = self.vita_drop_optional_render_targets();
+        let _ = renderer.vita_reclaim_idle();
+        released
+    }
+
+    fn vita_drop_optional_render_targets(&mut self) -> usize {
         let mut released = self.stage_ring.release(1) + self.canvas_ring.release(2);
         released += self.group_cache.bytes() + self.stage_prefix.bytes();
+        // Command encoders own every current-frame reader independently.
+        self.group_cache.finish_retained();
         self.group_cache.clear();
         self.stage_prefix.clear();
         producer_reuse::ring_gauge(&self.stage_ring, &self.canvas_ring);
-        let _ = renderer.vita_reclaim_idle();
         released
     }
 

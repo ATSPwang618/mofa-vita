@@ -1,0 +1,176 @@
+{
+  "schema": "knife-high-art-memory-crash-v1",
+  "as_of": "2026-11-02",
+  "source_head": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+  "source_branch": "perf/render",
+  "changes_committed": false,
+  "remote_writes_performed": false,
+  "build_tag": "540p-d734b38-poolfix-20261102",
+  "crash": {
+    "dump_bytes": 333472,
+    "dump_sha256": "c284cfb535213be5f571f05a2e8c529cedbad0802105cb66e24612626aa4097e",
+    "expanded_bytes": 9410272,
+    "module_fingerprint": "0x1f4a296",
+    "fingerprint_matches_previous_eboot": true,
+    "previous_eboot_sha256": "c134d6470b04a806588e3f95e3c041343b647e069ecc12d8b2702ed0d5bce707",
+    "module_runtime_base": "0x81073000",
+    "elf_link_base": "0x81000000",
+    "runtime_pc": "0x812bf5a6",
+    "module_offset": "0x24c5a6",
+    "linked_pc": "0x8124c5a6",
+    "symbol": "_kill_r",
+    "instruction": "udf #255",
+    "signal": 6,
+    "classification": "Rust panic -> abort -> deliberate undefined instruction",
+    "scene": 3,
+    "pc": 2368,
+    "image": "YAM_A_00_01_06_02_02",
+    "request_bytes": 4171776,
+    "available_bytes": 4128768,
+    "panic": "submitting Vita game frame: preparing native atlas YAM_A_00_01_06_02_02: native CDRAM headroom has no evictable atlas: bake/allocation peak 4171776 > available 4128768",
+    "cdram_memory_block_bytes": 104857600,
+    "gxm_parameter_reserved_bytes": 16777216,
+    "limitation": "Core lacks complete texture/page owners; mapped blocks include padding and free holes. Exact live page occupancy cannot be uniquely reconstructed.",
+    "desktop_log_excluded": "Current Desktop/log.txt contains tsukihime540-ui-log-20261102, a different project."
+  },
+  "affected_art": {
+    "archive": "jallpac",
+    "index": 7387,
+    "name": "YAM_A_00_01_06_02_02.NXZ",
+    "format": "DXT5",
+    "old_physical": [
+      135,
+      540
+    ],
+    "physical": [
+      508,
+      2037
+    ],
+    "logical": [
+      1041,
+      4166
+    ],
+    "old_dxt_payload_bytes": 262144,
+    "dxt_payload_bytes": 1048576,
+    "old_pitched_rgba_bytes": 293760,
+    "pitched_rgba_bytes": 4171776,
+    "graded_upload_growth_ratio": 14.201307189542483,
+    "exact_p8_candidate": false,
+    "art_changed_by_this_fix": false
+  },
+  "changes": {
+    "large_texture_page_granule": 262144,
+    "small_slice_granule": 64,
+    "small_slices_only_in_256k_pages": true,
+    "large_page_reuse_requires_equal_size_and_empty": true,
+    "whole_empty_pages_counted_for_admission": true,
+    "live_holes_not_summed": true,
+    "optional_cache_pressure_trim": true,
+    "preparation_failure_retains_previous_frame": true,
+    "unsubmitted_cache_keys_invalidated": true,
+    "post_submission_driver_errors_not_reclassified": true,
+    "budgets_unchanged": true,
+    "resolution_unchanged": true,
+    "images_unchanged": true,
+    "retained_frame_menu_recovery_hardware_verified": false
+  },
+  "validation": {
+    "renderer_tests_passed": 106,
+    "renderer_threads": 1,
+    "pool_cases": 5,
+    "pool_checks": 89,
+    "pool_failures": 0,
+    "pool_retired_page_regression_red_checks_failed": 3,
+    "compressed_cases": 95,
+    "compressed_checks": 1343,
+    "compressed_failures": 0,
+    "copy_cases": 27,
+    "copy_checks": 6072,
+    "copy_failures": 0,
+    "native_sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer",
+      "LeakSanitizer"
+    ],
+    "build_source_files_verified": 307,
+    "build_artifacts_verified_before_delivery_move": 10,
+    "arm_build_passed": true,
+    "vpk_crc_ok": true,
+    "vpk_and_independent_eboot_identical": true,
+    "startup_profile_check_passed": true,
+    "startup_key_files": 37,
+    "startup_read_bytes": 4434498,
+    "hardware_test_performed": false,
+    "limitations": [
+      "Native SDK calls are host doubles; no actual GPU execution.",
+      "Pool tests reproduce defects and the recorded request geometry, not every core page.",
+      "Renderer tests run serially due process-wide optimization switches."
+    ]
+  },
+  "assets_manifest_sha256": "35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189",
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9802491,
+      "sha256": "5b21e711279c8b2ca6d2ce62550436e30f16f0e4ab1c27229088cf343e3b0a7a"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-game-540p.vpk",
+      "bytes": 7160829,
+      "sha256": "3b40b98b92b80e41b39f5e68cebafa19759a4ec43369b559536f69333a544d50"
+    }
+  ],
+  "build_receipt": {
+    "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/vita-game-release-540p-build.json",
+    "bytes": 64665,
+    "sha256": "22f85145ae374706174a46f0e4f630edcdc0d3c2eaa3d32d177a607f6af02226"
+  },
+  "local_evidence": [
+    {
+      "path": ".work/vita/memory-crash-20261102/crash-analysis.json",
+      "bytes": 11975,
+      "sha256": "c5f590cbb83e3acbf2a332220c353184756ee37944c7a0b55d2ff3f499f5011d"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/render-tests.log",
+      "bytes": 1954,
+      "sha256": "8f64e8d908d49b2af5d9cb2b424b8f4fb0555a1334e4b5276a0daa21fb88c2f9"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/pool-tests.log",
+      "bytes": 44,
+      "sha256": "0299c3628903f4ceeb6a295342c0ef8617cc62db040a1d07c91c7f9c0160ffda"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/pool-empty-page-red.log",
+      "bytes": 270,
+      "sha256": "2732d4dcd8357d3c437fb4dda71bc0c8f2bb4af23640cd46f535d2f812c48649"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/compressed-tests-final.log",
+      "bytes": 14511,
+      "sha256": "2a95a1c42bcd4d52967d6bbcfe4ffc5c9f153d3fdadc26e06dc21ebcb2fbaccc"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/copy-tests-final.log",
+      "bytes": 1472,
+      "sha256": "e7c145922b930f74e5e777c3c03d77a7a13784b98db04136430725e3eb5c7cf9"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/build.log",
+      "bytes": 11315,
+      "sha256": "08d9de465aff4a396a0c4c8c1a8650869545ea5dbf2fc2d4a8533fa1e0b358da"
+    },
+    {
+      "path": ".work/vita/memory-crash-20261102/resourcefix-symbols.zip",
+      "bytes": 5179586,
+      "sha256": "3d735555f78c8dbe295eea5bd0a048af39253e2649d3dd84e4912eff559df006"
+    }
+  ],
+  "retest": [
+    "Scene 3 / PC 1148 and 2368",
+    "portrait variants and fast-forward then load",
+    "previous-frame retention and menu recovery when admission is denied",
+    "long-running CDRAM pressure"
+  ]
+}

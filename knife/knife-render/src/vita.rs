@@ -52,6 +52,28 @@ const CDRAM_GRANULE: usize = 256 * 1024;
 // The callback is invoked for a validated cache miss, before its native upload.
 type FrameAdmission<'a> = dyn FnMut(&mut dyn FnMut() -> Result<()>) -> Result<()> + 'a;
 
+/// No commands from the pending frame were submitted. The game may retain
+/// the previous complete targets and show its ordinary resource-error UI.
+#[derive(Debug)]
+pub struct FramePreparationError;
+impl std::fmt::Display for FramePreparationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Vita frame resource preparation failed before submission")
+    }
+}
+impl std::error::Error for FramePreparationError {}
+
+/// Only clean allocation/admission pressure may trigger optional-cache recovery.
+/// Driver/retirement errors must not be mistaken for a shortage of free bytes.
+#[derive(Debug)]
+struct TextureMemoryPressure;
+impl std::fmt::Display for TextureMemoryPressure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("native texture memory pressure")
+    }
+}
+impl std::error::Error for TextureMemoryPressure {}
+
 /// Deferred-atlas preparation accounting. A pre-baked GXT is only *registered* by
 /// the upload path, so without these counters its read/parse/upload work is
 /// invisible and hides inside render_us.
@@ -1269,7 +1291,7 @@ impl Renderer {
         label: &str,
     ) -> Result<TexRef> {
         let tex = self.upload_raw(width, height, Upload::Rgba8(data), true)
-            .with_context(|| format!("uploading baked {label}"))?;
+            .with_context(|| format!("uploading baked {label} ({width}x{height} RGBA8)"))?;
         #[cfg(target_os = "vita")]
         menu_draw_diagnostic::texture("LABEL", &tex.native, label);
         Ok(tex)
@@ -1790,6 +1812,14 @@ impl Renderer {
         self.create_target_sized([width, height], scene_size(width, height), label)
     }
 
+    /// Required outputs can release game-owned optional caches after an actual
+    /// allocation failure, even when a free-memory query looked sufficient.
+    pub fn try_create_scene_target_reclaim(&self, width: u32, height: u32, label: &str,
+        reclaim: impl FnOnce() -> usize) -> Result<RenderTarget>
+    {
+        self.create_required_target(|| self.try_create_scene_target(width, height, label), label, reclaim)
+    }
+
     /// The UI composite target is the display's 960x540 content size, i.e. half of
     /// the 1920x1080 logical canvas. With the scene chain also at 960x540 the
     /// scene-to-canvas blit is 1:1. Script coordinates remain unchanged.
@@ -1802,6 +1832,32 @@ impl Renderer {
     /// existing target usable; physical sizing matches the primary composite.
     pub fn try_create_composite_target(&self, width: u32, height: u32, label: &str) -> Result<RenderTarget> {
         self.create_target_sized([width, height], composite_physical(width, height), label)
+    }
+
+    pub fn try_create_composite_target_reclaim(&self, width: u32, height: u32, label: &str,
+        reclaim: impl FnOnce() -> usize) -> Result<RenderTarget>
+    {
+        self.create_required_target(|| self.try_create_composite_target(width, height, label), label, reclaim)
+    }
+
+    fn create_required_target(&self, allocate: impl Fn() -> Result<RenderTarget>, label: &str,
+        reclaim: impl FnOnce() -> usize) -> Result<RenderTarget>
+    {
+        let error = match allocate() { Ok(target) => return Ok(target), Err(error) => error };
+        if error.downcast_ref::<TextureMemoryPressure>().is_none() { return Err(error); }
+        let released = reclaim();
+        tracing::warn!(target_label = label, released_bytes = released, error = %format!("{error:#}"),
+            "Required render target allocation pressure");
+        if released == 0 { return Err(error); }
+        // Dropped owners may still be referenced by recorded commands or a GPU
+        // fence. Drain actual retirements before one final bounded allocation.
+        self.device.call(|g| g.reclaim_retired(true)).context(FramePreparationError)?;
+        let result = allocate();
+        if result.is_ok() {
+            tracing::info!(target_label = label, released_bytes = released,
+                "Required render target recovered after cache release");
+        }
+        result
     }
 
     fn create_target_sized(
@@ -1820,7 +1876,8 @@ impl Renderer {
             true,
             true,
         )
-        .with_context(|| format!("creating render target {label}"))?;
+        .with_context(|| format!("creating render target {label}"))
+        .context(FramePreparationError)?;
         #[cfg(target_os = "vita")]
         menu_draw_diagnostic::texture("LABEL", &tex.native, label);
         if label == "canvas" {
@@ -2621,7 +2678,7 @@ fn make_texture(
     linear: bool,
     render_target: bool,
 ) -> Result<TexRef> {
-    make_texture_inner(device, logical, physical, bytes, format, srgb, linear, render_target, true)
+    make_texture_inner(device, logical, physical, bytes, format, srgb, linear, render_target, true, &HashSet::new())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2635,6 +2692,7 @@ fn make_texture_inner(
     linear: bool,
     render_target: bool,
     reclaim: bool,
+    pinned: &HashSet<*const NativeTexture>,
 ) -> Result<TexRef> {
     let srgb = false;
     ensure!(
@@ -2654,10 +2712,10 @@ fn make_texture_inner(
     }
     let allocation = native_allocation_bytes(physical, bpp)?;
     if reclaim {
-        reserve_cdram(device, allocation, 0, &HashSet::new())?;
+        reserve_cdram(device, allocation, 0, pinned)?;
     }
-    let id = device
-        .call(|g| g.create_texture_ex(bytes, w, h, stride, format, srgb, linear, render_target))?;
+    let id = allocate_texture_with_recovery(device, pinned,
+        |g| g.create_texture_ex(bytes, w, h, stride, format, srgb, linear, render_target))?;
     let native = Rc::new(NativeTexture {
             device: device.clone(),
             id: RefCell::new(Some(id)),
@@ -2758,6 +2816,28 @@ fn reserve_cdram(
     // headroom must not repeatedly walk every registered logical texture.
     #[cfg(test)]
     device.admission_scans.set(device.admission_scans.get() + 1);
+    let mut victims = evictable_deferred(device, pinned).into_iter();
+    loop {
+        let fits_cache = fits_cache()?;
+        if fits_cache && available >= peak { return Ok(()); }
+        let Some(victim) = victims.next() else {
+            if !fits_cache {
+                return Err(anyhow!("deferred texture budget has no evictable atlas: {} + {cache_growth} > {budget}",
+                    device.resident_deferred_bytes.get()).context(TextureMemoryPressure));
+            }
+            return Err(anyhow!("native CDRAM headroom has no evictable atlas: bake/allocation peak {peak} > available {available}")
+                .context(TextureMemoryPressure));
+        };
+        evict_deferred(device, &victim, pinned.len())?;
+        available = device.call(|g| g.available_cdram()).context("querying native CDRAM allowance")?;
+        if available < peak {
+            device.call(|g| g.reclaim_retired(true))?;
+            available = device.call(|g| g.available_cdram())?;
+        }
+    }
+}
+
+fn evictable_deferred(device: &Device, pinned: &HashSet<*const NativeTexture>) -> Vec<Rc<NativeTexture>> {
     let mut victims: Vec<_> = device.deferred.borrow().iter().filter_map(Weak::upgrade)
         .filter(|texture| !pinned.contains(&Rc::as_ptr(texture)) && texture.id.borrow().is_some()).collect();
     if knife_perf::optimizations::enabled(knife_perf::optimizations::GRADE_CACHE) {
@@ -2770,36 +2850,58 @@ fn reserve_cdram(
             (std::cmp::Reverse(age_band), texture.rebuild_us.get().min(2_000_000), texture.last_used.get())
         });
     } else { victims.sort_by_key(|texture| texture.last_used.get()); }
-    let mut victims = victims.into_iter();
-    loop {
-        let fits_cache = fits_cache()?;
-        if fits_cache && available >= peak { return Ok(()); }
-        let Some(victim) = victims.next() else {
-            if !fits_cache {
-                bail!("deferred texture budget has no evictable atlas: {} + {cache_growth} > {budget}",
-                    device.resident_deferred_bytes.get());
-            }
-            bail!("native CDRAM headroom has no evictable atlas: bake/allocation peak {peak} > available {available}");
-        };
-        let id = victim.id.borrow_mut().take();
-        if let Some(id) = id {
-            let evict = Scope::new(Metric::DeferredEvict);
-            let bytes = victim.allocation_bytes()?;
-            #[cfg(target_os = "vita")]
-            menu_draw_diagnostic::residency("EVICT", &victim, pinned.len());
-            device.retire(&id);
-            // An uncertain native retirement poisons subsequent allocation;
-            // never pretend that a failed release recovered this memory.
-            device.drain()?;
-            victim.release_resident_charge()?;
-            evict.finish_hot(victim.deferred.as_ref().map_or("unknown", |s| &s.label), bytes as u64, 0);
-            available = device.call(|g| g.available_cdram()).context("querying native CDRAM allowance")?;
-            if available < peak {
-                device.call(|g| g.reclaim_retired(true))?;
-                available = device.call(|g| g.available_cdram())?;
-            }
-        }
+    victims
+}
+
+fn evict_deferred(device: &Device, victim: &NativeTexture, _pinned_count: usize) -> Result<()> {
+    let id = victim.id.borrow_mut().take();
+    if let Some(id) = id {
+        let evict = Scope::new(Metric::DeferredEvict);
+        let bytes = victim.allocation_bytes()?;
+        #[cfg(target_os = "vita")]
+        menu_draw_diagnostic::residency("EVICT", victim, _pinned_count);
+        device.retire(&id);
+        // An uncertain native retirement poisons subsequent allocation;
+        // never pretend that a failed release recovered this memory.
+        device.drain()?;
+        victim.release_resident_charge()?;
+        evict.finish_hot(victim.deferred.as_ref().map_or("unknown", |s| &s.label), bytes as u64, 0);
     }
+    Ok(())
+}
+
+/// A free-memory query cannot reserve a contiguous kernel block. Recover only
+/// from an explicit native allocation failure: one completion drain, then one
+/// retry per idle residency victim. Inputs/decoded pixels stay borrowed, and
+/// every texture required by the submitted frame stays pinned throughout.
+fn allocate_texture_with_recovery(device: &Device, pinned: &HashSet<*const NativeTexture>,
+    mut allocate: impl FnMut(&mut Gxm) -> std::result::Result<TextureId, String>) -> Result<TextureId> {
+    let mut error = match device.call(&mut allocate) {
+        Ok(id) => return Ok(id),
+        Err(error) => error,
+    };
+    if !device.gxm.borrow().texture_allocation_failed() { return Err(error); }
+    device.call(|g| g.reclaim_retired(true)).context("recovering native texture allocation")?;
+    match device.call(&mut allocate) {
+        Ok(id) => return Ok(id),
+        Err(next) => error = next,
+    }
+    if !device.gxm.borrow().texture_allocation_failed() { return Err(error); }
+    let mut attempts = 2;
+    // A persistent driver failure must not churn the complete cache or stall
+    // the main thread indefinitely. Ordinary successful allocations skip this.
+    for victim in evictable_deferred(device, pinned).into_iter().take(8) {
+        evict_deferred(device, &victim, pinned.len())?;
+        device.call(|g| g.reclaim_retired(true)).context("retiring idle texture for allocation recovery")?;
+        attempts += 1;
+        match device.call(&mut allocate) {
+            Ok(id) => return Ok(id),
+            Err(next) => error = next,
+        }
+        if !device.gxm.borrow().texture_allocation_failed() { return Err(error); }
+    }
+    Err(error.context(format!("native texture allocation failed after {attempts} bounded attempts"))
+        .context(TextureMemoryPressure))
 }
 
 fn layout_bytes(width: u32, height: u32, bpp: u32, stride: u32) -> Result<usize> {
@@ -2889,7 +2991,8 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
                     admit(&mut || reserve_cdram(device, allocation, allocation, &pinned))
                         .with_context(|| format!("preparing GXT atlas {}", source.label))?;
                     let upload_start = std::time::Instant::now();
-                    let uploaded = device.call(|g| g.create_gxt_texture(view.file, false, true));
+                    let uploaded = allocate_texture_with_recovery(device, &pinned,
+                        |g| g.create_gxt_texture(view.file, false, true));
                     #[cfg(target_os = "vita")]
                     deferred_metrics::add(&deferred_metrics::UPLOAD_US, upload_start.elapsed());
                     uploaded.with_context(|| format!("uploading GXT atlas {}", source.label))
@@ -2925,7 +3028,7 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
             admit(&mut || reserve_cdram(device, allocation, allocation, &pinned))
                 .with_context(|| format!("preparing native atlas {}", source.label))?;
             let uploaded = make_texture_inner(&texture.device, texture.size, texture.size,
-                Some(&pixels), TextureFormat::Rgba8, false, true, false, false)
+                Some(&pixels), TextureFormat::Rgba8, false, true, false, false, &pinned)
                 .with_context(|| format!("uploading native atlas {}", source.label))?;
             drop(pixels);
             let id = uploaded.native.id.borrow_mut().take()
@@ -3061,7 +3164,7 @@ fn scene_kind(target: &NativeTexture) -> u32 {
 }
 
 fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut FrameAdmission<'_>) -> Result<()> {
-    prepare_deferred(device, commands, admit)?;
+    prepare_deferred(device, commands, admit).context(FramePreparationError)?;
     // Preparation may submit nested bake batches. Reserve this complete batch
     // afterwards, including the final display clear and six present vertices.
     let mut basic_quads = 2usize;

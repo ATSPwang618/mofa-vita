@@ -45,6 +45,7 @@ unsafe extern "C" {
     fn kv_gxm_stats(g: *const c_void, stats: *mut GxmStats) -> i32;
     fn kv_gxm_timing(g: *const c_void, timing: *mut GxmTiming) -> i32;
     fn kv_gxm_cdram_available(g: *const c_void, available: *mut u32) -> i32;
+    fn kv_gxm_texture_allocation_failed(g: *const c_void) -> u32;
     fn kv_gxm_error(g: *const c_void) -> *const c_char;
     fn kv_gxm_destroy(g: *mut c_void) -> i32;
 }
@@ -144,6 +145,7 @@ enum TextureStorage { Linear(u32), Movie, Compressed }
 pub struct Gxm {
     pointer: Option<NonNull<c_void>>,
     closing: bool,
+    last_texture_allocation_failed: bool,
     textures: Vec<Option<TextureRecord>>,
     scene_reads: Vec<*const c_void>,
     owner: Rc<()>,
@@ -164,13 +166,13 @@ impl Gxm {
             if let Some(pointer) = NonNull::new(pointer) {
                 // C retained a partial owner. Keep an explicit cleanup guard and
                 // retry its teardown; it must never become a renderable owner.
-                let _cleanup = Self { pointer: Some(pointer), closing: true, textures: Vec::new(), scene_reads: Vec::new(),
+                let _cleanup = Self { pointer: Some(pointer), closing: true, last_texture_allocation_failed: false, textures: Vec::new(), scene_reads: Vec::new(),
                     owner: Rc::new(()), _thread_bound: PhantomData };
             }
             return Err(message);
         }
         let pointer = NonNull::new(pointer).ok_or("GXM returned a null owner")?;
-        Ok(Self { pointer: Some(pointer), closing: false, textures: Vec::new(), scene_reads: Vec::new(), owner: Rc::new(()), _thread_bound: PhantomData })
+        Ok(Self { pointer: Some(pointer), closing: false, last_texture_allocation_failed: false, textures: Vec::new(), scene_reads: Vec::new(), owner: Rc::new(()), _thread_bound: PhantomData })
     }
     fn raw(&self) -> Result<*mut c_void, String> {
         if self.closing { return Err("GXM owner is closing; only cleanup may be retried".into()); }
@@ -185,6 +187,7 @@ impl Gxm {
     }
     pub fn create_texture(&mut self, rgba: &[u8], width: u32, height: u32,
         stride: u32) -> Result<TextureId, String> {
+        self.last_texture_allocation_failed = false;
         if width == 0 || width > 960 || height == 0 || height > 1080
             || stride < width * 4 || stride > 3840 {
             return Err("invalid RGBA texture dimensions or stride".into());
@@ -305,6 +308,7 @@ impl Gxm {
     pub fn create_texture_ex(&mut self, data: Option<&[u8]>, width: u32, height: u32,
         stride: u32, format: TextureFormat, srgb: bool, linear: bool,
         render_target: bool) -> Result<TextureId, String> {
+        self.last_texture_allocation_failed = false;
         let bpp = format.bytes_per_pixel();
         if width == 0 || height == 0 || width > 2048 || height > 2048
             || (matches!(format, TextureFormat::R8) && (srgb || render_target)) {
@@ -316,6 +320,9 @@ impl Gxm {
         let status = unsafe { kv_gxm_texture_create_ex(self.raw()?, data.map_or(std::ptr::null(), |b| b.as_ptr()),
             width, height, stride, format as u32, u32::from(srgb), u32::from(linear),
             u32::from(render_target), &mut texture) };
+        // SAFETY: the owner remains alive after a failed creation/rollback.
+        self.last_texture_allocation_failed = status < 0
+            && unsafe { kv_gxm_texture_allocation_failed(self.raw()?) } != 0;
         self.check(status)?;
         let pointer = NonNull::new(texture).ok_or("GXM returned a null extended texture")?;
         let slot = self.textures.len();
@@ -326,6 +333,7 @@ impl Gxm {
     /// PVRTC4/DXT1/DXT5 payload into immutable, budgeted native storage.
     /// No runtime decompression or RGBA staging allocation is performed.
     pub fn create_gxt_texture(&mut self, file: &[u8], srgb: bool, linear: bool) -> Result<TextureId, String> {
+        self.last_texture_allocation_failed = false;
         let gxt = GxtTexture::parse(file).map_err(|e| e.to_string())?;
         let format = match gxt.format {
             GxtFormat::Pvrtc4 => 0x8100_0000,
@@ -338,6 +346,9 @@ impl Gxm {
         let status = unsafe { kv_gxm_texture_create_compressed(self.raw()?, gxt.data.as_ptr(),
             gxt.data.len() as u32, u32::from(gxt.width), u32::from(gxt.height), format,
             u32::from(srgb), u32::from(linear), &mut texture) };
+        // SAFETY: C owns the failure record, including rollback safety.
+        self.last_texture_allocation_failed = status < 0
+            && unsafe { kv_gxm_texture_allocation_failed(self.raw()?) } != 0;
         self.check(status)?;
         let pointer = NonNull::new(texture).ok_or("GXM returned a null compressed texture")?;
         let slot = self.textures.len();
@@ -345,6 +356,9 @@ impl Gxm {
             height: u32::from(gxt.height), storage: TextureStorage::Compressed }));
         Ok(TextureId { slot, owner: self.owner.clone() })
     }
+    /// True only for an allocation failure with a clean, usable native owner.
+    pub fn texture_allocation_failed(&self) -> bool { self.last_texture_allocation_failed }
+
     fn source_layout(data: &[u8], width: u32, height: u32, stride: u32, bpp: u32) -> Result<(), String> {
         if width == 0 || height == 0 || stride < width * bpp || stride > 8192 {
             return Err("invalid source texture stride or dimensions".into());

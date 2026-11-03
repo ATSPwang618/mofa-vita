@@ -1,8 +1,67 @@
 """Validate production KIMG/KATL/GXT metadata without decoding image pixels."""
 import struct
+import zlib
 
 CAP = 32 * 1024 * 1024
 GRANULE = 256 * 1024
+
+
+def check_story_rgba_budget(asset, manifest):
+    """Host packaging guard; no checks are introduced on the Vita frame path."""
+    policy = manifest.get('offline_story_memory_budget')
+    if policy is None:
+        return None  # Historical packs predate this explicit contract.
+    require(policy.get('schema') == 'knife-offline-story-memory-budget-v1'
+            and policy.get('rgba_allocation_cap') == 1024 * 1024, 'unknown offline RGBA budget policy')
+    checked = protected = maximum = 0
+    for archive in manifest['archives']:
+        base = archive['name']
+        if base not in ('jallpac', 'jallpachd', 'allpacml', 'allpachdml'):
+            continue
+        names = asset(base + '.nam').read_bytes()
+        cache = {}
+        with asset(base + '.mrg').open('rb') as source:
+            extent = source.seek(0, 2)
+            for index, row in enumerate(struct.iter_unpack('<IHH', asset(base + '.hed').read_bytes())):
+                sector, count, _ = row
+                if sector == 0xffffffff:
+                    break
+                if not count:
+                    continue
+                name = names[index*32:(index+1)*32].split(b'\0')[0].split(b'\r')[0].decode()
+                key = (*row, name.upper().startswith('RULE_'))
+                if key not in cache:
+                    require(count * 2048 <= CAP and (sector+count)*2048 <= extent, 'offline archive bounds')
+                    source.seek(sector*2048)
+                    raw = source.read(count*2048)
+                    if raw[:4] in (b'NXCX', b'NXGX'):
+                        n, compressed = struct.unpack_from('<II', raw, 4)
+                        require(0 < n <= CAP and compressed+16 <= len(raw), 'offline NX bounds')
+                        decoder = zlib.decompressobj(31 if raw[:4] == b'NXGX' else 15)
+                        raw = decoder.decompress(raw[16:16+compressed], n+1)
+                        require(len(raw) == n and decoder.eof and not decoder.unused_data
+                                and not decoder.unconsumed_tail, 'offline NX stream')
+                    result = []
+                    for _, info in images_in(raw):
+                        w, h = info['physical']
+                        if min(w,h) <= 16 or info.get('png_color_type') in (0,4) or key[-1]:
+                            result.append(None)
+                            continue
+                        payload = align(w,8)*h*4
+                        charge = align(payload,64 if payload < GRANULE else GRANULE)
+                        require(charge <= policy['rgba_allocation_cap'],
+                            f'offline RGBA image budget exceeded: {base}:{index}:{name} '
+                            f'{w}x{h} allocation={charge} > {policy["rgba_allocation_cap"]}; '
+                            'preprocess this pack with tools/quality540/limit_runtime_art.py')
+                        result.append(charge)
+                    cache[key] = result
+                for charge in cache[key]:
+                    if charge is None:
+                        protected += 1
+                    else:
+                        checked += 1
+                        maximum = max(maximum, charge)
+    return dict(checked=checked, protected=protected, maximum_rgba_allocation=maximum)
 
 
 def require(condition, message):
@@ -78,5 +137,5 @@ def images_in(data):
         p += nl
         out.append((name, image_info(data[p:p + il])))
         p += il
-    require(p == len(data), "KATL trailing bytes")
+    require(p == len(data) or (len(data) == align(p, 2048) and not any(data[p:])), "KATL trailing bytes")
     return out

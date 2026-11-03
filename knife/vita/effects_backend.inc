@@ -497,6 +497,7 @@ int32_t kv_gxm_texture_seal(KvGxm *g, KvGxmTexture *t) {
 int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
     uint32_t height, uint32_t stride, uint32_t format, uint32_t srgb,
     uint32_t linear, uint32_t render_target, KvGxmTexture **out) {
+    if (owner_ok(g)) g->texture_allocation_failed = 0;
     if (!active(g) || !out || g->scene_open || !width || !height || width > 2048 || height > 2048
         || format > 1 || srgb != 0 || linear > 1 || render_target > 1
         || (format == 1 && (srgb || render_target))) return KV_BAD_ARGUMENT;
@@ -547,6 +548,7 @@ int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
 int32_t kv_gxm_texture_create_compressed(KvGxm *g, const uint8_t *data,
     uint32_t length, uint32_t width, uint32_t height, uint32_t format,
     uint32_t srgb, uint32_t linear, KvGxmTexture **out) {
+    if (owner_ok(g)) g->texture_allocation_failed = 0;
     if (!active(g) || !out || g->scene_open || !data || !width || !height
         || width > 2048 || height > 2048 || srgb != 0 || linear > 1
         || (format != SCE_GXM_TEXTURE_FORMAT_PVRT4BPP_ABGR

@@ -1,0 +1,105 @@
+{
+  "schema": "knife-vita-bgm-pcm-buffer-v1",
+  "verified_at": "2026-11-03T17:37:36.922897+00:00",
+  "build_tag": "540p-d734b38-bgmbuf-20261103",
+  "branch": "perf/render",
+  "base_commit": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+  "changes_local_only": true,
+  "committed": false,
+  "pushed": false,
+  "remote_read_only_observation": {
+    "perf/render": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260"
+  },
+  "trigger": {
+    "log_sha256": "28b3f174095376ce6c92dd926fd442b7fc7f653a8cf0840357bda437cadfca16",
+    "build_tag": "540p-d734b38-targetfix-20261103",
+    "chapter2_starve_episodes": 47,
+    "chapter2_missing_ms": 11100,
+    "largest_labelled_single_m27_refill_us": 724251
+  },
+  "change": {
+    "selection": "existing explicit Curve::Bgm category; no filename or looping inference",
+    "bgm_queue_blocks": 50,
+    "default_queue_blocks": 10,
+    "block_frames": 960,
+    "sample_rate": 48000,
+    "channels": 2,
+    "pcm_type": "f32",
+    "bgm_prefetch_ms": 1000,
+    "default_prefetch_ms": 200,
+    "bgm_pool_bytes": 399360,
+    "default_pool_bytes": 92160,
+    "bgm_extra_pool_bytes": 307200,
+    "stream_channel_limit": 8,
+    "conservative_all_bgm_pool_ceiling_bytes": 3194880,
+    "ceiling_scope": "PCM pool payload only; excludes codec/thread/queue metadata; allocated only for active streams",
+    "allocation": "one fixed pool per active stream worker in MAIN; no growth or CDRAM",
+    "startup": "begins with first available block; no one-second prefill gate",
+    "control": "volume/pause/stop/fade applied in existing mixer after predecode",
+    "logs": "new build identity, per-stream queue/pool sizing, default+BGM profile fields in header and receipt",
+    "compressed_source_cache_added": false,
+    "native_C_changed": false,
+    "render_changed": false,
+    "assets_changed": false,
+    "format": "existing Ogg Opus"
+  },
+  "validation": {
+    "audio_unit_tests": 28,
+    "audio_integration_tests": 1,
+    "failed_tests": 0,
+    "new_test_functions": 4,
+    "extended_backpressure_test": true,
+    "red": "old queue supplied 9600 frames; regression required 33600 frames (700ms)",
+    "green": "prefilled BGM survives 700ms demand while reader held, bounded at 1s, resumes exact next sample",
+    "real_stream_mix_controls_tested": [
+      "pause",
+      "unpause",
+      "gain",
+      "stop_now",
+      "fade_out"
+    ],
+    "limits": [
+      "host test uses deterministic reader barrier, not device timing",
+      "larger queue does not diagnose or remove storage/decode/scheduling stalls",
+      "queue protects only when enough PCM has already been produced"
+    ],
+    "arm_build": true,
+    "vpk_crc": true,
+    "vpk_eboot_matches": true,
+    "source_input_hashes": 308,
+    "artifact_hashes": 10,
+    "asset_manifest_sha256": "5481d818422dd8a7fe37fa9cd45dbd7a6d805bd9a14749c69ab5f27bd831e7eb",
+    "stream_payload_hashes": 9470,
+    "runtime_verified": false,
+    "hardware_verified": false
+  },
+  "delivery": {
+    "directory": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita",
+    "title_id": "KNIF00540",
+    "device_eboot": "ux0:app/KNIF00540/eboot.bin",
+    "asset_retransfer_if_prebudget_installed": false
+  },
+  "artifacts": [
+    {
+      "path": ".work/vita/game-release-540p/eboot.bin",
+      "bytes": 9833571,
+      "sha256": "7d65354fb7d51c20c960f8be84101c21898bc97dce4f3a15c58d1abaea3d0ed0",
+      "delivered_path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\eboot.bin"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife-vita-game-540p.vpk",
+      "bytes": 7170718,
+      "sha256": "58c9d53d97f20a3f9d168d8cd8c6ed9947e3b9933fd5179a9ca0ec7092ea1c8b",
+      "delivered_path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\knife-vita-game-540p.vpk"
+    }
+  ],
+  "receipt": {
+    "path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\vita-game-release-540p-build.json",
+    "sha256": "dd0cfa6e1d66774a9cae53ebd6b4d70905ee432e110daf525f228d444a5c2fae"
+  },
+  "baseline_symbols": {
+    "path": ".work/vita/bgm-buffer-20261103/targetfix-sources-symbols.zip",
+    "sha256": "dec785e551945004e9e93fe1fde879204151d5bd321ca12781cfa7a3f64cfbf0"
+  }
+}

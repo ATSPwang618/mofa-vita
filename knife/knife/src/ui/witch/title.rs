@@ -381,9 +381,20 @@ impl Ui {
     /// worker's reservation or starts a duplicate read. Ready time is lead time
     /// in Metric::UiSourceReady.aux, not main-thread CPU work.
     #[cfg(target_os = "vita")]
-    fn wt_sources_ready(&mut self, game: &Game) -> bool {
+    fn wt_sources_ready(&mut self, game: &mut Game, r: &Renderer) -> bool {
         if self.wt.source_prepared { return true; }
         let retry = self.wt.source_wait.is_none();
+        if retry {
+            self.w.tex.release_extra_except(self.wt.st);
+            let released = game.assets.vita_release_extra_ui_sources(self.wt.st);
+            // A page transition is a safe boundary for optional render
+            // residency. Retire old captures before admitting the next page's
+            // source work; active frame owners remain protected by the native
+            // fence inside this call.
+            game.vita_release_optional_render_targets(r);
+            game.assets.vita_extra_ui_event(self.wt.st, "pending",
+                &format!("direct UI member reads; prior idle source bytes released={released}"));
+        }
         let start = *self.wt.source_wait.get_or_insert_with(std::time::Instant::now);
         let elapsed = start.elapsed();
         let result = if elapsed >= std::time::Duration::from_secs(10) {
@@ -391,6 +402,7 @@ impl Ui {
         } else { game.assets.vita_poll_extra_ui_sources(self.wt.st, retry) };
         match result {
             Ok(true) => {
+                game.assets.vita_extra_ui_event(self.wt.st, "ready", "required sources ready; raw atlases load per member");
                 knife_perf::add(knife_perf::Metric::UiSourceReady, 0, start.elapsed().as_micros() as u64);
                 self.wt.source_prepared = true;
                 self.wt.source_wait = None;
@@ -401,6 +413,7 @@ impl Ui {
                 false
             },
             Err(error) => {
+                game.assets.vita_extra_ui_event(self.wt.st, "failed", &format!("{error:#}"));
                 tracing::warn!("UI source preparation: {error:#}");
                 if let Ok(mut slot) = super::LAST_ATLAS_ERROR.lock() { *slot = Some(format!("{error:#}")); }
                 knife_perf::add(knife_perf::Metric::UiSourceFailed, 0, u64::from(self.wt.st));
@@ -561,7 +574,7 @@ impl Ui {
             }
             38..=40 => {
                 #[cfg(target_os = "vita")]
-                if !self.wt_sources_ready(game) { return; }
+                if !self.wt_sources_ready(game, r) { return; }
                 self.wt.black += 0.02 * f;
                 if self.wt.black > 1.2 {
                     self.wt.black = 1.0;

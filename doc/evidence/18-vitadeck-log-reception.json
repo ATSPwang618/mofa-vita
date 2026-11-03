@@ -1,0 +1,145 @@
+{
+  "schema": "knife-vitadeck-log-reception-v1",
+  "as_of": "2026-11-02",
+  "source_branch": "perf/render",
+  "source_head": "d734b38e9a0f78ef17ec1f5d0df874d5bf2a2ef8",
+  "remote_writes_performed": false,
+  "established_cause": "Single-client receive loop waits for one persistent stream to close before accepting another; backlog accumulated 128 CloseWait sockets.",
+  "installed_eboot": {
+    "path": "D:\\AI-CODEX\\mofa-vita\\dist\\Witch-on-the-Holy-Night-Chengkong-540p-Vita\\eboot.bin",
+    "bytes": 9802491,
+    "sha256": "5b21e711279c8b2ca6d2ce62550436e30f16f0e4ab1c27229088cf343e3b0a7a"
+  },
+  "installed_vita_eboot_hash_matches": true,
+  "game_rebuilt": false,
+  "game_code_changed": false,
+  "game_assets_changed": false,
+  "runtime_flag": {
+    "vita_path": "ux0:data/WitchontheHolyNight/perf-enable.txt",
+    "value": "1\n",
+    "ftp_readback_verified_immediately_after_write": true,
+    "later_ftp_recheck": "Data connection timed out after real game logging had already been observed; no further device configuration was changed."
+  },
+  "pc_receiver": {
+    "executable": {
+      "path": "D:\\AI-PSVITA\\PSV-ARTEMIS\\VitaDeck\\VitaDeck.exe",
+      "bytes": 52336732,
+      "sha256": "d643406dd3a067b010bd3bc4396cddf30e6e1b807b0c005de863a478fc08fdc0"
+    },
+    "executable_modified": false,
+    "installed_patch": {
+      "path": "D:\\AI-PSVITA\\PSV-ARTEMIS\\VitaDeck\\components\\custom\\logging_multiclient_fix.py",
+      "bytes": 6430,
+      "sha256": "be0d100fccbe1b1f41a24fdaaaf662e9e8b4747943efcc716b23e56f387308b6"
+    },
+    "patch_version": "vitadeck-multiclient-20261102",
+    "max_clients": 64,
+    "max_pending_chars": 262144,
+    "listener": "10.195.41.1:8080",
+    "vita": "10.195.41.100",
+    "rotating_file": "D:\\AI-PSVITA\\PSV-ARTEMIS\\VitaDeck\\logs\\vita-console.log",
+    "max_file_bytes": 8388608,
+    "backups": 1
+  },
+  "verification": {
+    "original_source_regression_failed": true,
+    "installed_bytecode_regression_failed": true,
+    "regression_tests_passed": 4,
+    "real_vitadeck_two_client_probe_passed": true,
+    "real_vitadeck_utf8_probe_passed": true,
+    "actual_game_reception_observed": true,
+    "received_game_versions": [
+      "540p-d734b38-poolfix-20261102"
+    ],
+    "frame_windows_received": 29,
+    "first_frame_window": 293,
+    "last_frame_window": 10886,
+    "reconstructed_chunks": 92,
+    "captured_kind_counts": {
+      "build_identity": 23,
+      "audit_chunk": 590,
+      "runtime_state": 43,
+      "compact_stream": 1,
+      "shader_chain_variant": 16,
+      "shader_capabilities": 1,
+      "audit_bank": 745,
+      "audit_hotspot": 21,
+      "frame_window": 29,
+      "receiver_probe": 2,
+      "null": 3,
+      "header": 1,
+      "audit": 38,
+      "sample": 22,
+      "frame_classes": 31
+    },
+    "sample_window_summary": [
+      {
+        "frame": 9116,
+        "window_ms": 5007,
+        "scene": 0,
+        "pc": 0,
+        "console_dropped_batches": 0,
+        "console_write_failures": 0
+      },
+      {
+        "frame": 9411,
+        "window_ms": 5004,
+        "scene": 0,
+        "pc": 0,
+        "console_dropped_batches": 0,
+        "console_write_failures": 0
+      },
+      {
+        "frame": 9706,
+        "window_ms": 5004,
+        "scene": 0,
+        "pc": 0,
+        "console_dropped_batches": 0,
+        "console_write_failures": 0
+      }
+    ],
+    "pc_probes_marked": "kind=receiver_probe; source=PC self-test",
+    "observed_after_repair_closewait": 0,
+    "stderr_bytes": 0
+  },
+  "capture": {
+    "path": "D:\\AI-PSVITA\\PSV-ARTEMIS\\VitaDeck\\logs\\vita-console.log",
+    "captured_at": "2026-11-02T16:37:41+01:00",
+    "prefix_bytes": 570442,
+    "prefix_sha256": "32844e3ef63b6e8bce15a99a24f3c3ece09221af5f0bab589ffcb80e8b73124b",
+    "incomplete_chunk_groups_in_snapshot": 7
+  },
+  "preserved_evidence": [
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\logging-20261102\\receiver-red.log",
+      "bytes": 736,
+      "sha256": "55ed9a5102796790e659eddf614a9934f95fe6cbf8359928890cdd72a1a84f43"
+    },
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\logging-20261102\\installed-receiver-red.log",
+      "bytes": 736,
+      "sha256": "90b784ff345ad68e300204b811ace33620494f70852fb18d2936be82524f256c"
+    },
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\logging-20261102\\receiver-green.log",
+      "bytes": 627,
+      "sha256": "3610f3da4688a0a106433ef328a7dd89a9d2cef7b38a3d1613b8e6f92922cfba"
+    },
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\logging-20261102\\installed-receiver.marshal",
+      "bytes": 16487,
+      "sha256": "7a6d44237e1009f9554ddfb2003c157c9446b74852be5e12f882e5591083e4fd"
+    },
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\logging-20261102\\installed-run-disassembly.txt",
+      "bytes": 19813,
+      "sha256": "959d798369bc8135caf200de8550665b1bb638a581895ac54f70f541281f0be0"
+    }
+  ],
+  "limitations": [
+    "Capture may start or end within a chunk sequence; only complete groups are decoded.",
+    "Receiver recovery does not establish zero loss in the Vita/CatLog upstream transport.",
+    "Startup/performance log reception is verified; Scene 3 progression and graphics fixes are separate tests.",
+    "Installed bytecode/package analysis used ordinary local Python tools; REA doctor is availability metadata, not binary or runtime evidence."
+  ]
+}

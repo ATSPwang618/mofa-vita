@@ -43,13 +43,13 @@ impl Assets {
         if let Pixels::GxtNative {first_use,..}=&mut pixels {*first_use=true;}
         let (archive,index)=self.image_needed.as_ref().map_or((0,usize::MAX),|request|(request.archive.cache_identity(),request.index));
         resource_state::demand(Phase::DemandRegister,&key,archive,index,self.image_context);
-        match self.finish_image(r,key.clone(),name,Ok(pixels)) {
-            Some(image)=>{
+        match self.try_finish_image_sized(r,key.clone(),name,Ok(pixels),false) {
+            Ok(image)=>{
                 if let Some(worker)=&self.image_worker {worker.release_needed(&key);}
                 self.image_needed=None;resource_state::demand(Phase::Idle,"",0,usize::MAX,self.image_context);
                 ImageNeeded::Ready(image)
             },
-            None=>self.image_need_failed(format!("{name}: image registration/upload failed")),
+            Err(error)=>self.image_need_failed(format!("{name}: {error:#}")),
         }
     }
     pub fn image_needed_context(&self)->u64 { self.image_context }

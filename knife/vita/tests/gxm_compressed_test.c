@@ -213,6 +213,7 @@ static void valid(uint32_t w, uint32_t h, uint32_t fmt, uint32_t length, uint32_
     for (uint32_t i=0;i<length;++i) input[i]=(uint8_t)(i*13U+19U);
     KvGxmTexture *out = (KvGxmTexture *)(void *)movie_frame;
     const int rc=upload(&g,length,&out);
+    EXPECT(kv_gxm_texture_allocation_failed(&g)==0);
     EXPECT(rc == 0 && "valid compressed upload must succeed");
     if (rc<0) { EXPECT(out==NULL); cleanup_retained(&g); return; }
     EXPECT(out && out != (KvGxmTexture *)(void *)movie_frame);
@@ -239,6 +240,7 @@ static void failed_upload(enum Fault point, int rollback) {
     KvGxmTexture *out=(KvGxmTexture *)(void *)movie_frame;
     const int rc=upload(&g,64,&out);
     EXPECT(rc==(rollback==1 ? unmap_code : rollback==2 ? free_code : fault_code));
+    EXPECT(kv_gxm_texture_allocation_failed(&g)==(point==ALLOC && !rollback));
     EXPECT(out==NULL && unexpected_calls==0);
     EXPECT(alloc_calls==1);
     EXPECT(base_calls==(point>ALLOC) && map_calls==(point>BASE));
@@ -259,12 +261,14 @@ static void failed_upload(enum Fault point, int rollback) {
     }
 }
 static void budget(void) {
-    static const uint32_t used[] = {(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE),(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)-ALIGNMENT+1U,UINT32_MAX};
+    const uint32_t limit=CDRAM_LIMIT-16U*1024*1024;
+    const uint32_t used[] = {limit,limit-ALIGNMENT+1U,UINT32_MAX};
     for(unsigned i=0;i<3;++i) {
         KvGxm g; reset(&g,"rounded CDRAM admission rejects before SDK allocation");
         setup_upload(1,1,0x81000000U,32,0,0); g.stats.cdram_mapped_bytes=used[i];
         KvGxmTexture *out=(KvGxmTexture *)(void *)movie_frame;
         EXPECT(upload(&g,32,&out)==KV_BUDGET && out==NULL);
+        EXPECT(kv_gxm_texture_allocation_failed(&g)==1);
         EXPECT(!alloc_calls && !g.textures && g.stats.cdram_mapped_bytes==used[i] && !g.closing);
     }
     KvGxm g; reset(&g,"reserved budget overflow rejects before SDK allocation");
@@ -272,10 +276,25 @@ static void budget(void) {
     KvGxmTexture *out=NULL;
     EXPECT(upload(&g,32,&out)==KV_BUDGET && !alloc_calls && !g.textures);
     reset(&g,"exact rounded budget boundary succeeds");
-    setup_upload(1,1,0x81000000U,32,0,0); g.stats.cdram_mapped_bytes=(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)-ALIGNMENT;
+    setup_upload(1,1,0x81000000U,32,0,0); g.stats.cdram_mapped_bytes=limit-ALIGNMENT;
     EXPECT(upload(&g,32,&out)==0);
-    if(out) { EXPECT(g.stats.cdram_mapped_bytes==(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)); EXPECT(kv_gxm_texture_destroy(&g,out)==0); }
-    EXPECT(g.stats.cdram_mapped_bytes==(48U*1024*1024-KV_JPEG_HW_CDRAM_RESERVE)-ALIGNMENT);
+    if(out) { EXPECT(g.stats.cdram_mapped_bytes==limit); EXPECT(kv_gxm_texture_destroy(&g,out)==0); }
+    EXPECT(g.stats.cdram_mapped_bytes==limit-ALIGNMENT);
+}
+static void linear_allocation_failure(void) {
+    for(unsigned pooled=0;pooled<2;++pooled) {
+        KvGxm g; reset(&g,"long graded RGBA allocation failure is retryable only after clean rollback");
+        kv_render_set_options(pooled ? KV_OPT_TEXTURE_POOL : 0);
+        wanted_allocation=4U*1024*1024; fault=ALLOC;
+        KvGxmTexture *out=NULL;
+        EXPECT(kv_gxm_texture_create_ex(&g,input,503,2048,503*4,0,0,1,0,&out)==fault_code);
+        EXPECT(out==NULL && g.textures==NULL && !g.closing && g.stats.cdram_mapped_bytes==0);
+        EXPECT(kv_gxm_texture_allocation_failed(&g)==1 && alloc_calls==1);
+        EXPECT(kv_gxm_texture_create_ex(&g,input,2049,1,2049*4,0,0,1,0,&out)==KV_BAD_ARGUMENT);
+        EXPECT(kv_gxm_texture_allocation_failed(&g)==0 && alloc_calls==1);
+        EXPECT(g.texture_pages==NULL);
+    }
+    kv_render_set_options(0);
 }
 int main(void) {
     /* Public encoded formats are literal SDK ABI values, not test-owned IDs. */
@@ -283,6 +302,7 @@ int main(void) {
     EXPECT((uint32_t)SCE_GXM_TEXTURE_FORMAT_UBC1_ABGR==0x85000000U);
     EXPECT((uint32_t)SCE_GXM_TEXTURE_FORMAT_UBC3_ABGR==0x87000000U);
     preconditions();
+    linear_allocation_failure();
     static const uint32_t formats[]={0x81000000U,0x85000000U,0x87000000U};
     for(unsigned i=0;i<3;++i) {
         const uint32_t fmt=formats[i], tiny=i==0 ? 32U : i==1 ? 8U : 16U;
@@ -298,6 +318,8 @@ int main(void) {
         valid(5,3,fmt,i==0 ? 32U : i==1 ? 16U : 32U,0,1);
         valid(960,540,fmt,i==2 ? 1048576U : 524288U,0,0);
         valid(960,461,fmt,i==2 ? 524288U : 262144U,0,1);
+        valid(503,2048,fmt,i==2 ? 1048576U : 524288U,0,1);
+        valid(2048,503,fmt,i==2 ? 1048576U : 524288U,0,1);
         valid(2048,2048,fmt,i==2 ? 4194304U : 2097152U,0,0);
     }
     invalid(8,8,0,32,0,0); invalid(8,8,0x81000001U,32,0,0);

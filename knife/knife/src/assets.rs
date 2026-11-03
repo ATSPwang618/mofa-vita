@@ -217,6 +217,7 @@ pub struct ByteStage {
     entries: std::sync::Mutex<std::collections::VecDeque<(u64, Arc<[u8]>)>>,
     in_flight: std::sync::Mutex<std::collections::HashSet<u64>>,
     bytes: std::sync::atomic::AtomicUsize,
+    failures: std::sync::Mutex<std::collections::VecDeque<(u64, String)>>,
 }
 
 #[cfg(target_os = "vita")]
@@ -226,6 +227,11 @@ impl ByteStage {
     /// Queue a read unless it is already staged or in flight.
     pub fn request(self: &Arc<Self>, key: u64, archive: Arc<Archive>, index: usize,
         offset: usize, len: usize) {
+        self.request_kind(key, archive, index, offset, len, false);
+    }
+
+    fn request_kind(self: &Arc<Self>, key: u64, archive: Arc<Archive>, index: usize,
+        offset: usize, len: usize, direct: bool) {
         knife_perf::add(Metric::StageRequest, len as u64, 0);
         {
             let entries = self.entries.lock().unwrap();
@@ -246,10 +252,13 @@ impl ByteStage {
         let stage = Arc::clone(self);
         let spawned = std::thread::Builder::new().name("byte stage".into()).spawn(move || {
             knife_perf::add(Metric::StageStart, len as u64, 0);
-            let read = archive.read_uncompressed_range(index, offset, len).ok();
-            if let Some(bytes) = read {
+            let read = if len > Self::CAP {
+                Err(anyhow::anyhow!("range output {len} exceeds byte-stage budget"))
+            } else if direct { archive.read_direct_range(index, offset, len) }
+            else { archive.read_uncompressed_range(index, offset, len) };
+            if let Ok(bytes) = read.as_ref() {
                 let copy = Scope::new(Metric::StageVecArc);
-                let arc: Arc<[u8]> = Arc::from(bytes);
+                let arc: Arc<[u8]> = Arc::from(bytes.as_slice());
                 copy.finish(arc.len() as u64, 0);
                 knife_perf::add(Metric::StageComplete, arc.len() as u64, 0);
                 let size = arc.len();
@@ -264,6 +273,13 @@ impl ByteStage {
                 }
                 knife_perf::gauge_set(Gauge::StageReadyBytes, total as u64);
             } else {
+                let error = format!("{}:{index} offset={offset} len={len} direct={direct}: {:#}",
+                    archive.name, read.unwrap_err());
+                tracing::warn!(%error, "bounded range read failed");
+                let mut errors = stage.failures.lock().unwrap_or_else(|e| e.into_inner());
+                errors.retain(|(old, _)| *old != key);
+                while errors.len() >= 64 { errors.pop_front(); }
+                errors.push_back((key, error));
                 knife_perf::add(Metric::StageFailed, len as u64, 0);
             }
             stage.in_flight.lock().unwrap().remove(&key);
@@ -293,13 +309,24 @@ impl ByteStage {
     /// Legacy owned-byte reload: join its one existing background request.
     /// A deadline never clears in_flight or spawns a duplicate card read.
     pub fn load_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<Arc<[u8]>> {
-        self.request(key,archive,index,offset,len);
+        self.load_kind(key,archive,index,offset,len,false)
+    }
+
+    fn load_direct_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<Arc<[u8]>> {
+        self.load_kind(key,archive,index,offset,len,true)
+    }
+
+    fn load_kind(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize,direct:bool)->Result<Arc<[u8]>> {
+        self.request_kind(key,archive,index,offset,len,direct);
         let started=std::time::Instant::now();
         loop {
             if let Some(bytes)=self.take(key){return Ok(bytes);}
             let active=self.in_flight.lock().map_err(|_|anyhow::anyhow!("byte-stage lock poisoned"))?.contains(&key);
             if !active {
                 if let Some(bytes)=self.take(key){return Ok(bytes);}
+                if let Some((_, error))=self.failures.lock().unwrap_or_else(|e|e.into_inner()).iter().find(|(old,_)|*old==key) {
+                    anyhow::bail!("byte-stage read failed: {error}");
+                }
                 anyhow::bail!("byte-stage read failed key={key:016x} entry={index}");
             }
             anyhow::ensure!(started.elapsed()<std::time::Duration::from_secs(10),
@@ -1023,12 +1050,15 @@ impl Assets {
         }
     }
 
-    // The two atlases of each Extra page are a single preparation cohort.
-    // Resolve language-neutral names exactly as WTex::load does.
-    #[cfg(target_os = "vita")]
+    // Resolve the atlases that must be ready before an Extra page can fade in.
+    // CG_PARTS is deliberately absent from the gallery cohort: its indexed
+    // KIMG members are range-loaded on demand, so requiring the whole 25 MiB
+    // NXZ output here recreates the high-water allocation that used to reject
+    // the gallery after a long scene.
+    #[cfg(any(target_os = "vita", test))]
     fn vita_extra_source_names(page: u32) -> &'static [&'static str] {
         match page {
-            38 => &["EXTRA_PARTS", "CG_PARTS"],
+            38 => &["EXTRA_PARTS"],
             39 => &["SOUND_PARTS"],
             40 => &["ARCHIVE_PARTS", "ARCHTHUMB_PARTS"],
             _ => &[],
@@ -1039,6 +1069,46 @@ impl Assets {
     fn vita_ui_source_index(&self, stem: &str) -> Option<&'static atlas_index::Atlas> {
         let index = self.allui.find_stem(&self.ui_atlas(stem)).or_else(|| self.allui.find_stem(stem))?;
         atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST, index, &self.allui.entries()[index])
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_release_extra_ui_sources(&self, page: u32) -> usize {
+        let keep: &[&str] = match page {
+            38 => &["EXTRA_PARTS", "CG_PARTS"], 39 => &["EXTRA_PARTS", "SOUND_PARTS"],
+            40 => &["ARCHIVE_PARTS", "ARCHTHUMB_PARTS"], _ => &[],
+        };
+        let keep: Vec<_> = keep.iter().filter_map(|stem| self.vita_ui_source_index(stem).map(|atlas|atlas.index)).collect();
+        let mut released = 0;
+        let mut cached = self.ui_atlases.borrow_mut();
+        for (index, entry) in self.allui.entries().iter().enumerate() {
+            let stem = entry.name.split('.').next().unwrap_or("").to_ascii_uppercase();
+            let extra = ["EXTRA_PARTS", "CG_PARTS", "SOUND_PARTS", "ARCHIVE_PARTS", "ARCHTHUMB_PARTS"]
+                .iter().any(|base| stem == *base || stem.strip_prefix(base).is_some_and(|tail|tail.starts_with('_')));
+            if extra && !keep.contains(&index) {
+                cached.remove(&index);
+                released += self.atlas_cache.discard_idle(&self.allui, index);
+            }
+        }
+        released
+    }
+
+    /// Low-frequency page events carry the complete error in the same console
+    /// stream as performance data, even when the startup header was missed.
+    #[cfg(target_os = "vita")]
+    pub fn vita_extra_ui_event(&self, page: u32, status: &str, detail: &str) {
+        if !knife_perf::enabled() { return; }
+        let gauges = knife_perf::gauges();
+        let source = gauges[Gauge::SourceCacheBytes as usize].0;
+        let deferred = gauges[Gauge::ResidentBytes as usize].0;
+        let heap = knife_platform_vita::memory_available().ok().map(|m| m.heap_headroom);
+        let mut quoted = String::new();
+        knife_perf::json_string(&mut quoted, &detail.chars().take(768).collect::<String>());
+        let tag = option_env!("KNIFE_BUILD_TAG").unwrap_or("unknown");
+        let mut quoted_tag = String::new();
+        knife_perf::json_string(&mut quoted_tag, tag);
+        let heap = heap.map_or_else(|| "null".into(), |value|value.to_string());
+        let _ = knife_platform_vita::audit::console(&format!(
+            "{{\"kind\":\"ui_source_event\",\"schema\":1,\"build\":{quoted_tag},\"page\":{page},\"status\":\"{status}\",\"source_cache_bytes\":{source},\"resident_deferred_bytes\":{deferred},\"heap_headroom\":{heap},\"detail\":{quoted}}}\n"));
     }
 
     /// Cursor prediction is opportunistic: one existing worker, no eviction,
@@ -1054,7 +1124,7 @@ impl Assets {
         for stem in Self::vita_extra_source_names(page) {
             let Some(atlas) = self.vita_ui_source_index(stem) else { continue; };
             let scratch = usize::from(atlas.stored_sectors) * 2048;
-            if atlas.decoded_bytes.saturating_add(scratch) <= available
+            if !atlas.direct && atlas.decoded_bytes.saturating_add(scratch) <= available
                 && self.atlas_cache.prewarm_if_room(self.allui.clone(), atlas.index, atlas.decoded_bytes) != 0 {
                 break; // prewarm_if_room admits only one idle job.
             }
@@ -1072,11 +1142,13 @@ impl Assets {
         for stem in Self::vita_extra_source_names(page) {
             // An unindexed asset pack retains its ordinary loader/error path.
             let Some(atlas) = self.vita_ui_source_index(stem) else { continue; };
+            if atlas.direct { continue; }
             if retry { self.atlas_cache.retry_failed(&self.allui, atlas.index); }
             match self.atlas_cache.poll(self.allui.clone(), atlas.index, true) {
                 atlas_cache::Poll::Ready(_) => {},
                 atlas_cache::Poll::Pending => ready = false,
-                atlas_cache::Poll::Failed(error) => anyhow::bail!("UI source {}: {error}", atlas.entry),
+                atlas_cache::Poll::Failed(error) => anyhow::bail!("UI source {} stored={} output={}: {error}",
+                    atlas.entry, usize::from(atlas.stored_sectors)*2048, atlas.decoded_bytes),
             }
         }
         Ok(ready)
@@ -1143,13 +1215,15 @@ impl Assets {
     }
 
     fn finish_image_sized(&mut self, r: &Renderer, key: String, name: &str, pixels: Result<Pixels>, hd: bool) -> Option<Arc<Image>> {
-        let pixels = match pixels {
-            Ok(pixels) => pixels,
-            Err(e) => {
-                tracing::warn!("image {name}: {e:#}");
-                return None;
-            }
-        };
+        self.try_finish_image_sized(r, key, name, pixels, hd)
+            .inspect_err(|error| tracing::warn!("image {name}: {error:#}"))
+            .ok()
+    }
+
+    /// Keep the native cause intact for the VM's failed-resource event. Legacy
+    /// optional/prefetch callers retain their Option wrapper above.
+    fn try_finish_image_sized(&mut self, r: &Renderer, key: String, name: &str, pixels: Result<Pixels>, hd: bool) -> Result<Arc<Image>> {
+        let pixels = pixels.with_context(|| format!("decoding image {name}"))?;
         // Count which route the image actually took: a pre-baked GXT never decodes
         // or bakes, everything else does both.
         #[cfg(target_os = "vita")]
@@ -1160,13 +1234,8 @@ impl Assets {
         }
         #[cfg(target_os = "vita")]
         if !matches!(pixels, Pixels::GxtNative { .. }) {
-            let (width, height, bpp, altered) = match pixels.vita_upload_layout() {
-                Ok(layout) => layout,
-                Err(e) => {
-                    tracing::warn!("invalid image upload {name}: {e:#}");
-                    return None;
-                }
-            };
+            let (width, height, bpp, altered) = pixels.vita_upload_layout()
+                .with_context(|| format!("invalid image upload {name}"))?;
             let before = self.images.len();
             let admission = self.image_cache.admit(&mut self.images,
                 || r.try_reserve_image_upload(width, height, bpp, altered));
@@ -1176,12 +1245,8 @@ impl Assets {
                     cached = self.images.len(), admitted = admission.is_ok(), "CG_RECLAIM");
                 self.vita_diagnostic_images(&format!("image {name} reclaimed={reclaimed} admitted={}", admission.is_ok()));
             }
-            if let Err(e) = admission {
-                // Native pressure is retryable; never turn it into a permanent
-                // not-found entry that would hide the image for this session.
-                tracing::warn!("image GPU admission {name}: {e:#}");
-                return None;
-            }
+            // A failed admission is not cached as a missing image.
+            admission.with_context(|| format!("image GPU admission {name} ({width}x{height}, bpp={bpp})"))?;
         }
         #[cfg(target_os = "vita")]
         let upload_start = std::time::Instant::now();
@@ -1189,19 +1254,13 @@ impl Assets {
         let upload_audit = if knife_perf::enabled() {
             pixels.vita_upload_layout().ok().map(|layout| (Scope::new(Metric::ImageFirstUpload), layout))
         } else { None };
-        let img = match self.upload_pixels(r, name, pixels) {
-            Ok(mut i) => {
-                if hd {
-                    i.width = i.tex.width as f32;
-                    i.height = i.tex.height as f32;
-                }
-                Some(Arc::new(i))
-            }
-            Err(e) => {
-                tracing::warn!("image GPU upload {name}: {e:#}");
-                return None;
-            }
-        };
+        let mut image = self.upload_pixels(r, name, pixels)
+            .with_context(|| format!("image GPU registration/upload {name}"))?;
+        if hd {
+            image.width = image.tex.width as f32;
+            image.height = image.tex.height as f32;
+        }
+        let img = Arc::new(image);
         #[cfg(target_os = "vita")]
         {
             let us = upload_start.elapsed().as_micros() as u64;
@@ -1215,8 +1274,8 @@ impl Assets {
             audit.finish_hot(&format!("{name} {w}x{h} bpp={bpp} alter={altered}"),
                 u64::from(w) * u64::from(h) * u64::from(bpp), 0);
         }
-        self.images.insert(key, img.clone());
-        img
+        self.images.insert(key, Some(img.clone()));
+        Ok(img)
     }
 
     /// Drop cached images nobody else references.
@@ -1669,6 +1728,7 @@ impl Assets {
         let atlas = atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST, index, entry)?;
         Some((|| {
             anyhow::ensure!(atlas.decoded_bytes <= atlas_cache::CAP, "indexed atlas exceeds CPU budget");
+            let range_stage = atlas.direct;
             let mut out = Vec::with_capacity(atlas.members.len());
             for member in atlas.members {
                 anyhow::ensure!(member.offset.checked_add(member.len).is_some_and(|end| end <= atlas.decoded_bytes),
@@ -1676,7 +1736,22 @@ impl Assets {
                 let archive = self.allui.clone();
                 let cache = self.atlas_cache.clone();
                 let (offset, len) = (member.offset, member.len);
-                let load = Rc::new(move || cache.range(archive.clone(), index, offset, len));
+                let load: Rc<dyn Fn() -> Result<ByteView>> = if range_stage {
+                    // Offline raw KATL: the existing range worker reads only
+                    // this KIMG. Never inflate or retain the complete atlas.
+                    let stage = Arc::clone(&self.byte_stage);
+                    let key = byte_stage_key(&archive.name, index, offset, len);
+                    Rc::new(move || {
+                        let bytes = match stage.take(key) {
+                            Some(bytes) => bytes,
+                            None => stage.load_direct_bounded(key, archive.clone(), index, offset, len)
+                                .with_context(|| format!("UI range read failed entry={index} offset={offset} len={len}"))?,
+                        };
+                        Ok(ByteView::owned(bytes.to_vec()))
+                    })
+                } else {
+                    Rc::new(move || cache.range(archive.clone(), index, offset, len))
+                };
                 let tex = if let Some(metadata) = member.gxt {
                     r.defer_gxt_indexed(member.logical, member.physical, len, metadata,
                         member.name, load, extract_native_gxt)?
@@ -1730,7 +1805,8 @@ impl Assets {
         #[cfg(target_os = "vita")]
         let shared_atlas = knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS);
         #[cfg(target_os = "vita")]
-        let indexed = if shared_atlas {
+        let indexed = if shared_atlas || atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST,
+            i, &self.allui.entries()[i]).is_some_and(|atlas| atlas.direct) {
             if let Some(result) = self.indexed_ui_textures(r, i) { out = result?; true } else { false }
         } else { false };
         #[cfg(not(target_os = "vita"))]
@@ -2359,6 +2435,22 @@ mod cg_gxt_route_tests {
     }
 }
 // END standalone CG GXT routing tests.
+
+#[cfg(test)]
+mod ui_source_prepare_tests {
+    use super::Assets;
+
+    #[test]
+    fn gallery_preparation_does_not_require_the_whole_cg_atlas() {
+        assert_eq!(Assets::vita_extra_source_names(38), &["EXTRA_PARTS"]);
+    }
+
+    #[test]
+    fn other_extra_pages_keep_their_required_atlases() {
+        assert_eq!(Assets::vita_extra_source_names(39), &["SOUND_PARTS"]);
+        assert_eq!(Assets::vita_extra_source_names(40), &["ARCHIVE_PARTS", "ARCHTHUMB_PARTS"]);
+    }
+}
 
 #[cfg(test)]
 mod compact_image_tests {

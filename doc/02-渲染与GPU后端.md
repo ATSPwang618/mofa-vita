@@ -129,7 +129,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 
 纹理创建路径：RGBA/R8 线性、GXT/PVRT4/BC1/BC3 压缩、render target、AvPlayer movie 表面。压缩 GXT 按编码字节直传，不 CPU 解码；`gxt_decode.rs` 只服务确实需要像素的操作（`knife-core/src/format/gxt_decode.rs:1-2`）。
 
-`TEXTURE_POOL` 打开时：逻辑收费按 **64 B** 对齐，物理 CDRAM 页至少 **256 KiB**，页内按 span 拆/合并，空页缓存 ≤2 MiB（`gpu_lifetime.inc:299-406`）；上传只清 row padding 与 slice 尾部，不再清零整块（`:379-399`）。`cdram_available` 取“可新增映射余量”和“最大连续空闲 span”的较大值，不把 holes 相加（`gxm_backend.c:745-760`）。
+`TEXTURE_POOL` 打开时：小于 **256 KiB** 的 payload 按 **64 B** 切片；较大 payload 按 **256 KiB** 对齐并占整页，防止小纹理占入大图尾部、使大图淘汰后整页仍不可释放。物理页至少 256 KiB，空页缓存 ≤2 MiB。上传只清 row padding 与 slice 尾部。`cdram_available` 比较可新增映射额度（包含增长前能归还的全空页）与最大连续空闲 span，不累加非空页里的洞。现场复现与验证见 [11](11-高清纹理显存与崩溃修复.md)。
 
 | 预算 | 值 | 依据 |
 |---|---:|---|
@@ -266,3 +266,7 @@ CPU 侧资源复用由完成值保护：纹理销毁先逻辑 retire，`last_use
 - [07-已知限制与未验证项](07-已知限制与未验证项.md)：终版未上机项与平台/许可限制。
 - [08-素材与安装](08-素材与安装.md)：素材清单、安装与更新。
 - [文档总览](README.md)。
+
+## 2026-11-03：读档与动态捕获目标恢复
+
+`old frame` 等 Game 动态目标使用 fallible 创建并复用匹配的 stage/canvas spare。实际分配压力可触发一次 Game 可选缓存清理和退休等待，再做一次有限恢复；未提交帧失败进入已有保留画面路径。菜单可选捕获失败跳过效果，缩略图仅在提交成功后发布。原生 C、合成与正常帧同步策略沿用现状；范围、114 项 host 和 ARM 验证见 [15](15-读档与转场目标分配恢复.md)。

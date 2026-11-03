@@ -173,6 +173,7 @@ typedef struct DisplayData { void *address; _Atomic int *error; } DisplayData;
 struct KvGxm {
     SceUID thread;
     int initialized, scene_open, closing, scanout_submitted;
+    uint32_t texture_allocation_failed;
     char error[128];
     _Atomic int display_error;
     SceGxmContext *context;
@@ -265,11 +266,17 @@ static int block_alloc_inner(KvGxm *g, Block *b, uint32_t requested, int cdram, 
     uint32_t *used = cdram ? &g->stats.cdram_mapped_bytes : &g->stats.main_mapped_bytes;
     const uint32_t reserved = cdram ? g->stats.parameter_reserved_bytes : 0;
     const uint32_t limit = cdram ? CDRAM_LIMIT : MAIN_MAP_LIMIT;
-    if (reserved > limit || b->size > limit - reserved || *used > limit - reserved - b->size) return KV_BUDGET;
+    if (reserved > limit || b->size > limit - reserved || *used > limit - reserved - b->size) {
+        if (cdram) g->texture_allocation_failed = 1;
+        return KV_BUDGET;
+    }
     b->uid = sceKernelAllocMemBlock("knife-gxm", cdram ?
         SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW : SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE,
         b->size, NULL);
-    if (b->uid < 0) return b->uid;
+    if (b->uid < 0) {
+        if (cdram) g->texture_allocation_failed = 1;
+        return b->uid;
+    }
     *used += b->size;
     b->accounted = 1;
     int result = sceKernelGetMemBlockBase(b->uid, &b->base);
@@ -477,6 +484,7 @@ int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader) {
 
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
     uint32_t height, uint32_t stride, KvGxmTexture **out) {
+    if (owner_ok(g)) g->texture_allocation_failed = 0;
     if (!active(g) || !out || !rgba || !width || width > WIDTH || !height || height > 1080
         || stride < width * 4 || stride > 4 * WIDTH || g->scene_open) return KV_BAD_ARGUMENT;
     *out = NULL;
@@ -750,12 +758,19 @@ int32_t kv_gxm_cdram_available(const KvGxm *g, uint32_t *out) {
     const uint32_t reserved = g->stats.parameter_reserved_bytes;
     const uint32_t used = g->stats.cdram_mapped_bytes;
     if (reserved > CDRAM_LIMIT || used > CDRAM_LIMIT - reserved) return KV_BUDGET;
-    const uint32_t policy_available = CDRAM_LIMIT - reserved - used;
+    uint32_t reclaimable = 0;
+    if (kv_render_options() & KV_OPT_TEXTURE_POOL) {
+        for (const TexturePage *page = g->texture_pages; page; page = page->next)
+            if (!page->used) reclaimable += page->storage.size;
+    }
+    /* texture_pixels_alloc trims empty pages before growing. Admission must
+       include those wholly reclaimable pages, not just its largest free span. */
+    const uint32_t policy_available = CDRAM_LIMIT - reserved - used + reclaimable;
     SceKernelFreeMemorySizeInfo info = { .size = sizeof(info) };
     const int result = sceKernelGetFreeMemorySize(&info);
     if (result < 0) return result;
     if (info.size_cdram < 0) return KV_STATE;
-    const uint32_t kernel_available = (uint32_t)info.size_cdram;
+    const uint32_t kernel_available = (uint32_t)info.size_cdram + reclaimable;
     *out = policy_available < kernel_available ? policy_available : kernel_available;
     if (kv_render_options() & KV_OPT_TEXTURE_POOL) {
         /* A free slice is already physically mapped and charged to this owner.
@@ -776,6 +791,10 @@ int32_t kv_gxm_cdram_available(const KvGxm *g, uint32_t *out) {
     return 0;
 }
 const char *kv_gxm_error(const KvGxm *g) { return g ? g->error : "null GXM owner"; }
+uint32_t kv_gxm_texture_allocation_failed(const KvGxm *g) {
+    /* A failed rollback/owner must never enter allocation recovery. */
+    return active(g) && g->texture_allocation_failed;
+}
 
 int32_t kv_gxm_destroy(KvGxm *g) {
     if (!g) return 0;

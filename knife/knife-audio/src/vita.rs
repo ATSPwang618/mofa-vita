@@ -366,7 +366,8 @@ impl Audio {
         let voice = self.start(Source::Movie { receiver }, volume, 0.0, false, 0, Curve::Linear, 1.0, 0.0);
         (voice, MovieAudioSink { sender, pending: None })
     }
-    /// Queues a compressed file; opening/decoding happens only on the mixer thread.
+    /// Queues a compressed file; each stream worker owns its opening/decoding.
+    /// BGM uses one second of PCM lookahead; other streams retain 200ms.
     /// A returned Voice is pending, and last_error/finished report asynchronous failure.
     #[cfg(target_os = "vita")]
     #[allow(clippy::too_many_arguments)]
@@ -578,6 +579,9 @@ impl StreamDecoder {
 #[cfg(any(test, target_os = "vita"))]
 #[path = "stream_pump.rs"]
 mod stream_pump;
+fn stream_buffering(curve: Curve) -> stream_pump::Buffering {
+    match curve { Curve::Bgm => stream_pump::Buffering::Bgm, _ => stream_pump::Buffering::Default }
+}
 #[cfg(target_os = "vita")]
 struct StreamCursor {
     decoder: StreamDecoder,
@@ -650,18 +654,22 @@ impl stream_pump::Reader for StreamCursor {
         Ok(n)
     }
 }
-#[cfg(target_os = "vita")]
+#[cfg(any(test, target_os = "vita"))]
 struct StreamSound {
     pump: stream_pump::Pump, ctl: Arc<Mutex<Control>>, finished: Arc<AtomicBool>, done: bool,
 }
-#[cfg(target_os = "vita")]
+#[cfg(any(test, target_os = "vita"))]
 impl StreamSound {
+    #[cfg(target_os = "vita")]
     fn spawn(path: PathBuf, loop_range: Option<(u64,u64)>, ctl: Arc<Mutex<Control>>,
         finished: Arc<AtomicBool>, start: usize, looping: bool)
         -> Result<Self,(String,Arc<AtomicBool>)>
     {
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        let pump=stream_pump::Pump::spawn_named(&name, move || StreamCursor::open(path,loop_range,start,looping))
+        // The existing explicit BGM category selects the larger input queue;
+        // file names and loop flags cannot accidentally enlarge scene voices.
+        let buffering = stream_buffering(ctl.lock().curve);
+        let pump=stream_pump::Pump::spawn_named(&name, buffering, move || StreamCursor::open(path,loop_range,start,looping))
             .map_err(|error|(error,finished.clone()))?;
         Ok(Self { pump,ctl,finished,done:false })
     }
@@ -794,6 +802,75 @@ fn mixer_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_the_explicit_bgm_category_selects_the_larger_stream_queue() {
+        assert_eq!(stream_buffering(Curve::Bgm).queued(), 50);
+        assert_eq!(stream_buffering(Curve::Linear).queued(), 10);
+        assert_eq!(stream_buffering(Curve::Se).queued(), 10);
+    }
+
+    // A full music queue behind a decoder held at a barrier. The controls are
+    // exercised by the actual StreamSound mix path, without SDK IO or sleeps.
+    fn prefilled_music() -> (StreamSound, mpsc::Sender<()>) {
+        struct Held {
+            blocks: usize, entered: mpsc::Sender<()>, resume: Receiver<()>,
+        }
+        impl stream_pump::Reader for Held {
+            fn mono(&self) -> bool { false }
+            fn read(&mut self, out: &mut [[f32; 2]]) -> Result<usize, String> {
+                if self.blocks == 50 { self.entered.send(()).unwrap(); self.resume.recv().unwrap(); }
+                self.blocks += 1; out.fill([0.25, -0.25]); Ok(out.len())
+            }
+        }
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let pump = stream_pump::Pump::spawn_named("control-test-bgm", stream_buffering(Curve::Bgm), move ||
+            Ok(Held { blocks: 0, entered: entered_tx, resume: resume_rx })).unwrap();
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let ctl = Arc::new(Mutex::new(Control {
+            volume: Ramp { from: 1.0, to: 1.0, len: 0.0, t: 0.0 },
+            gain: 1.0, curve: Curve::Bgm, pan: 0.0,
+            stop_after_ramp: false, stop_now: false, paused: false, swap: None,
+        }));
+        (StreamSound { pump, ctl, finished: Arc::new(AtomicBool::new(false)), done: false }, resume_tx)
+    }
+
+    #[test]
+    fn buffered_bgm_obeys_pause_volume_and_stop_before_consuming_its_lookahead() {
+        let (mut sound, resume) = prefilled_music();
+        sound.ctl.lock().paused = true;
+        let mut mix = [[0.0; 2]; CHUNK_FRAMES];
+        sound.process_frames(&mut mix).unwrap();
+        assert!(mix.iter().all(|s| *s == [0.0; 2]));
+        sound.ctl.lock().paused = false;
+        sound.process_frames(&mut mix).unwrap();
+        assert!(mix.iter().all(|s| *s == [0.25, -0.25]));
+        sound.ctl.lock().gain = 0.0;
+        mix.fill([0.0; 2]); sound.process_frames(&mut mix).unwrap();
+        assert!(mix.iter().all(|s| *s == [0.0; 2]), "buffered PCM has not baked in its old gain");
+        sound.ctl.lock().stop_now = true;
+        sound.process_frames(&mut mix).unwrap();
+        assert!(sound.done && sound.finished.load(Ordering::Acquire));
+        drop(sound); resume.send(()).unwrap();
+    }
+
+    #[test]
+    fn buffered_bgm_fade_out_finishes_without_waiting_for_a_second_of_predecoded_pcm() {
+        let (mut sound, resume) = prefilled_music();
+        {
+            let mut ctl = sound.ctl.lock();
+            ctl.volume = Ramp { from: 1.0, to: 0.0, len: 0.02, t: 0.0 };
+            ctl.stop_after_ramp = true;
+        }
+        let mut mix = [[0.0; 2]; CHUNK_FRAMES];
+        sound.process_frames(&mut mix).unwrap();
+        assert!(mix[0][0] > mix[CHUNK_FRAMES / 2][0]);
+        mix.fill([0.0; 2]); sound.process_frames(&mut mix).unwrap();
+        assert!(sound.done && sound.finished.load(Ordering::Acquire));
+        assert!(mix.iter().all(|s| s[0].abs() < 0.0001));
+        drop(sound); resume.send(()).unwrap();
+    }
+
     fn pcm(frames: &[[f32; 2]]) -> Arc<Pcm> {
         Arc::new(Pcm {
             sample_rate: 48000,

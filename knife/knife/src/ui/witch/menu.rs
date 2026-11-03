@@ -381,6 +381,17 @@ impl Ui {
         let surfaces = &mut self.w.backdrop_rt;
         #[cfg(not(target_os = "vita"))]
         let surfaces = &mut self.w.menu.rt;
+        #[cfg(target_os = "vita")]
+        if surfaces.is_none() {
+            let pair = (|| -> anyhow::Result<_> { Ok([
+                game.vita_scene_target(r, W as u32, H as u32, "menu surface 0")?.tex,
+                game.vita_scene_target(r, W as u32, H as u32, "menu surface 1")?.tex]) })();
+            let Ok(pair) = pair else { return }; // Keep menu controls usable without this effect.
+            *surfaces = Some(pair);
+        }
+        #[cfg(target_os = "vita")]
+        let [t0, t1] = surfaces.as_ref().unwrap();
+        #[cfg(not(target_os = "vita"))]
         let [t0, t1] = surfaces.get_or_insert_with(|| {
             let mk = |l| r.create_scene_target(W as u32, H as u32, l).tex;
             [mk("menu surface 0"), mk("menu surface 1")]

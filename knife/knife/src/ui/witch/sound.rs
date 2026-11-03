@@ -794,6 +794,17 @@ impl Ui {
         // 320 units from x - 64 into surface 1, added through surface 0 at half the title's alpha (jp_B2900)
         let light_x = self.w.snd.light_x;
         if fade >= 1.0 && title_a > 0.0 {
+            #[cfg(target_os = "vita")]
+            if self.w.snd.rt.is_none() {
+                let pair = (|| -> anyhow::Result<_> { Ok([
+                    game.vita_scene_target(r, W as u32, H as u32, "sound light mask")?.tex,
+                    game.vita_scene_target(r, W as u32, H as u32, "sound light")?.tex]) })();
+                let Ok(pair) = pair else { return }; // Skip the light; playback/navigation remain usable.
+                self.w.snd.rt = Some(pair);
+            }
+            #[cfg(target_os = "vita")]
+            let [mask_rt, light_rt] = self.w.snd.rt.as_ref().unwrap();
+            #[cfg(not(target_os = "vita"))]
             let [mask_rt, light_rt] = self.w.snd.rt.get_or_insert_with(|| {
                 let mk = |l| r.create_scene_target(W as u32, H as u32, l).tex;
                 [mk("sound light mask"), mk("sound light")]

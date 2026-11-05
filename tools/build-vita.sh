@@ -17,11 +17,15 @@ if [[ "$BUILD_KIND" != dev && "$BUILD_KIND" != release ]] || [[ "$BUILD_KIND" = 
     exit 2
 fi
 export KNIFE_VITA_BUILD_KIND="$BUILD_KIND"
+# VitaDeck performance output is enabled by default for every game package so
+# each hardware build can be identified and measured. Set KNIFE_VITA_QUIET=1
+# or KNIFE_PERF_CONSOLE=0 for an explicitly silent build.
+export KNIFE_PERF_CONSOLE="${KNIFE_PERF_CONSOLE:-1}"
 # Release runs indefinitely and omits the synchronous diagnostic file writes.
 # DEV remains bounded and writes to its separate save namespace.
 if [[ "$BUILD_KIND" = release ]]; then
     export KNIFE_VITA_DEV_DIAGNOSTICS=0
-    export KNIFE_VITA_QUIET="${KNIFE_VITA_QUIET:-1}"
+    export KNIFE_VITA_QUIET="${KNIFE_VITA_QUIET:-0}"
     export KNIFE_VITA_SAVE_NAMESPACE=production
     unset KNIFE_VITA_DEV_MAX_FRAMES
 else

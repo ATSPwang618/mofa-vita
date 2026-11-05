@@ -8,6 +8,7 @@ run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 build="$project/.work/vita/effects-inputs/$run_id"
 logs="$project/doc/logs/vita"
 receipt="$project/doc/vita-effects-inputs-host-tests.json"
+if [[ ${KV_TEST_WORK_ONLY:-0} == 1 ]]; then logs="$build/logs"; receipt="$build/receipt.json"; fi
 mkdir -p "$build/green/shaders/generated" "$logs"
 
 # Read the same immutable inputs for every variant, retaining the real include
@@ -95,7 +96,7 @@ PY
         fi
         cp "$build/$variant.log" "$logs/effects-inputs-$variant.log"
     done
-    grep -qF 'FAIL precondition.shader.29: expected status -1, got 0' "$build/red-enums.log"
+    grep -qF 'FAIL precondition.shader.30: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL precondition.blend.10: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL finite.params.0.infinity: expected status -1, got 0' "$build/red-finite.log"
     grep -qF 'FAIL rule.flags.shader.9.value.4: expected status -1, got 0' "$build/red-packed.log"

@@ -147,6 +147,15 @@ static void test_gray_direct(const char *root, const char *name) {
 }
 
 int main(int argc, char **argv) {
+    {
+        char hash[65];
+        assert(kv_image_sha256(NULL, 0, hash) == KV_IMAGE_OK);
+        assert(!strcmp(hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        assert(kv_image_sha256((const uint8_t *)"abc", 3, hash) == KV_IMAGE_OK);
+        assert(!strcmp(hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+        assert(kv_image_sha256(NULL, 1, hash) == KV_IMAGE_ARGUMENT);
+        assert(kv_image_sha256((const uint8_t *)"x", KV_IMAGE_ENCODED_LIMIT + 1, hash) == KV_IMAGE_INPUT_LIMIT);
+    }
     assert(argc == 2);
     const char *root = argv[1];
     printf("libpng header=%s runtime=%s; libjpeg ABI=%d turbo=%s\n",

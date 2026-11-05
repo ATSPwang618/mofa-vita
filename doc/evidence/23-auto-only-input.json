@@ -1,0 +1,79 @@
+{
+  "schema": "knife-vita-auto-only-input-v1",
+  "checked_at": "2026-11-04T22:22:54.464796+00:00",
+  "build_tag": "540p-7a65c2c-auto-only-20261104",
+  "branch": "perf/render",
+  "base_commit": "7a65c2cc3e94100dab70c0ce77355630c9f1e915",
+  "source_changes": "uncommitted local changes",
+  "manual_story_fast_forward": false,
+  "normal_auto_playback": true,
+  "disabled_inputs": [
+    "story R toggle",
+    "held panel fast-forward",
+    "ZR forward input",
+    "positive drag forward input"
+  ],
+  "input_verification": {
+    "passed": 5,
+    "failures": 0,
+    "baseline_expected_failures": 4,
+    "scope": "Actual pad_story, toggle_auto and forward-dispatch block extracted without rewriting; stubbed unused scene/navigation/renderer dependencies; host execution only, no hardware timing or GPU proof.",
+    "sources": [
+      {
+        "path": "knife/knife/src/ui/pad.rs",
+        "sha256": "915fe7f1c5445239c2e6d72046c6431a116119d1f5b5f8084895f623daba102f"
+      },
+      {
+        "path": "knife/knife/src/ui/touch.rs",
+        "sha256": "924caa92fa630aa9df51ff2b17bc23d5b75c93e97b58e3e030da558c29581e12"
+      },
+      {
+        "path": "knife/knife/src/ui.rs",
+        "sha256": "aef5a48a53ca4da5c5ee5f66bfbe3c915e264d990effb3fe11f13d372f5b7715"
+      }
+    ],
+    "harness": ".work/vita/auto-only-20261104/check_input.py"
+  },
+  "build": {
+    "target": "armv7-sony-vita-newlibeabihf",
+    "toolchain": "nightly-2026-05-28",
+    "title_id": "KNIF00540",
+    "source_identities_verified": 309,
+    "package_entries": 21,
+    "package_crc_verified": true,
+    "packaged_eboot_matches_standalone": true,
+    "build_tag_found_in_elf": true,
+    "performance_console_default": true,
+    "quiet_build": false
+  },
+  "asset_manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+  "asset_changes": false,
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9847879,
+      "sha256": "ce7a4b88e6ff0c38c73b46f0bdfa15bd360f56be6e69859f66936774285e58a6"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-game-540p.vpk",
+      "bytes": 7177066,
+      "sha256": "ee58bd8258552daa77f99c1bdbb111faaee9938ff98213e5954f99fc7cad3bcb"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/vita-game-release-540p-build.json",
+      "bytes": 65612,
+      "sha256": "b788ed0ad3d31b70a21ce15a3b8901f4d0e2cde060ce96c52aa7639fbbda0b94"
+    }
+  ],
+  "remote_refs_observed": {
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+    "perf_render": "7a65c2cc3e94100dab70c0ce77355630c9f1e915"
+  },
+  "remote_write_performed": false,
+  "hardware_verified": false,
+  "limitations": [
+    "Host input checks isolate unused navigation and renderer dependencies.",
+    "The ARM build was not deployed to a physical Vita in this task.",
+    "Disabling manual fast-forward does not fix the previously diagnosed UI atlas allocation/failure-cache issues."
+  ]
+}

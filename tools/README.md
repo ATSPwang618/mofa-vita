@@ -29,8 +29,11 @@
 | `compact_media.py` / `slim_languages.py` / `optimize_compact.py` | 初制媒体、双语精简与旧 PNG/JPEG Compact 优化；输入契约见各脚本帮助 |
 | `inspect_textures.py` / `analyze_compact_storage.py` | 纹理和存储分析，需匹配相应输入 |
 | [audit-vita-texture-formats.py](audit-vita-texture-formats.py) | 只读核验可编辑图片 SHA，扫描完整 RGBA 颜色/透明度，对应运行包 DXT，检查精确保留的 P4/P8 候选；不改图，说明见 [调色板排查](../doc/12-透明调色板纹理排查.md) |
+| [audit-vita-sparse-coverage.py](audit-vita-sparse-coverage.py) | 只读核验 IMG0436 的归档身份和精确 DXT5 非零 alpha，检查覆盖表没有遗漏过滤邻域、没有重叠；`--generate-rectangles` 可另存计划，不修改资源；见 [24](../doc/24-scene38-透明覆盖优化.md) |
 
 可编辑图片从当前 Vita 数据解码得到，不能把 PNG 编辑目录直接当作运行时归档。素材改动后要更新清单、profile、atlas/stream 索引并重编 EBOOT，见 [素材文档](../doc/08-素材与安装.md)。
+
+`audit-vita-sparse-coverage.py` 需要 Python、NumPy 和 Pillow。本机使用 Windows Python 运行；WSL 的默认 Python 未安装这两个图像分析依赖。该工具只生成几何覆盖证据，不是 GXM 性能测试。
 
 ## 开发验证
 

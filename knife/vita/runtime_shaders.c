@@ -44,10 +44,10 @@ _Static_assert(sizeof(CacheHeader) == 168, "shader cache header ABI");
 #endif
 static const char *const cache_root = KV_SHADER_CACHE_ROOT;
 static const char *validation_reason;
-static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || (shader >= 32 && shader < 48); }
+static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 29 || (shader >= 32 && shader < 48); }
 /* ID24 is a checked text-cache capability, never a shader entry. Source SHA
    changes invalidate prior Cg binaries without changing their metadata ABI. */
-static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 15, 19, 20, 21, 18, 17,
+static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 29, 15, 19, 20, 21, 18, 17,
     32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47 };
 static int runtime_shader_id(uint32_t shader) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
@@ -76,6 +76,7 @@ static const char *entry_for(uint32_t shader) {
         case 23: return "fs_ps19_plain_fetch";
         case 25: return "fs_ps2_fetch";
         case 28: return "fs_rim_text_batched";
+        case 29: return "fs_ps7_fetch";
         default: return shader >= 32 && shader < 48 ? "fs_ps_chain2_fetch" : NULL;
     }
 }
@@ -153,6 +154,7 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     }
     if (!(sampler_bits & 1) || (shader == 15 && !(sampler_bits & 2))
         || (shader == 19 && !(sampler_bits & 4))) REJECT("required_sampler_missing");
+    if (shader == 29 && sampler_bits != 13u) REJECT("ps7_requires_full_source_samplers");
     if (shader >= 32 && shader < 48 && sampler_bits != 5u) REJECT("chain2_requires_two_sources");
     if (shader == 19 && (sampler_bits & ~5u)) REJECT("group19_unexpected_sampler");
     if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25 || shader == 26 || shader == 28)
@@ -429,9 +431,10 @@ int kv_runtime_shader_initialize(void) {
     memset(&compiler, 0, sizeof(compiler));
     const int stopped = sceKernelStopUnloadModule(module, 0, NULL, 0, NULL, NULL);
     KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=compiler_release uid=%08x rc=%08x\n", (unsigned)module, (unsigned)stopped);
-    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=programs text_passthrough11=%d plain_sprite=%d plain_ps19=%d ps2=%d plain_forcealpha=%d rim_batched=%d ps19_group=%d ps11=%d ps13=%d ps19=%d generic=%d group=%d source=%.16s\n",
+    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=programs text_passthrough11=%d plain_sprite=%d plain_ps19=%d ps2=%d plain_forcealpha=%d rim_batched=%d ps7=%d ps19_group=%d ps11=%d ps13=%d ps19=%d generic=%d group=%d source=%.16s\n",
         runtime.programs[11] != NULL, runtime.programs[22] != NULL, runtime.programs[23] != NULL,
         runtime.programs[25] != NULL, runtime.programs[26] != NULL, runtime.programs[28] != NULL,
+        runtime.programs[29] != NULL,
         runtime.programs[19] != NULL, runtime.programs[20] != NULL, runtime.programs[21] != NULL,
         runtime.programs[18] != NULL, runtime.programs[17] != NULL, runtime.programs[15] != NULL, KNIFE_RUNTIME_SOURCE_SHA256);
     return runtime_any();

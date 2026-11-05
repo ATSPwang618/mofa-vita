@@ -1,0 +1,253 @@
+{
+  "schema": "stage-effect-r4-sparse-v1",
+  "recorded_at": "2026-11-05T16:14:22.938352+00:00",
+  "build_tag": "stage-effect-r4-sparse-20261105",
+  "branch": "perf/render",
+  "head": "7a65c2cc3e94100dab70c0ce77355630c9f1e915",
+  "working_tree": "preexisting local changes retained; this change uncommitted",
+  "remote_write": false,
+  "source_coverage": {
+    "schema": "vita-sparse-coverage-proof-v1",
+    "result": "pass",
+    "asset_manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+    "archive": "jallpac",
+    "entry": 1093,
+    "name": "IMG0436.NXZ",
+    "kimg_sha256": "d40403d93424babb37a4a40f956cf9df19763467f7d96f089f96f00398fd2e38",
+    "logical": [
+      1750,
+      1165
+    ],
+    "physical": [
+      624,
+      415
+    ],
+    "format": "dxt5",
+    "backing": [
+      1024,
+      512
+    ],
+    "rects": 68,
+    "vertices": 408,
+    "source_pixels": 258960,
+    "exact_palette_nonzero_pixels": 7068,
+    "decoded_u8_nonzero_pixels": 6936,
+    "halo_texels": 2,
+    "halo_pixels": 20051,
+    "mesh_pixels": 67696,
+    "mesh_fraction": 0.261414890330553,
+    "omitted_halo_pixels": 0,
+    "overlaps": 0,
+    "limitations": [
+      "Source alpha proof, not actual hardware fragments or FPS.",
+      "Only the renderer's plain Sprite/op7, unmodified complete UV affine contract is admitted."
+    ]
+  },
+  "tests": [
+    {
+      "name": "game-host",
+      "result": "pass",
+      "tests": 115,
+      "log": ".work/vita/r4-game-host-tests.log",
+      "log_sha256": "ca6bb4089974df009548cc13db3738be4c4953682a95d0cf1b50f72518d85304"
+    },
+    {
+      "name": "render-host",
+      "result": "pass",
+      "tests": 127,
+      "log": ".work/vita/r4-render-tests.log",
+      "log_sha256": "0983b56ba3099a0b9b86fd512fa01b1c64b05a346731be100b2f4c8299c3de9f"
+    },
+    {
+      "name": "perf-host",
+      "result": "pass",
+      "tests": 3,
+      "log": ".work/vita/r4-perf-host-tests.log",
+      "log_sha256": "bcecc13dc6d60cee3e20edd9550a341eb041b93a402287e4890d5ad695b9c5ab"
+    },
+    {
+      "name": "native-effect-inputs",
+      "result": "pass",
+      "cases": 933,
+      "checks": 2799,
+      "detected_negative_mutants": 5,
+      "log": ".work/vita/r4-native-inputs.log",
+      "log_sha256": "c23d4d46d6d60d09073e2f0f7e2a4874c4deab78bb928c039e7918f612f30055"
+    },
+    {
+      "name": "image-native-asan-ubsan-and-arm",
+      "result": "pass",
+      "log": ".work/vita/image-decode/r4-validation.log",
+      "log_sha256": "a9516f84b909d0d198c10f54abd23c6aba9c8df0b3c71eceb085439713b5aec0"
+    },
+    {
+      "name": "image-rust",
+      "result": "pass",
+      "tests": 12,
+      "log": ".work/vita/image-decode/r4-rust-validation.log",
+      "log_sha256": "bfac2f9a6a97e85837bb66b48a3961f2be84f6800bdd63811c2b9b3399ac9eae"
+    },
+    {
+      "name": "vita-release-build",
+      "result": "pass",
+      "log": ".work/vita/r4-release-build-console.log",
+      "log_sha256": "f434006832cdf92a46587b818c9f3bc0ccf6d11832db10a0e82e3d64f1ade3f2"
+    }
+  ],
+  "sources": [
+    {
+      "path": "knife/knife/src/assets.rs",
+      "bytes": 130928,
+      "sha256": "c890bed0f15a5d72f37c2c5cdf442eeccc6fb7c0b5f76bf846d4dd54476febda"
+    },
+    {
+      "path": "knife/knife/src/sparse_source.rs",
+      "bytes": 1541,
+      "sha256": "a7e6f04ca5ab535d54ef1e68e8354747a3d59d031568ed74e0c063b54b1fe486"
+    },
+    {
+      "path": "knife/knife-render/src/vita.rs",
+      "bytes": 163456,
+      "sha256": "eb9cd3747c628a9776b8821f47abc976f244d96bb930f20eb723981a88d4c552"
+    },
+    {
+      "path": "knife/knife-render/src/vita_sparse_coverage.rs",
+      "bytes": 4746,
+      "sha256": "50a5315fa8159cd49cf3dbe3094230f7c92a08f316042261a948746c960dba66"
+    },
+    {
+      "path": "knife/knife-render/src/vita_tests.rs",
+      "bytes": 158466,
+      "sha256": "5cdf9339be29a8ee8982feb9bcaff4b3759af814f9c2c1b8851fee40104cdcef"
+    },
+    {
+      "path": "knife/knife-perf/src/lib.rs",
+      "bytes": 22142,
+      "sha256": "0845b373274778b802898223fb996678146660ef40d2ea56eb29bc26c1198c4c"
+    },
+    {
+      "path": "knife/knife-perf/src/optimizations.rs",
+      "bytes": 6284,
+      "sha256": "7abf015cf115dd450ac56e581e5d1f5cf3b1d9320b928d3bd863cb58c92b7ddc"
+    },
+    {
+      "path": "knife/knife-platform-vita/src/image.rs",
+      "bytes": 12782,
+      "sha256": "8d9c5bba590763ae1d13bad37648a6adbff430388083b7fa9691638cb1385939"
+    },
+    {
+      "path": "knife/vita/image_decode.c",
+      "bytes": 25962,
+      "sha256": "e2e1fcd4c7165d5db9f109e6b43a4bfdb2c7ed54dba9c72fc74f7adb5b507426"
+    },
+    {
+      "path": "knife/vita/image_decode.h",
+      "bytes": 2940,
+      "sha256": "f89e9eaa4d8e3494c6971b8930efe385074d85afa14eed34a77900031fc15ea8"
+    },
+    {
+      "path": "knife/vita/tests/image_decode_test.c",
+      "bytes": 10950,
+      "sha256": "89892892455d7a512deee29683d2bfb763af53bf0875684c1bec9c7bd1726f01"
+    },
+    {
+      "path": "knife/knife/src/game.rs",
+      "bytes": 453754,
+      "sha256": "b3087e24b6cdb15a25f968cde822ec90f8348cb639af7bc7df10419f6e7bc925"
+    },
+    {
+      "path": "tools/audit-vita-sparse-coverage.py",
+      "bytes": 6986,
+      "sha256": "9c5dcb26b991fde3e6f5981dbf5efdef6a9b4d166e179e6b91ec409408665dd8"
+    }
+  ],
+  "build_receipt": {
+    "path": ".work/vita/game-release-540p/vita-game-release-540p-build.json",
+    "bytes": 66532,
+    "sha256": "ef66faf147d16d8921125c7926eace9cfa8daa775bd26b7a9d2aa168c06aa6a5"
+  },
+  "old_delivery": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9853835,
+      "sha256": "699c7b7ed9054988b6f9a6f46b4f3bc02a95b88943a6668b7102645b429acb4d"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7178531,
+      "sha256": "e946b59161320a20e53d48fc80c584f245434e3b375188d41456325d697f45b4"
+    }
+  ],
+  "rollback_directory": ".work/vita/effect-r4-sparse/rollback",
+  "delivery": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9863039,
+      "sha256": "8bcebcc971716b6b3a4733a72651fc33928bf99b6b480a4210a496a7165657e9"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7183169,
+      "sha256": "dab8adfbd63ccefe154d295841d34bd8cc327ccf6dcb10b5b794f1a630b337e4"
+    }
+  ],
+  "debug_artifacts": [
+    {
+      "path": ".work/vita/game-release-540p/knife.elf",
+      "bytes": 8772172,
+      "sha256": "555e5bf3042db93a17ddf0ae4a347ce37a69b8d05c7216b21ebd6332d2c0cd7b"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife.map",
+      "bytes": 9403719,
+      "sha256": "3b4afe04bcc8b3b56180b37bbb3159ff4ce487e01f161aed9649963c4a73b5d4"
+    }
+  ],
+  "logging": {
+    "performance_console_default": true,
+    "quiet_build": false,
+    "build_tag": "stage-effect-r4-sparse-20261105",
+    "counters": [
+      "sparse_coverage_hit",
+      "sparse_coverage_tiles",
+      "sparse_coverage_fallback"
+    ],
+    "counter_scope": "command generation, not actual GPU executions or displayed frames"
+  },
+  "fixed_render_resolution": {
+    "source": "code",
+    "configuration_read": false,
+    "scene": [
+      960,
+      540
+    ],
+    "composite": [
+      960,
+      540
+    ]
+  },
+  "package": {
+    "title_id": "KNIF00540",
+    "attribute2": 12,
+    "entries": 21,
+    "embedded_eboot_verified": true,
+    "game_assets_bundled": false
+  },
+  "hardware_verified": false,
+  "measured_fps_gain": null,
+  "limits": [
+    "Only exact IMG0436 immutable full-UV affine plain Sprite/op7 is admitted.",
+    "73.9 percent is source-domain coverage reduction for one layer; no hardware fragment/FPS claim.",
+    "Layer35-to34 fusion and group0 mask restructuring are not shipped.",
+    "No assets resized, repacked or copied."
+  ],
+  "read_only_remote_snapshot": {
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+    "perf_render": "7a65c2cc3e94100dab70c0ce77355630c9f1e915"
+  },
+  "source_coverage_receipt": {
+    "path": ".work/vita/sparse-coverage-proof-final.json",
+    "sha256": "873084e1f19d0a202b43731dbcb243588e42beeb02f6eae0f918100671b332aa"
+  },
+  "final_package_check": "PASS: KNIF00540 ATTRIBUTE2=12; 21 engine-only entries; no game data"
+}

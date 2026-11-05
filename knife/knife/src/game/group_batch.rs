@@ -16,7 +16,13 @@ pub(super) enum Draw {
 enum Action { Stage(Quad), Composite(usize, Blend, f32) }
 struct Plan { producers: Vec<[Vec<Quad>; 2]>, actions: Vec<Action>, sources: Vec<Quad> }
 
-fn plan(draws: Vec<Draw>) -> Option<Plan> {
+enum Reject {
+    Structure(u64),
+    TooFew,
+    TooMany,
+}
+
+fn plan(draws: Vec<Draw>) -> Result<Plan, Reject> {
     let mut groups = Vec::new();
     let mut actions = Vec::new();
     let mut pending: [Vec<Quad>; 2] = [Vec::new(), Vec::new()];
@@ -28,25 +34,27 @@ fn plan(draws: Vec<Draw>) -> Option<Plan> {
                 // The first write must discard the persistent previous pair.
                 // A second clear or a no-clear dependency crosses this exact
                 // subset's boundary; the original renderer handles all of it.
-                if clear != pending[0].is_empty() { return None; }
+                if clear != pending[0].is_empty() { return Err(Reject::Structure(1)); }
                 sources.push(quad.clone()); pending[0].push(quad);
             }
             Draw::Mask { quad, clear } => {
-                if clear != pending[1].is_empty() { return None; }
+                if clear != pending[1].is_empty() { return Err(Reject::Structure(1)); }
                 sources.push(quad.clone()); pending[1].push(quad);
             }
             Draw::Composite { blend, alpha } => {
-                if pending.iter().any(Vec::is_empty) || !alpha.is_finite() { return None; }
+                if pending.iter().any(Vec::is_empty) { return Err(Reject::Structure(2)); }
+                if !alpha.is_finite() { return Err(Reject::Structure(3)); }
                 actions.push(Action::Composite(groups.len(), blend, alpha));
                 groups.push(std::mem::take(&mut pending));
-                if groups.len() * 2 > knife_perf::memory_budget::GPU_GROUP_ENTRIES { return None; }
+                if groups.len() * 2 > knife_perf::memory_budget::GPU_GROUP_ENTRIES { return Err(Reject::TooMany); }
             }
         }
     }
     // No trailing pair mutation is moved or dropped. Every retained result has
     // exactly the same producer clear and per-target draw sequence as before.
-    if groups.len() < 2 || pending.iter().any(|q| !q.is_empty()) { return None; }
-    Some(Plan { producers: groups, actions, sources })
+    if groups.len() < 2 { return Err(Reject::TooFew); }
+    if pending.iter().any(|q| !q.is_empty()) { return Err(Reject::Structure(4)); }
+    Ok(Plan { producers: groups, actions, sources })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -55,8 +63,26 @@ pub(super) fn render(r: &mut Renderer, enc: &mut CommandEncoder,
     cache: &mut group_cache::Cache, clear: [f32; 4], draws: Vec<Draw>,
     mut shape: impl FnMut(u8, u8)) -> bool
 {
-    let Some(plan) = plan(draws) else {
-        knife_perf::add(Metric::GroupBatchBypass, 0, 1); return false;
+    let plan = match plan(draws) {
+        Ok(plan) => plan,
+        Err(Reject::Structure(reason)) => {
+            knife_perf::add(Metric::GroupBatchRejectStructure, 0, reason);
+            knife_perf::add(Metric::GroupBatchRejectPlan, 0, 1);
+            knife_perf::add(Metric::GroupBatchBypass, 0, 1);
+            return false;
+        }
+        Err(Reject::TooFew) => {
+            knife_perf::add(Metric::GroupBatchRejectTooFew, 0, 1);
+            knife_perf::add(Metric::GroupBatchRejectPlan, 0, 2);
+            knife_perf::add(Metric::GroupBatchBypass, 0, 1);
+            return false;
+        }
+        Err(Reject::TooMany) => {
+            knife_perf::add(Metric::GroupBatchRejectTooMany, 0, 1);
+            knife_perf::add(Metric::GroupBatchRejectPlan, 0, 3);
+            knife_perf::add(Metric::GroupBatchBypass, 0, 1);
+            return false;
+        }
     };
     // Alias rejection includes all sampler/rule inputs, not only the primary
     // texture. These values must not observe a stage or shared-pair mutation.
@@ -67,13 +93,22 @@ pub(super) fn render(r: &mut Renderer, enc: &mut CommandEncoder,
             let id = source.render_identity().0;
             id == stage_id || pair_ids.contains(&id) || cache.owns_texture(source)
         })) {
-        knife_perf::add(Metric::GroupBatchBypass, 0, 2); return false;
+        knife_perf::add(Metric::GroupBatchRejectAlias, 0, 1);
+        knife_perf::add(Metric::GroupBatchBypass, 0, 2);
+        return false;
     }
     if !plan.actions.iter().all(|a| match a {
         Action::Composite(_, blend, _) => r.vita_group_fused_available(stage, *blend).unwrap_or(false),
         Action::Stage(_) => true,
-    }) || !cache.prepare_retained(r, enc, pair, &plan.producers, &plan.sources) {
-        knife_perf::add(Metric::GroupBatchBypass, 0, 3); return false;
+    }) {
+        knife_perf::add(Metric::GroupBatchRejectCapability, 0, 1);
+        knife_perf::add(Metric::GroupBatchBypass, 0, 3);
+        return false;
+    }
+    if !cache.prepare_retained(r, enc, pair, &plan.producers, &plan.sources) {
+        knife_perf::add(Metric::GroupBatchRejectAdmission, 0, 1);
+        knife_perf::add(Metric::GroupBatchBypass, 0, 3);
+        return false;
     }
     // Everything that can refuse the optional path ran before this point.
     // Producer recording never falls back after a partially completed plan.

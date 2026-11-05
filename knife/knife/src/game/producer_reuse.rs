@@ -5,6 +5,10 @@ use std::sync::{Arc, Weak};
 use knife_render::{CommandEncoder, GpuTexture, Quad, RenderTarget, Renderer};
 #[cfg(test)]
 use crate::vita::{CommandEncoder, GpuTexture, Quad, RenderTarget, Renderer};
+#[cfg(not(test))]
+use knife_render::target_ring;
+#[cfg(test)]
+use crate::target_ring;
 use knife_perf::{Gauge, Metric, memory_budget};
 
 #[derive(Default)]
@@ -16,6 +20,9 @@ pub(super) struct Memo {
 impl Memo {
     pub fn finish(&mut self, target: &RenderTarget) {
         self.output = Some((Arc::downgrade(&target.tex), target.tex.render_identity()));
+    }
+    pub fn output_identity(&self) -> Option<(usize, u64)> {
+        self.output.as_ref().map(|(_, identity)| *identity)
     }
     pub fn matches(&self, key: &[u64], target: &RenderTarget) -> bool {
         knife_perf::optimizations::enabled(knife_perf::optimizations::PRODUCER_REUSE)
@@ -48,6 +55,11 @@ pub(super) struct Ring {
 }
 impl Ring {
     pub fn bytes(&self) -> usize { self.bytes }
+    #[inline]
+    fn restore_miss(&self, reason: u64) -> bool {
+        knife_perf::add(Metric::StageRestoreMiss, 0, reason);
+        false
+    }
     /// Give a spare output to a required capture before allocating more CDRAM.
     /// A surface still read/written by the frame must never become its capture.
     pub fn take_for_capture(&mut self, logical: [u32; 2], physical: [u32; 2],
@@ -69,6 +81,34 @@ impl Ring {
         self.retry_after = self.clock.saturating_add(8);
         if released != 0 { knife_perf::add(Metric::TargetRingRelease, released as u64, role); }
         released
+    }
+    /// Restore a memoized output from the spare without allocating or copying.
+    /// Both target identities must match, and no input may alias either side of
+    /// the swap because that would turn a later read into a feedback read.
+    pub fn restore_if(&mut self, active: &mut RenderTarget, output: Option<(usize, u64)>,
+        upcoming: &[Quad], role: u64) -> bool
+    {
+        if !knife_perf::optimizations::enabled(knife_perf::optimizations::TARGET_RING)
+            || !knife_perf::optimizations::enabled(knife_perf::optimizations::PRODUCER_REUSE) {
+            return self.restore_miss(1);
+        }
+        let Some(spare) = self.spare.as_ref() else { return self.restore_miss(2); };
+        let spare_identity = spare.tex.render_identity();
+        if !target_ring::can_restore(output, Some(spare_identity)) {
+            return self.restore_miss(3);
+        }
+        let active_id = active.tex.render_identity().0;
+        let spare_id = spare_identity.0;
+        let alias = upcoming.iter().any(|q| std::iter::once(&q.tex)
+            .chain(q.rule.iter().map(|m| &m.tex)).any(|t| {
+                let source = t.render_identity().0;
+                source == active_id || source == spare_id
+            }));
+        if alias { return self.restore_miss(4); }
+        std::mem::swap(active, self.spare.as_mut().unwrap());
+        knife_perf::add(Metric::StageRestoreHit, 0, role);
+        knife_perf::add(Metric::TargetRingRotate, 0, role);
+        true
     }
     pub fn rotate(&mut self, r: &Renderer, enc: &CommandEncoder, active: &mut RenderTarget,
         upcoming: &[Quad], role: u64)

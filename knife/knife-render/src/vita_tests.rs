@@ -675,6 +675,24 @@ fn ring_capture_transfer_reuses_storage_and_excludes_incompatible_or_live_surfac
 }
 
 #[test]
+fn target_ring_restores_exact_memoized_output_without_copying() {
+    let mask = knife_perf::optimizations::mask();
+    let _options = OptimizationScope::set(mask
+        | knife_perf::optimizations::TARGET_RING
+        | knife_perf::optimizations::PRODUCER_REUSE);
+    let (mut r, _control) = setup();
+    let mut stage = r.create_scene_target(CANVAS_W, CANVAS_H, "stage");
+    let memoized = stage.tex.render_identity();
+    let mut ring = producer_reuse::Ring::default();
+    ring.rotate(&r, &r.encoder(), &mut stage, &[], 1);
+    assert_ne!(stage.tex.render_identity(), memoized);
+    assert!(ring.restore_if(&mut stage, Some(memoized), &[], 1));
+    assert_eq!(stage.tex.render_identity(), memoized);
+    assert!(!ring.restore_if(&mut stage,
+        Some((memoized.0, memoized.1.wrapping_add(1))), &[], 1));
+}
+
+#[test]
 fn required_target_allocation_failure_is_recoverable_before_recorded_commands_run() {
     let (mut r, control) = setup();
     let canvas = r.create_scene_target(CANVAS_W, CANVAS_H, "previous complete canvas");
@@ -2153,6 +2171,112 @@ fn identical_draws_in_one_run_are_coalesced() {
     assert_eq!(vertices, Some(12), "two quads of six vertices");
 }
 
+fn sparse_test_quad(r: &Renderer) -> Quad {
+    let source = r.upload(624, 415, Upload::Rgba8(&vec![127; 624 * 415 * 4]), "verified sparse fixture");
+    let source = GpuTexture::with_sparse_coverage(source, SparseCoveragePlan::Img0436);
+    Quad { blend: Blend::Ps(PsOp::DodgeAlpha),
+        ..Quad::rect(source, [10., 20., 1248., 830.], [0.7, 0.5, 0.3, 0.6]) }
+}
+
+#[test]
+fn sparse_coverage_single_quad_keeps_one_draw_and_one_snapshot_fallback() {
+    for (fetch, capabilities, expected_shader, copies) in [
+        (true, 1u32 << 29, EffectShader::PsFetch7, 0),
+        (true, 1u32 << 17, EffectShader::PsFetch, 0),
+        (true, 0, EffectShader::Ps, 1),
+        (false, (1 << 17) | (1 << 29), EffectShader::Ps, 1),
+    ] {
+        let _options = OptimizationScope::set(knife_perf::optimizations::SPARSE_COVERAGE
+            | knife_perf::optimizations::PS_OP7
+            | if fetch { knife_perf::optimizations::PS_FETCH } else { 0 });
+        let (mut r, control) = setup();
+        control.borrow_mut().shader_capabilities = capabilities;
+        let q = sparse_test_quad(&r);
+        let target = r.create_scene_target(CANVAS_W, CANVAS_H, "sparse target");
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, None, &[q]).unwrap();
+        assert_eq!(enc.commands.iter().filter(|c| matches!(c, Command::Copy { .. })).count(), copies);
+        assert_eq!(enc.commands.iter().filter(|c| matches!(c, Command::Begin { .. })).count(), 1);
+        let draws: Vec<_> = enc.commands.iter().filter_map(|c| match c {
+            Command::Draw { shader, vertices, .. } => Some((*shader, vertices.len())), _ => None,
+        }).collect();
+        assert_eq!(draws, [(expected_shader, 68 * 6)], "one layer is one native draw even without fetch");
+        r.try_present(enc, &target).unwrap();
+        let trace = control.borrow();
+        assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Draw { .. })).count(), 1);
+        assert_eq!(trace.events.iter().filter(|e| matches!(e, Event::Copy { .. })).count(), copies);
+    }
+}
+
+#[test]
+fn sparse_coverage_full_uv_affine_vertices_preserve_original_mapping() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::SPARSE_COVERAGE);
+    let (r, _) = setup();
+    let mut q = sparse_test_quad(&r);
+    q.pos = [[100., 200.], [1348., 512.], [1140.5, 1342.], [-107.5, 1030.]];
+    let vertices = quad_vertices(&q, [1920., 1080.], [0.5; 2]).unwrap();
+    assert_eq!(vertices.len(), 68 * 6);
+    for v in vertices {
+        let expected = [q.pos[0][0] + (q.pos[1][0] - q.pos[0][0]) * v.uv[0]
+                + (q.pos[3][0] - q.pos[0][0]) * v.uv[1],
+            q.pos[0][1] + (q.pos[1][1] - q.pos[0][1]) * v.uv[0]
+                + (q.pos[3][1] - q.pos[0][1]) * v.uv[1]];
+        let actual = [(v.pos[0] + 1.) * 960., (1. - v.pos[1]) * 540.];
+        assert!((actual[0] - expected[0]).abs() < 0.0003);
+        assert!((actual[1] - expected[1]).abs() < 0.0003);
+        assert_eq!(v.color, q.color);
+    }
+}
+
+#[test]
+fn sparse_coverage_rejects_mirrored_cropped_warped_and_material_inputs() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::SPARSE_COVERAGE);
+    let (r, _) = setup();
+    let original = sparse_test_quad(&r);
+    for kind in 0..12 {
+        let mut q = original.clone();
+        match kind {
+            0 => q.uv = [[1., 0.], [0., 0.], [0., 1.], [1., 1.]],
+            1 => q.uv = [[0.25, 0.], [0.75, 0.], [0.75, 1.], [0.25, 1.]],
+            2 => q.pos[2][0] += 1.,
+            3 => q.clip = Some(q.pos),
+            4 => q.rule = Some(RuleMask::new(r.white.clone(), 0.5)),
+            5 => q.soft = Some(SoftClip { inner: [0., 0., 2., 2.], pivot: [0., 0.],
+                rot: 0., radius: 1., row: 0, texels: 4, fill: 0. }),
+            6 => q.haze[0][0] = 0.25,
+            7 => q.masked = true,
+            8 => q.shade = Shade::NoAlpha,
+            9 => q.shade = Shade::Fill,
+            10 => q.blend = Blend::Alpha,
+            _ => q.color[3] = 0.,
+        }
+        assert!(quad_vertices(&q, [1920., 1080.], [0.5; 2]).unwrap().len() <= 6, "material {kind}");
+    }
+    let _disabled = OptimizationScope::set(0);
+    assert_eq!(quad_vertices(&original, [1920., 1080.], [0.5; 2]).unwrap().len(), 6);
+}
+
+#[test]
+fn sparse_coverage_requires_marker_exact_size_and_unmodified_source() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::SPARSE_COVERAGE);
+    let (r, _) = setup();
+    let unmarked = r.upload(624, 415, Upload::Rgba8(&vec![127; 624 * 415 * 4]), "same size without identity");
+    let mut q = Quad { blend: Blend::Ps(PsOp::DodgeAlpha),
+        ..Quad::rect(unmarked, [0., 0., 1248., 830.], [1.; 4]) };
+    assert_eq!(quad_vertices(&q, [1920., 1080.], [0.5; 2]).unwrap().len(), 6);
+    let wrong = r.upload(624, 414, Upload::Rgba8(&vec![127; 624 * 414 * 4]), "wrong physical height");
+    q.tex = GpuTexture::with_sparse_coverage(wrong, SparseCoveragePlan::Img0436);
+    assert_eq!(quad_vertices(&q, [1920., 1080.], [0.5; 2]).unwrap().len(), 6);
+    q = sparse_test_quad(&r);
+    assert_eq!(quad_vertices(&q, [1920., 1080.], [0.5; 2]).unwrap().len(), 408);
+    r.try_write_region(&q.tex, [0, 0, 1, 1], 4, &[255; 4]).unwrap();
+    assert_eq!(quad_vertices(&q, [1920., 1080.], [0.5; 2]).unwrap().len(), 6,
+        "writing new pixels invalidates the admitted immutable alpha support");
+    q.pos[0][0] = f32::NAN;
+    assert!(quad_vertices(&q, [1920., 1080.], [0.5; 2]).is_err(),
+        "optional coverage must not hide invalid original draw parameters");
+}
+
 #[test]
 fn ready_gxt_keeps_worker_owner_on_failure_and_releases_after_first_commit() {
     let (mut r, control) = setup();
@@ -2250,6 +2374,146 @@ fn ps_specialised_routes_require_capabilities_and_keep_group_fallbacks() {
     assert_eq!(select_group_ps_fetch(PsOp::HardLight, true, true, true), Some(EffectShader::PsFetch));
     assert_eq!(select_group_ps_fetch(PsOp::Overlay, false, false, true), None);
     assert_eq!(select_group_ps_fetch(PsOp::Darken, true, false, false), Some(EffectShader::PsFetch));
+}
+
+#[test]
+fn ps7_fetch_keeps_every_general_source_material_input() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH | (1 << 28));
+    let (mut r, control) = setup();
+    let target = r.create_target(8, 8, "op7 target");
+    let source = r.create_writable(8, 8, false, "op7 source");
+    let rule = r.create_writable(8, 8, true, "op7 rule");
+    for kind in 0..8 {
+        let mut q = Quad { blend: Blend::Ps(PsOp::DodgeAlpha),
+            ..Quad::rect(source.clone(), [0., 0., 8., 8.], [0.3, 0.6, 0.9, 0.4]) };
+        if matches!(kind, 1 | 7) { q.haze = [[0.2, 0.4, 0.6, 0.25], [0.1, 0.3, 0.5, 0.75]]; }
+        if matches!(kind, 2 | 7) { q.soft = Some(SoftClip { inner: [1., 1., 6., 6.],
+            pivot: [4., 4.], rot: 0.2, radius: 2., row: 3, texels: 7, fill: 0.3 }); }
+        if matches!(kind, 3 | 4 | 7) { q.rule = Some(RuleMask { tex: rule.clone(),
+            progress: 0.37, soft: 0.25, flip: 3, invert: true }); }
+        if matches!(kind, 4 | 7) { q.masked = true; }
+        if kind == 5 { q.shade = Shade::Fill; }
+        if kind == 6 { q.shade = Shade::NoAlpha; }
+        let mut general = None;
+        for capabilities in [1u32 << 17, (1 << 17) | (1 << 29), 1 << 29] {
+            control.borrow_mut().shader_capabilities = capabilities;
+            control.borrow_mut().events.clear();
+            let mut enc = r.encoder();
+            r.try_draw(&mut enc, &target, None, &[q.clone()]).unwrap();
+            r.try_present(enc, &target).unwrap();
+            let trace = control.borrow();
+            let (shader, abi) = trace.events.iter().find_map(|event| match event {
+                Event::Draw { shader, blend, textures, params, vertices } => Some((*shader as u32,
+                    (*blend, *textures, params.map(f32::to_bits), vertices.iter().map(|v|
+                        v.pos.into_iter().chain(v.uv).chain(v.color)
+                            .chain(v.haze.into_iter().flatten()).chain(v.soft.into_iter().flatten())
+                            .map(f32::to_bits).collect::<Vec<_>>()).collect::<Vec<_>>()))),
+                _ => None,
+            }).unwrap();
+            assert_eq!(shader, if capabilities == 1 << 17 { 17 } else { 29 }, "material {kind}");
+            assert!(!trace.events.iter().any(|event| matches!(event, Event::Copy { .. })));
+            if let Some(expected) = &general { assert_eq!(&abi, expected, "material {kind}"); }
+            else { general = Some(abi); }
+        }
+    }
+}
+
+#[test]
+fn ps7_fetch_falls_back_by_capability_and_leaves_other_ops_unchanged() {
+    let (mut r, control) = setup();
+    let target = r.create_target(8, 8, "op7 fallback target");
+    for (enabled, op7_enabled, capabilities, op, expected, copied) in [
+        (true, true, 1u32 << 29, PsOp::DodgeAlpha, 29, false),
+        (true, true, (1 << 29) | (1 << 17), PsOp::DodgeAlpha, 29, false),
+        (true, true, 1 << 17, PsOp::DodgeAlpha, 17, false),
+        (true, true, 0, PsOp::DodgeAlpha, 14, true),
+        (false, true, (1 << 29) | (1 << 17), PsOp::DodgeAlpha, 14, true),
+        (true, false, (1 << 29) | (1 << 17), PsOp::DodgeAlpha, 17, false),
+        (true, false, 1 << 29, PsOp::DodgeAlpha, 14, true),
+        (true, true, 1 << 29, PsOp::Dodge, 14, true),
+        (true, true, (1 << 29) | (1 << 17), PsOp::Dodge, 17, false),
+        (true, true, (1 << 29) | (1 << 18), PsOp::Normal, 18, false),
+    ] {
+        let _options = OptimizationScope::set(
+            if enabled { knife_perf::optimizations::PS_FETCH } else { 0 }
+            | if op7_enabled { 1 << 28 } else { 0 });
+        control.borrow_mut().shader_capabilities = capabilities;
+        let q = Quad { blend: Blend::Ps(op),
+            ..Quad::rect(r.white.clone(), [0., 0., 8., 8.], [1.; 4]) };
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, None, &[q]).unwrap();
+        assert!(enc.commands.iter().any(|command| matches!(command,
+            Command::Draw { shader, .. } if *shader as u32 == expected)), "op={op:?} caps={capabilities:x}");
+        assert_eq!(enc.commands.iter().any(|command| matches!(command, Command::Copy { .. })), copied);
+    }
+}
+
+#[test]
+fn ps7_group_fetch_keeps_group_abi_and_independent_normal_priority() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH | (1 << 28));
+    let (mut r, control) = setup();
+    let stage = r.create_target(8, 8, "op7 group stage");
+    let pixel = r.create_target(8, 8, "op7 group pixel");
+    let mask = r.create_target(8, 8, "op7 group mask");
+    let mut general = None;
+    for capabilities in [1u32 << 17, (1 << 17) | (1 << 29), 1 << 29, 0] {
+        control.borrow_mut().shader_capabilities = capabilities;
+        let mut enc = r.encoder();
+        r.try_group_composite(&mut enc, &stage, &pixel, &mask,
+            Blend::Ps(PsOp::DodgeAlpha), 0.37).unwrap();
+        let (shader, blend, textures, params, vertices) = enc.commands.iter().find_map(|command| match command {
+            Command::Draw { shader, blend, textures, params, vertices } => Some((*shader as u32,
+                *blend, textures.each_ref().map(|tex| tex.as_ref().map(|tex| Rc::as_ptr(tex) as usize)),
+                params.map(f32::to_bits), vertices.iter().map(|v|
+                    v.pos.into_iter().chain(v.uv).chain(v.color)
+                        .chain(v.haze.into_iter().flatten()).chain(v.soft.into_iter().flatten())
+                        .map(f32::to_bits).collect::<Vec<_>>()).collect::<Vec<_>>())),
+            _ => None,
+        }).unwrap();
+        let expected = if capabilities & (1 << 29) != 0 { 29 } else if capabilities != 0 { 17 } else { 14 };
+        assert_eq!(shader, expected, "caps={capabilities:x}");
+        assert_eq!(params[7], 1.0f32.to_bits());
+        assert_eq!(enc.commands.iter().any(|command| matches!(command, Command::Copy { .. })), capabilities == 0);
+        if capabilities != 0 {
+            let abi = (blend, textures, params, vertices);
+            if let Some(expected) = &general { assert_eq!(&abi, expected); } else { general = Some(abi); }
+        }
+    }
+    control.borrow_mut().shader_capabilities = (1 << 17) | (1 << 18) | (1 << 19) | (1 << 29);
+    let mut enc = r.encoder();
+    r.try_group_composite(&mut enc, &stage, &pixel, &mask, Blend::Ps(PsOp::Normal), 0.37).unwrap();
+    assert!(enc.commands.iter().any(|command| matches!(command,
+        Command::Draw { shader: EffectShader::PsGroup19, .. })));
+    let _disabled = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
+    for (capabilities, expected, copied) in [(1u32 << 29, 14, true), ((1 << 29) | (1 << 17), 17, false)] {
+        control.borrow_mut().shader_capabilities = capabilities;
+        let mut enc = r.encoder();
+        r.try_group_composite(&mut enc, &stage, &pixel, &mask,
+            Blend::Ps(PsOp::DodgeAlpha), 0.37).unwrap();
+        assert!(enc.commands.iter().any(|command| matches!(command,
+            Command::Draw { shader, .. } if *shader as u32 == expected)));
+        assert_eq!(enc.commands.iter().any(|command| matches!(command, Command::Copy { .. })), copied);
+    }
+}
+
+#[test]
+fn ps7_fetch_counts_only_executed_op7_draws() {
+    let _options = OptimizationScope::set(knife_perf::optimizations::PS_FETCH | (1 << 28));
+    let (mut r, control) = setup();
+    control.borrow_mut().shader_capabilities = 1 << 29;
+    let target = r.create_target(8, 8, "op7 metrics");
+    let q = Quad { blend: Blend::Ps(PsOp::DodgeAlpha),
+        ..Quad::rect(r.white.clone(), [0., 0., 8., 8.], [1.; 4]) };
+    knife_perf::set_enabled(true);
+    let before = knife_perf::get(knife_perf::Metric::PsOp7);
+    let mut enc = r.encoder();
+    r.try_draw(&mut enc, &target, None, &[q]).unwrap();
+    assert!(enc.commands.iter().any(|command| matches!(command,
+        Command::Draw { shader, .. } if *shader as u32 == 29)));
+    assert_eq!(knife_perf::get(knife_perf::Metric::PsOp7).delta(before).calls, 0);
+    r.try_present(enc, &target).unwrap();
+    assert_eq!(knife_perf::get(knife_perf::Metric::PsOp7).delta(before).calls, 1);
+    knife_perf::set_enabled(false);
 }
 
 #[test]
@@ -2607,6 +2871,25 @@ fn retained_group_batch_rejects_alias_inheritance_tail_and_admission_before_prod
         control.borrow_mut().shader_capabilities=(1<<15)|(1<<19)|(1<<23);
         control.borrow_mut().external_cdram_bytes=0;
     }
+}
+
+#[test]
+fn retained_group_batch_reports_the_specific_rejection_reason() {
+    let _options=OptimizationScope::set(knife_perf::optimizations::GROUP_FUSED|knife_perf::optimizations::PS_FETCH);
+    knife_perf::set_enabled(true);
+    let (mut r,control)=setup();control.borrow_mut().shader_capabilities=(1<<15)|(1<<19)|(1<<23);
+    let stage=r.create_scene_target(CANVAS_W,CANVAS_H,"reason stage");
+    let scratch=r.create_scene_target(CANVAS_W,CANVAS_H,"reason scratch");
+    let mut pair=["reason pixel","reason mask"].map(|s|r.create_scene_target(CANVAS_W,CANVAS_H,s));
+    let mut frame=group_batch_frame(&r,0.);
+    if let group_batch::Draw::Pixel {clear,..}=&mut frame[1] {*clear=false;}
+    let before=knife_perf::get(knife_perf::Metric::GroupBatchRejectStructure);
+    let mut enc=r.encoder();
+    assert!(!group_batch::render(&mut r,&mut enc,&stage,&mut pair,&scratch,
+        &mut group_cache::Cache::default(),[0.,0.,0.,1.],frame,|_,_|{}));
+    let delta=knife_perf::get(knife_perf::Metric::GroupBatchRejectStructure).delta(before);
+    assert_eq!(delta.calls,1);
+    knife_perf::set_enabled(false);
 }
 
 #[test]

@@ -1,6 +1,7 @@
 #include "image_decode.h"
 #include "perf_audit.h"
 #include "jpeg_hw.h"
+#include "shader_sha256.h"
 
 #include <limits.h>
 #include <malloc.h>
@@ -11,6 +12,16 @@
 #include <png.h>
 #include <jpeglib.h>
 #include <jerror.h>
+
+int32_t kv_image_sha256(const uint8_t *bytes, uint32_t length, char hex[65]) {
+    if (!hex || (!bytes && length)) return KV_IMAGE_ARGUMENT;
+    if (length > KV_IMAGE_ENCODED_LIMIT) return KV_IMAGE_INPUT_LIMIT;
+    KvShaderSha256 hash;
+    shader_sha256_init(&hash);
+    shader_sha256_update(&hash, bytes, length);
+    shader_sha256_finish(&hash, hex);
+    return KV_IMAGE_OK;
+}
 
 #if !defined(PNG_USER_MEM_SUPPORTED) || !defined(PNG_SET_USER_LIMITS_SUPPORTED)
 #error "Bounded decoding requires libpng user memory and dimension limits"

@@ -7,8 +7,8 @@
 #endif
 #include KV_GXM_BACKEND_SOURCE
 
-static volatile unsigned int host_completion;
-volatile unsigned int *sceGxmGetNotificationRegion(void) { return &host_completion; }
+static volatile unsigned int host_completion[BATCH_SLOTS];
+volatile unsigned int *sceGxmGetNotificationRegion(void) { return host_completion; }
 int sceGxmNotificationWait(const SceGxmNotification *n) { *n->address = n->value; return 0; }
 
 enum Fault {

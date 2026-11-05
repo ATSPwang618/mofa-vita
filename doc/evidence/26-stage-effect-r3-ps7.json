@@ -1,0 +1,152 @@
+{
+  "schema": "knife-vita-stage-effect-r3-ps7-v1",
+  "checked_date": "2026-11-05",
+  "build_tag": "stage-effect-r3-heavy-ps7-20261105",
+  "hardware_verified": false,
+  "remote_write_performed": false,
+  "branch": "perf/render",
+  "head": "7a65c2cc3e94100dab70c0ce77355630c9f1e915",
+  "worktree_has_uncommitted_changes": true,
+  "heavy_baseline": {
+    "capture_sha256": "e3fb681474ea8a54e2e0eec63395508602b48b7ebbce89d8e1851033172cd8fb",
+    "scene": 38,
+    "pc_at_window_end": 1246,
+    "sample_frames": [
+      8077,
+      8108
+    ],
+    "redraw_frames": 31,
+    "reuse_frames": 0,
+    "fps": 6.076,
+    "render_ms_per_redraw": 162.6523,
+    "actual_ps_op_calls": {
+      "1": 59,
+      "6": 31,
+      "7": 141,
+      "13": 62,
+      "19": 62
+    },
+    "limitation": "PC is a window endpoint; draw counts are not covered-pixel counts or isolated GPU times."
+  },
+  "implementation": {
+    "shader": 29,
+    "entry": "fs_ps7_fetch",
+    "operation": "PsOp::DodgeAlpha",
+    "source": "unchanged complete ps_source, including haze/soft/rule/group/Fill/NoAlpha",
+    "fallback": [
+      29,
+      17,
+      14
+    ],
+    "feature": "ps-op7",
+    "feature_bit": 28,
+    "requires": [
+      "ps-fetch",
+      "ps-op7",
+      "capability29"
+    ],
+    "samplers": {
+      "tex0": 0,
+      "tex2": 2,
+      "soft_lut": 3
+    },
+    "native_output": "UCHAR4 / encoded UNORM8",
+    "new_native_counter": "draw_ps7",
+    "new_capability_log": "ps_fetch7_29",
+    "new_render_targets": 0,
+    "cache_budget_changes": 0,
+    "resolution_changes": false,
+    "r2_experiments_remain_reverted": true
+  },
+  "validation": {
+    "renderer_tests_passed": 122,
+    "perf_tests_passed": 3,
+    "renderer_transcript": ".work/vita/effect-r3-ps7/render-tests.txt",
+    "renderer_transcript_sha256": "9ddd2d562a42fd60fb4b676f3b7c1eb8e943aad4483fccbfd4146270f1f14ca7",
+    "perf_transcript": ".work/vita/effect-r3-ps7/perf-tests.txt",
+    "perf_transcript_sha256": "f228fd9df85110c01ba016703546fb507174ac220bac9c86a46554bfeec6c5d6",
+    "host_math": {
+      "shader_source_sha256": "dab0c1fb6b8b521d816382406c49778be016e07a249df422d66710c28b73587d",
+      "command": [
+        "c++",
+        "-std=c++17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fno-fast-math",
+        "-ffp-contract=off"
+      ],
+      "result": "PASS: 205439 finite post-source op7 cases, exact UNORM8 RGBA match",
+      "authority": "host vector arithmetic only; not Cg/GXP, sampling, pixels or hardware timing"
+    },
+    "native_inputs": {
+      "cases": 933,
+      "checks": 2799,
+      "failures": 0,
+      "mutation_controls_rejected": 5,
+      "receipt": ".work/vita/effects-inputs/20261105T072017Z-301/receipt.json",
+      "receipt_sha256": "6ce3777b4f98cf32f2678a6a233c1c17a4b8f4ea8eb13ee10a10f74af579725d"
+    },
+    "native_optional_and_copy": {
+      "cases": 29,
+      "checks": 6181,
+      "failures": 0,
+      "receipt": ".work/vita/gxm-copy/20261105T071831Z-311/receipt.json",
+      "receipt_sha256": "337e9ee9d61fe92f4bf95d857ec300ed23e3b10928ba060981db187b18122053"
+    },
+    "native_runtime_metadata_cache": {
+      "cases": 10,
+      "checks": 58,
+      "failures": 0,
+      "receipt": ".work/vita/runtime-shader-cache/20261105T071915Z-304/receipt.json",
+      "receipt_sha256": "6801db2c70e142268d18f4da670928fb5bdc307bcd01884da028007cd96c4f89"
+    },
+    "native_present": {
+      "cases": 18,
+      "checks": 418,
+      "failures": 0,
+      "transcript": ".work/vita/effect-r3-ps7/present-tests.txt"
+    },
+    "arm_release": "passed",
+    "package": {
+      "title_id": "KNIF00540",
+      "attribute2": 12,
+      "engine_entries": 21,
+      "packaged_eboot_matches_standalone": true
+    },
+    "build_receipt": ".work/vita/game-release-540p/vita-game-release-540p-build.json",
+    "build_receipt_sha256": "d70bc7cbf341abfcdfd5577ff45bc8a100a4410bf2602e0c92db46c229a0467c",
+    "source_files_match_build_receipt": 312,
+    "logging": {
+      "tag_in_elf": true,
+      "quiet_build": false,
+      "console_default": true,
+      "console_forced_off": false
+    },
+    "limitations": [
+      "Host numerical shim does not execute Cg/GXP, source sampling or native GPU pack.",
+      "Native tests execute production C with mocked SDK calls and synthetic non-executable GXP metadata.",
+      "ARM build does not compile the new runtime Cg entry. First device startup must compile and validate it.",
+      "No physical Vita FPS or pixel result exists for this build. No minimum FPS guarantee."
+    ]
+  },
+  "runtime_shader_source_sha256": "dab0c1fb6b8b521d816382406c49778be016e07a249df422d66710c28b73587d",
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9853835,
+      "sha256": "699c7b7ed9054988b6f9a6f46b4f3bc02a95b88943a6668b7102645b429acb4d"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7178531,
+      "sha256": "e946b59161320a20e53d48fc80c584f245434e3b375188d41456325d697f45b4"
+    }
+  ],
+  "remote_heads_read_only": {
+    "perf/render": "7a65c2cc3e94100dab70c0ce77355630c9f1e915",
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260"
+  },
+  "acceptance": "Compare same scene38 PC1246 all-redraw windows; require ps_fetch7_29 and draw_ps7, correct pixels, and reduced render/work. Roll back if no practical heavy-scene benefit."
+}

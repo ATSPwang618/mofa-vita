@@ -1,0 +1,197 @@
+{
+  "schema": "knife-vita-stage-effect-r2-v1",
+  "checked_date": "2026-11-05",
+  "build_tag": "stage-effect-r2-prefix-20261105",
+  "hardware_verified": false,
+  "remote_write_performed": false,
+  "r1_capture": {
+    "build_tag": "stage-effect-r1-logs-20261105",
+    "bytes": 1002802,
+    "sha256": "45d53b36b35d27b940587e48bd69251683de509cc917952628c5602161c82d57",
+    "asset_manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+    "scene_size": [960, 540],
+    "optimization_mask": 268435455,
+    "received_sample_windows": 35,
+    "complete_window_audits": 34,
+    "decoded_records": 1954,
+    "broken_json_or_chunk_groups": 0,
+    "counter_regressions": 0,
+    "console_dropped_batches": 22,
+    "console_write_failures": 0,
+    "last_sample_frame": 5570,
+    "last_complete_audit_frame": 5499,
+    "capture_limits": [
+      "Audit chunks were reassembled by seq/part. Complete received audit groups match their bank counts; this does not establish lossless capture because the producer reports 22 dropped batches.",
+      "The final frame5570 group contains Rust banks but no native banks or audit end marker. Its class interval is frames5499..5569; final native shader deltas are unknown.",
+      "Scene and PC are window-end states. Requested PCs890/1029/1261/1849/2063 are not exact r1 sample endpoints; surrounding windows cannot be treated as per-PC measurements.",
+      "Work/update/render are window totals; selected cumulative sample and audit counters require deltas. Frame classes settle wall time at the next begin_frame, so first_frame/last_frame define their interval.",
+      "CPU submission scopes overlap; batch waits and EndScene timing are not GPU execution time. pass_top record counts are not exact physical Begin/End pair counts."
+    ]
+  },
+  "r1_key_windows": [
+    {
+      "sample_frame": 3315,
+      "previous_audit_frame": 3284,
+      "class_first_frame": 3284,
+      "class_last_frame": 3314,
+      "elapsed_ms": 113042,
+      "window_ms": 5102,
+      "scene_at_end": 38,
+      "pc_at_end": 1246,
+      "frames": 31,
+      "fps": 6.076,
+      "work_ms_per_frame": 164.0989,
+      "render_ms_per_frame": 162.6772,
+      "redraw_frames": 31,
+      "reuse_frames": 0,
+      "class_batch_wait_ms": 4590.135,
+      "native_batch_slot_wait": {"calls": 30, "ms": 4583.893},
+      "end_scene_ms_per_frame_sample_delta": 0.4309,
+      "native_draw_calls": {
+        "effect_total": 818,
+        "plain_sprite": 370,
+        "ps_aggregate": 355,
+        "ps13_subset": 31,
+        "ps19_plain_subset": 62,
+        "group_fused": 62
+      },
+      "group_batch_plan_calls": 31,
+      "group_batch_plan_groups": 62,
+      "prefix_counter_delta_calls": 0,
+      "conclusion": "Slowest received window. Retained group path is active and does not invoke stage_prefix.apply; r2 pure-stage prefix changes do not cover this window's group rendering path."
+    },
+    {
+      "sample_frame": 5356,
+      "previous_audit_frame": 5291,
+      "class_first_frame": 5291,
+      "class_last_frame": 5355,
+      "elapsed_ms": 173386,
+      "window_ms": 5051,
+      "scene_at_end": 38,
+      "pc_at_end": 2068,
+      "frames": 65,
+      "fps": 12.869,
+      "work_ms_per_frame": 77.5171,
+      "render_ms_per_frame": 76.4918,
+      "redraw_frames": 62,
+      "reuse_frames": 3,
+      "class_batch_wait_ms": 4214.261,
+      "native_batch_slot_wait": {"calls": 62, "ms": 4202.643},
+      "end_scene_ms_per_frame_sample_delta": 0.2818,
+      "native_draw_calls": {"effect_total": 1513, "plain_sprite": 604, "ps_aggregate": 532, "alter": 101},
+      "prefix_bypass_delta": {"calls": 62, "aux": 62},
+      "conclusion": "All62 recorded prefix applications failed eligibility reason1. The log does not identify which blend/rule/masked/source predicate failed."
+    },
+    {
+      "sample_frame": 5499,
+      "previous_audit_frame": 5428,
+      "class_first_frame": 5428,
+      "class_last_frame": 5498,
+      "elapsed_ms": 183412,
+      "window_ms": 5002,
+      "scene_at_end": 38,
+      "pc_at_end": 2073,
+      "frames": 71,
+      "fps": 14.194,
+      "work_ms_per_frame": 70.2968,
+      "render_ms_per_frame": 69.3357,
+      "class_batch_wait_ms": 4136.010,
+      "native_batch_slot_wait": {"calls": 71, "ms": 4145.326},
+      "end_scene_ms_per_frame_sample_delta": 0.2565,
+      "native_draw_calls": {"effect_total": 1461, "plain_sprite": 781, "ps_aggregate": 609, "alter": 71},
+      "prefix_bypass_delta": {"calls": 71, "aux": 71},
+      "conclusion": "Last complete audit window. Its native shader mix must not substitute for the unobserved final5499->5570 native delta."
+    }
+  ],
+  "r1_cumulative_findings": {
+    "scope": "Latest received cumulative observations; final group partial. Zero hit/build counters mean absent from received cumulative banks, with periodic full audit recovery.",
+    "stage_restore": {"hit_calls": 0, "miss_calls": 2016, "miss_reason_sum_aux": 5879},
+    "stage_prefix": {
+      "hit_calls": 0,
+      "miss_calls": 0,
+      "build_calls": 0,
+      "bypass_calls": 1253,
+      "bypass_reason_sum_aux": 1421,
+      "bytes_peak": 0,
+      "qualification": "r1 proves no observed prefix build/hit. Reason1 is a combined eligibility rejection, not an immutable-source diagnosis."
+    },
+    "group_batch": {
+      "successful_plan_calls": 58,
+      "successful_plan_groups": 116,
+      "bypass_calls": 705,
+      "reject_too_few_calls": 705,
+      "reject_alias_calls": 0,
+      "reject_capability_calls": 0,
+      "reject_admission_calls": 0,
+      "reject_structure_calls": 0,
+      "reject_too_many_calls": 0,
+      "meaning": "TooFew means fewer than2 complete group composites in the optional retained plan; it is an expected fallback rather than a resource error."
+    },
+    "group_shapes": {"total": 821, "inline_able": 0, "2/1": 278, "3/1": 111, "15/1": 40, "13/1": 28, "14/1": 44, "7/1": 20, "8/1": 14, "6/1": 286},
+    "blend_chain": {
+      "successful_calls": 547,
+      "coverage_pixel_estimate_aux": 125351511,
+      "fallback_calls": 18,
+      "qualification": "Rust chain success is recorded; native draw_blend_chain counts shader27 only, while specialized variants32..47 enter draw_ps. PS subcategory timings and counts overlap their aggregate."
+    },
+    "resource_failed_events": 0,
+    "worker_failed": 0,
+    "audio_device_underruns": 0,
+    "audio_post_start_starve_wall_calls": 0,
+    "audio_start_wait_missing_sample_frames": 363840,
+    "minimum_kernel_cdram_free_bytes": 11534336,
+    "maximum_gxm_cdram_mapped_bytes": 89128960,
+    "minimum_heap_headroom_bytes": 72352488
+  },
+  "r2_implementation_claim": {
+    "scope": "Pure-stage stable-prefix cache eligibility and tracked source generation.",
+    "behavior": [
+      "Validate only the stable proper prefix selected for retention; preserve the original draw path and order for the suffix.",
+      "Permit generation-tracked render-target inputs when their render identities participate in the retained prefix key and ownership checks.",
+      "Keep group rendering outside the pure-stage prefix path."
+    ],
+    "prefix_budget_bytes": 3145728,
+    "prefix_budget_increased": false,
+    "memory_change_limit": "r1 prefix occupancy was0. A newly admitted540p prefix may occupy approximately2MiB despite the unchanged3MiB ceiling; actual r2 hardware occupancy is unmeasured.",
+    "guaranteed_minimum_fps": null,
+    "guaranteed_20fps": false,
+    "hardware_verified": false
+  },
+  "r2_validation": {
+    "provenance": "Completed and reported by the current implementation task; documentation subtask did not repeat builds or tests.",
+    "render_tests_passed": 121,
+    "performance_tests_passed": 2,
+    "native_contract_tests": {
+      "cases_passed": 93,
+      "checks_passed": 8332,
+      "sanitizers": ["AddressSanitizer", "UndefinedBehaviorSanitizer"],
+      "groups": {
+        "canvas": {"cases": 39, "checks": 1627},
+        "present": {"cases": 18, "checks": 418},
+        "copy": {"cases": 27, "checks": 6072},
+        "viewport": {"cases": 9, "checks": 215}
+      }
+    },
+    "source_generation_test_authority": "Host command/state recording and assertions; not physical GPU pixels or Vita rendering equivalence.",
+    "arm_release_build_passed": true,
+    "target": "armv7-sony-vita-newlibeabihf",
+    "packaged_eboot_matches_standalone": true,
+    "artifact_bytes_and_hashes_checked": true,
+    "hardware_verified": false
+  },
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 9852495,
+      "sha256": "78b39682062dfd34defa87c8e9b698d3792eb939186f6dd2866454eea4fc12cb"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-game-540p.vpk",
+      "bytes": 7177855,
+      "sha256": "0b8ce0d5c7879574b381d9017d82060eed8b1b1850ba294f200b1b13a3f28472"
+    }
+  ],
+  "conclusion": "r1 identifies CPU batch-slot waiting and unused pure-stage prefix caching, while the slowest group window is outside this optimization's coverage. r2 passes the declared host contracts and ARM packaging checks. New real-Vita logs and matched visual observations are required to establish prefix hits, memory occupancy, frame-rate benefit and pixel correctness; no20FPS guarantee or r1-to-r2 causal speedup is claimed.",
+  "analysis_working_files": ".work/vita/effect-r2-analysis/",
+  "historical_comparison_limit": "Earlier20261104 capture and r1 have different builds and input/animation histories. Same or nearby PC endpoints do not establish a matched performance comparison."
+}

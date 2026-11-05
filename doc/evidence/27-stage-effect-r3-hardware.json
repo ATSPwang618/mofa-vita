@@ -1,0 +1,310 @@
+{
+  "schema": "knife-vita-stage-effect-r3-hardware-v1",
+  "checked_date": "2026-11-05",
+  "build_tag": "stage-effect-r3-heavy-ps7-20261105",
+  "input": {
+    "original_path": "C:/Users/26241/Desktop/log.txt",
+    "frozen_path": ".work/vita/effect-r3-evaluation/r3-log-snapshot.txt",
+    "bytes": 1552264,
+    "sha256": "01640f55f0c07eea0be3a30abad2d0768c3fc1d88b42901c4f7d8e1a1a61420f"
+  },
+  "authority": "user-provided physical Vita console capture",
+  "runtime_path_verified": true,
+  "pixel_equivalence_verified": false,
+  "controlled_same_eboot_ab": false,
+  "minimum_fps_guarantee": null,
+  "verdict": {
+    "dedicated_shader_active": true,
+    "target_heavy_window_improved": true,
+    "improvement_scope": "scene38 PC1246 all-redraw endpoint windows",
+    "retain_shader29": true,
+    "target_20fps_achieved": false,
+    "qualification": "Similar draw counts, same passes/groups, clocks/resolution/assets and no reused frames support a practical improvement. Cross-run animation phase and coverage are not synchronized; not an isolated GPU timer or guaranteed causal A/B."
+  },
+  "comparison": {
+    "build_tags": {
+      "old": "stage-effect-r2-prefix-20261105",
+      "new": "stage-effect-r3-heavy-ps7-20261105"
+    },
+    "header_match": {
+      "arm_mhz": {
+        "old": 500,
+        "new": 500,
+        "equal": true
+      },
+      "bus_mhz": {
+        "old": 222,
+        "new": 222,
+        "equal": true
+      },
+      "gpu_mhz": {
+        "old": 222,
+        "new": 222,
+        "equal": true
+      },
+      "scene_size": {
+        "old": [
+          960,
+          540
+        ],
+        "new": [
+          960,
+          540
+        ],
+        "equal": true
+      },
+      "composite_size": {
+        "old": [
+          960,
+          540
+        ],
+        "new": [
+          960,
+          540
+        ],
+        "equal": true
+      },
+      "profile": {
+        "old": "540p-native-unorm-v2",
+        "new": "540p-native-unorm-v2",
+        "equal": true
+      },
+      "asset_manifest_sha256": {
+        "old": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+        "new": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+        "equal": true
+      }
+    },
+    "heavy": {
+      "old": {
+        "sample_frame": 8108,
+        "time": "07:31:52",
+        "pc_at_window_end": 1246,
+        "sample_fps": 6.076,
+        "redraw_class": {
+          "frames": 31,
+          "work_ms_per_frame": 164.1136,
+          "render_ms_per_frame": 162.6523,
+          "update_ms_per_frame": 1.4588,
+          "batch_wait_ms_per_frame": 147.4779,
+          "end_scene_ms_per_frame": 0.4089
+        },
+        "redraw_wall_ms_per_frame": 164.68119354838709,
+        "redraw_wall_fps": 6.072338792627084,
+        "native_calls_per_frame": {
+          "draw_total": 26.387096774193548,
+          "draw_ps": 11.451612903225806,
+          "draw_ps7": 0.0,
+          "draw_group_fused": 2.0,
+          "begin_scene": 5.0,
+          "draw_plain_sprite": 11.935483870967742
+        },
+        "resource": {
+          "deferred_misses": 2,
+          "upload_bytes": 1470928,
+          "reload_us": 35963,
+          "atlas_wait_us": 35017
+        },
+        "memory": {
+          "gxm_cdram_mapped_bytes": 88866816,
+          "kernel_cdram_free": 11534336,
+          "heap_used": 175103912,
+          "heap_headroom": 93331544
+        }
+      },
+      "new": {
+        "sample_frame": 3923,
+        "time": "08:38:33",
+        "pc_at_window_end": 1246,
+        "sample_fps": 7.034,
+        "redraw_class": {
+          "frames": 36,
+          "work_ms_per_frame": 141.7508,
+          "render_ms_per_frame": 140.2732,
+          "update_ms_per_frame": 1.4749,
+          "batch_wait_ms_per_frame": 126.5759,
+          "end_scene_ms_per_frame": 0.4149
+        },
+        "redraw_wall_ms_per_frame": 142.27155555555555,
+        "redraw_wall_fps": 7.02881188087882,
+        "native_calls_per_frame": {
+          "draw_total": 26.305555555555557,
+          "draw_ps": 11.444444444444445,
+          "draw_ps7": 4.583333333333333,
+          "draw_group_fused": 2.0,
+          "begin_scene": 5.0,
+          "draw_plain_sprite": 11.86111111111111
+        },
+        "resource": {
+          "deferred_misses": 2,
+          "upload_bytes": 1470928,
+          "reload_us": 35359,
+          "atlas_wait_us": 34430
+        },
+        "memory": {
+          "gxm_cdram_mapped_bytes": 89128960,
+          "kernel_cdram_free": 11534336,
+          "heap_used": 174601176,
+          "heap_headroom": 93834280
+        }
+      }
+    },
+    "direct_counter_bank_presence": {
+      "old": {
+        "8077": {
+          "rust/ps_op_7": true,
+          "native/draw_ps7": false,
+          "native/draw_ps": true,
+          "native/draw_total": true,
+          "native/begin_scene": true,
+          "native/draw_group_fused": true,
+          "native/batch_slot_wait": true
+        },
+        "8108": {
+          "rust/ps_op_7": true,
+          "native/draw_ps7": false,
+          "native/draw_ps": true,
+          "native/draw_total": true,
+          "native/begin_scene": true,
+          "native/draw_group_fused": true,
+          "native/batch_slot_wait": true
+        }
+      },
+      "new": {
+        "3887": {
+          "rust/ps_op_7": true,
+          "native/draw_ps7": true,
+          "native/draw_ps": true,
+          "native/draw_total": true,
+          "native/begin_scene": true,
+          "native/draw_group_fused": true,
+          "native/batch_slot_wait": true
+        },
+        "3923": {
+          "rust/ps_op_7": true,
+          "native/draw_ps7": true,
+          "native/draw_ps": true,
+          "native/draw_total": true,
+          "native/begin_scene": true,
+          "native/draw_group_fused": true,
+          "native/batch_slot_wait": true
+        }
+      }
+    },
+    "delta_percent": {
+      "work_ms_per_frame": -13.626414873599746,
+      "render_ms_per_frame": -13.75885862050521,
+      "batch_wait_ms_per_frame": -14.172971001078805,
+      "sample_fps": 15.765987217789213
+    },
+    "saved_ms_per_redraw": {
+      "work_ms_per_frame": 22.362799999999993,
+      "render_ms_per_frame": 22.379099999999994,
+      "batch_wait_ms_per_frame": 20.902
+    },
+    "capture_quality": {
+      "bad_json_lines": 6,
+      "incomplete_payloads": 5,
+      "incomplete_audit_frames": [
+        3572
+      ],
+      "received_samples": 47,
+      "complete_received_sample_audits": 47,
+      "console_dropped_batches": 4,
+      "official_reader_limitation": "tools/read-vita-performance.py cannot start because vita_audit_log module is absent in current workspace; current analysis uses frozen raw JSON/chunk reconstruction and direct endpoint banks."
+    },
+    "primary_instructions": {
+      "generic17": 570,
+      "dedicated29": 232,
+      "reduction_percent": 59.298245614035096,
+      "limitation": "Static compiler metadata does not mean each pixel executes every instruction, nor measure GPU cycles."
+    },
+    "op7_total": {
+      "actual_operations": 3279,
+      "dedicated_draws": 3279
+    },
+    "retained_errors": {
+      "worker_failed": 0,
+      "device_audio_underruns": 0,
+      "received_resource_events": {
+        "pending": 170,
+        "ready": 170
+      },
+      "minimum_cdram_free": 11534336
+    }
+  },
+  "secondary_all_redraw_window": {
+    "scene": 38,
+    "pc_at_window_end": 3017,
+    "old": {"sample_frame": 14441, "redraw": 96, "reuse": 0, "fps": 19.131, "render_ms_per_redraw": 51.2904, "batch_wait_ms_per_redraw": 38.9349},
+    "new": {"sample_frame": 7842, "redraw": 109, "reuse": 0, "fps": 21.726, "render_ms_per_redraw": 45.0589, "batch_wait_ms_per_redraw": 33.7525, "op7_calls": 104, "dedicated_op7_draws": 104},
+    "qualification": "Auxiliary cross-run observation: other draw and alter workloads differ slightly. This does not establish 20FPS in the worst PC1246 window."
+  },
+  "new_window_actual_ops": {
+    "1": 67,
+    "6": 36,
+    "7": 165,
+    "13": 72,
+    "19": 72
+  },
+  "old_window_actual_ops": {
+    "1": 59,
+    "6": 31,
+    "7": 141,
+    "13": 62,
+    "19": 62
+  },
+  "new_window_dedicated_op7_draws": 165,
+  "new_program": {
+    "shader": 29,
+    "entry": "fs_ps7_fetch",
+    "gxp_bytes": 2884,
+    "primary": 232,
+    "compile_diagnostics": 0,
+    "metadata_valid": true,
+    "capability": 1,
+    "patch_status": 0,
+    "source_sha256": "dab0c1fb6b8b521d816382406c49778be016e07a249df422d66710c28b73587d"
+  },
+  "remaining_bottleneck": {
+    "batch_wait_ms_per_redraw": 126.5759,
+    "work_ms_per_redraw": 141.7508,
+    "batch_wait_fraction_of_work": 0.8929466359272752,
+    "qualification": "CPU wall time waiting for GPU progress, not independent GPU shader execution timing; do not remove synchronization based on this alone."
+  },
+  "actions": {
+    "engine_source_changed": false,
+    "artifacts_rebuilt": false,
+    "assets_changed": false,
+    "remote_write_performed": false,
+    "documentation_updated": true
+  },
+  "analysis_files": [
+    {
+      "path": ".work/vita/effect-r3-evaluation/analyze.py",
+      "sha256": "cc8dab499564db0469050c23304ee08750e7a7afbd4cee2cd29475678c8f3814"
+    },
+    {
+      "path": ".work/vita/effect-r3-evaluation/compare.py",
+      "sha256": "60791d1fe8679d359c1fdf92cf2ade61b0e55c8ae5dafb6347aa50aae55d3fbc"
+    },
+    {
+      "path": ".work/vita/effect-r3-evaluation/comparison.json",
+      "sha256": "7e4737c0d54a76ad14d46264537633f4fc7181d943e862fa0e008898ea36cc9b"
+    },
+    {
+      "path": ".work/vita/effect-r3-evaluation/r3-summary.json",
+      "sha256": "469c2a8ade57d8fccc673a8d6c4ecf013bb715cc7d0469e2c797c55d51c9ba56"
+    },
+    {
+      "path": ".work/vita/effect-r3-evaluation/r3-windows.json",
+      "sha256": "14be088829510f4720483434d2ba6cca95f11f0fdc6065799f3c89f67222afec"
+    }
+  ],
+  "capture_limitations": [
+    "4 console batches dropped; 6 malformed JSON lines and5 incomplete chunk payloads.",
+    "Audit3572 contains28 of39 banks; target3887/3923 selected counters are directly present at both endpoints.",
+    "Received zero error records and zero device audio underruns do not prove unrecorded intervals or per-stream audio stability.",
+    "Original read-vita-performance CLI cannot run without missing vita_audit_log; analysis uses frozen raw JSON/chunk reconstruction."
+  ]
+}

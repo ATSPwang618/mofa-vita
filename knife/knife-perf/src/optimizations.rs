@@ -30,6 +30,8 @@ pub const BLEND_CHAIN: u32 = 1 << 24;
 pub const PRODUCER_REUSE: u32 = 1 << 25;
 pub const ASYNC_REBAKE: u32 = 1 << 26;
 pub const TARGET_RING: u32 = 1 << 27;
+pub const PS_OP7: u32 = 1 << 28;
+pub const SPARSE_COVERAGE: u32 = 1 << 29;
 pub const FEATURES: &[(&str, u32)] = &[
     ("shared-atlas", SHARED_ATLAS), ("gxt-ready", GXT_READY),
     ("batch-arena", BATCH_ARENA), ("group-fused", GROUP_FUSED),
@@ -50,6 +52,8 @@ pub const FEATURES: &[(&str, u32)] = &[
     ("producer-reuse", PRODUCER_REUSE),
     ("async-rebake", ASYNC_REBAKE),
     ("target-ring", TARGET_RING),
+    ("ps-op7", PS_OP7),
+    ("sparse-coverage", SPARSE_COVERAGE),
 ];
 // Expand only as the corresponding implementation becomes available.
 pub const IMPLEMENTED: u32 = SHARED_ATLAS | GXT_READY | BATCH_ARENA | GROUP_FUSED | PS_FETCH
@@ -57,7 +61,7 @@ pub const IMPLEMENTED: u32 = SHARED_ATLAS | GXT_READY | BATCH_ARENA | GROUP_FUSE
     | DECODE_OWNER | GRAY_R8 | ANIMATION_WINDOW
     | DEPENDENCY_GRAPH | SOURCE_RENAME | GRADE_CACHE | STREAM_INDEX
     | COALESCE_BAKE | RESOURCE_IO_CACHE | STAGE_PREFIX | GROUP_BATCH | UI_PASS_CACHE | PLAIN_FORCEALPHA | UI_SOURCE_PREFETCH | ARCHIVE_GLOW_BOUNDS
-    | BLEND_CHAIN | PRODUCER_REUSE | ASYNC_REBAKE | TARGET_RING;
+    | BLEND_CHAIN | PRODUCER_REUSE | ASYNC_REBAKE | TARGET_RING | PS_OP7 | SPARSE_COVERAGE;
 // Executable startup explicitly selects a profile before creating resources.
 static ACTIVE: AtomicU32 = AtomicU32::new(0);
 pub fn set(mask: u32) { ACTIVE.store(mask & IMPLEMENTED, Ordering::Relaxed); }
@@ -113,5 +117,15 @@ mod tests {
             BATCH_ARENA | ASYNC_SUBMIT | DEPENDENCY_GRAPH | SOURCE_RENAME);
         assert!(parse("all typo").is_err());
         assert_eq!(parse("all -ps-fetch").unwrap(), IMPLEMENTED & !PS_FETCH);
+    }
+
+    #[test]
+    fn ps_op7_profile_can_be_toggled_without_changing_existing_ps_fetch_profiles() {
+        let ps_op7 = 1 << 28;
+        assert_ne!(parse("all").unwrap() & ps_op7, 0);
+        assert_eq!(parse("baseline ps-op7").unwrap(), ps_op7);
+        assert_eq!(parse("all -ps-op7").unwrap(), IMPLEMENTED & !ps_op7);
+        assert_eq!(parse("all -ps-fetch").unwrap(), IMPLEMENTED & !PS_FETCH);
+        assert_eq!(parse("all -ps-fetch -ps-op7").unwrap(), IMPLEMENTED & !(PS_FETCH | ps_op7));
     }
 }

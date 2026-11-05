@@ -13,3 +13,5 @@ pub use vita::*;
 
 mod byte_view;
 pub use byte_view::{ByteView, PixelOwner, PixelView};
+
+pub mod target_ring;

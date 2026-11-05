@@ -2,6 +2,16 @@
 
 use std::{marker::PhantomData, cell::Cell};
 
+/// Identity only: no decode, allocations, device calls, or retained source copy.
+pub fn sha256_hex(bytes: &[u8]) -> Option<[u8; 64]> {
+    unsafe extern "C" { fn kv_image_sha256(bytes: *const u8, length: u32, hex: *mut u8) -> i32; }
+    let length = u32::try_from(bytes.len()).ok()?;
+    let mut hex = [0u8; 65];
+    // SAFETY: the input is borrowed for this call; the C boundary writes exactly 65 bytes.
+    let rc = unsafe { kv_image_sha256(bytes.as_ptr(), length, hex.as_mut_ptr()) };
+    (rc == 0).then(|| hex[..64].try_into().expect("fixed hash width"))
+}
+
 /// Approximate cross-thread snapshot of cumulative native counters. These
 /// temporary CDRAM bytes are separate from GXM mappings and the process heap.
 #[repr(C)]

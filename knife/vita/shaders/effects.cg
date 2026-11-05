@@ -514,6 +514,25 @@ __nativecolor __regformat unsigned char4 fs_ps_fetch(FragmentInput i,
     return native_pack(ps_apply(i, native_unpack(destination)));
 }
 
+// Complete-source PsOp7: keep haze/soft/rule/group and Fill/NoAlpha preparation
+// shared with the generic entry. Only the 24-operation selection is removed.
+// Preserve the exact op7 division/zero-destination boundary and RGBA8 store.
+__nativecolor __regformat unsigned char4 fs_ps7_fetch(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_source(i);
+    if (min(source.alpha, 0.0) == source.alpha) { return destination; }
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    float3 k = max(one - a * s, zero);
+    float3 raw = min(d / k, one);
+    return native_pack(float4(float3(d.r > 0.0 ? raw.r : 0.0,
+                   d.g > 0.0 ? raw.g : 0.0,
+                   d.b > 0.0 ? raw.b : 0.0), 1.0));
+}
+
 __nativecolor __regformat unsigned char4 fs_ps19_fetch(FragmentInput i,
     __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
     PsSample source = ps_source(i);

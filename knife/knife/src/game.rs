@@ -6400,11 +6400,16 @@ impl Game {
     }
 
     pub fn group_shape_summary() -> String {
+        #[cfg(not(target_os = "vita"))]
+        return String::new();
+        #[cfg(target_os = "vita")]
+        {
         let Ok(table) = GROUP_SHAPES.lock() else { return String::new() };
         let total = GROUP_TOTAL.load(std::sync::atomic::Ordering::Relaxed);
         let candidates = GROUP_INLINE_CANDIDATES.load(std::sync::atomic::Ordering::Relaxed);
         format!("total:{total} inline-able:{candidates} ")
             + &table.iter().map(|((p, m), n)| format!("{p}/{m}:{n}")).collect::<Vec<_>>().join(" ")
+        }
     }
 
     fn render_stage(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) -> anyhow::Result<()> {
@@ -6515,6 +6520,14 @@ impl Game {
                 return Ok(());
             }
             let upcoming: Vec<Quad> = inputs.iter().map(|q| (*q).clone()).collect();
+            if deterministic && !alias {
+                let output = self.stage_producer.output_identity();
+                self.stage_ring.restore_if(&mut self.stage_rt, output, &upcoming, 1);
+                if self.stage_producer.matches(&key, &self.stage_rt) {
+                    knife_perf::add(knife_perf::Metric::StageReuse, 0, 0);
+                    return Ok(());
+                }
+            }
             self.stage_ring.rotate(r, enc, &mut self.stage_rt, &upcoming, 1);
             self.stage_producer.commit(key, &inputs, &self.stage_rt);
         }

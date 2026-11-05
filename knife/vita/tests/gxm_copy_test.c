@@ -4,7 +4,22 @@
 #ifndef KV_GXM_BACKEND_SOURCE
 #define KV_GXM_BACKEND_SOURCE "../gxm_backend.c"
 #endif
+/* Use the production runtime-query boundary with host-owned program fixtures,
+ * so the actual optional startup loop can observe ID29. */
+#define __vita__ 1
 #include KV_GXM_BACKEND_SOURCE
+#undef __vita__
+static const SceGxmProgram *host_runtime_programs[48];
+int kv_runtime_shader_initialize(void) { return 0; }
+const SceGxmProgram *kv_runtime_shader_program(uint32_t shader) {
+    return shader < 48 ? host_runtime_programs[shader] : NULL;
+}
+int kv_runtime_shader_available(uint32_t shader) { return kv_runtime_shader_program(shader) != NULL; }
+void kv_runtime_shader_shutdown(void) { memset(host_runtime_programs, 0, sizeof(host_runtime_programs)); }
+int sceGxmProgramCheck(const SceGxmProgram *program) { (void)program; return 0; }
+int sceGxmShaderPatcherCreate(const SceGxmShaderPatcherParams *params, SceGxmShaderPatcher **out) {
+    (void)params; (void)out; abort(); /* Existing initialized fixtures must be reused. */
+}
 int sceGxmTextureValidate(const SceGxmTexture *t) { (void)t; return 0; }
 int sceGxmTextureSetData(SceGxmTexture *t, const void *data) { (void)t; (void)data; return 0; }
 
@@ -16,6 +31,9 @@ static unsigned audited_finishes;
 static unsigned checks, failures, cases, begins, ends, draws, transfers;
 static unsigned creates, sync_creates, destroys, sync_destroys, surface_inits, gammas;
 static int injected_stage, injected_status;
+static SceGxmShaderPatcherId patch_failure_id;
+static SceGxmShaderPatcherId unregister_failure_id;
+static const SceGxmProgram *invalid_sampler_program;
 static SceGxmOutputRegisterSize surface_registers;
 static KvGxm *owner;
 static KvGxmTexture *source_texture, *destination_texture;
@@ -146,13 +164,12 @@ int sceGxmShaderPatcherCreateFragmentProgram(SceGxmShaderPatcher *patcher,
     SceGxmShaderPatcherId id, SceGxmOutputRegisterFormat format,
     SceGxmMultisampleMode ms, const SceGxmBlendInfo *blend,
     const SceGxmProgram *vertex, SceGxmFragmentProgram **out) {
-    (void)id;
     EXPECT(patcher == (owner->effects ? owner->effects->patcher : owner->patcher));
     EXPECT(ms == SCE_GXM_MULTISAMPLE_NONE && out);
     EXPECT(vertex == (const SceGxmProgram *)(const void *)(owner->effects ?
         knife_effects_vs_main_gxp : knife_quad_v_gxp));
     EXPECT(format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
-    if (result(10)) return result(10);
+    if (result(10) && (!patch_failure_id || id == patch_failure_id)) return result(10);
     EXPECT(programs_created < sizeof(programs) / sizeof(programs[0]));
     if (programs_created >= sizeof(programs) / sizeof(programs[0])) return -99;
     TestProgram *p = &programs[programs_created++];
@@ -174,7 +191,7 @@ int sceGxmShaderPatcherReleaseVertexProgram(SceGxmShaderPatcher *p, SceGxmVertex
     (void)p; (void)v; return 0;
 }
 int sceGxmShaderPatcherUnregisterProgram(SceGxmShaderPatcher *p, SceGxmShaderPatcherId id) {
-    (void)p; (void)id; return 0;
+    (void)p; return id == unregister_failure_id ? -74 : 0;
 }
 int sceGxmShaderPatcherRegisterProgram(SceGxmShaderPatcher *p, const SceGxmProgram *program,
     SceGxmShaderPatcherId *id) {
@@ -388,7 +405,7 @@ static void output_programs(void) {
     /* Model startup with an available, registered runtime 11 and no optional
        bit 11. Merely seeing a runtime pointer is insufficient if registration
        selected a fallback, and the old bundled Alter must remain ineligible. */
-    static const unsigned int runtime_alter_token[4] = {0};
+    static const unsigned int runtime_alter_token[16] = {0};
     const SceGxmProgram *runtime_alter = (const SceGxmProgram *)(const void *)runtime_alter_token;
     EXPECT(!(g.shader_capabilities & (1U << 11)));
     EXPECT(effects_text_cache_initialize_program(&g, legacy_effect_source(11)) == KV_STATE);
@@ -453,6 +470,69 @@ static void output_programs(void) {
         EXPECT(effect_inputs(darken_vertices, 6, 25, 5, darken_params) == KV_BAD_ARGUMENT);
         *value = 0;
     }
+    ++cases;
+    /* Run the actual optional initializer: omitting 29 from its startup list
+       must fail this test even though a manually invoked disable would work. */
+    static const unsigned int runtime_ps7_token[16] = {0};
+    const SceGxmProgram *runtime_ps7 = (const SceGxmProgram *)(const void *)runtime_ps7_token;
+    EXPECT(effect_fetch_shader(29) && effect_ps_shader(29) && !legacy_effect_source(29));
+    host_runtime_programs[11] = runtime_alter;
+    host_runtime_programs[17] = runtime_alter;
+    host_runtime_programs[25] = runtime_alter;
+    host_runtime_programs[28] = runtime_alter;
+    host_runtime_programs[29] = runtime_ps7;
+    for (unsigned i = 0; i < 4; ++i) {
+        const unsigned shader[] = {17, 25, 28, 29};
+        const unsigned s = shader[i];
+        g.effects->source[s] = host_runtime_programs[s];
+        g.effects->ids[s] = (SceGxmShaderPatcherId)(const void *)host_runtime_programs[s];
+        g.shader_capabilities |= 1U << s;
+    }
+    EXPECT(effects_program_mode(&g, 17, 5, 0) == 0);
+    EXPECT(effects_program_mode(&g, 28, 5, 0) == 0);
+    SceGxmFragmentProgram *saved17 = g.effects->fragment[17][5][0];
+    SceGxmFragmentProgram *saved25 = g.effects->fragment[25][5][0];
+    SceGxmFragmentProgram *saved28 = g.effects->fragment[28][5][0];
+    EXPECT(kv_gxm_shader_available(&g, 29) == 1);
+    patch_failure_id = g.effects->ids[29];
+    injected_stage = 10; injected_status = -73;
+    EXPECT(effects_optional_initialize(&g) == 0);
+    EXPECT(kv_gxm_shader_available(&g, 29) == 0 && !g.effects->fragment[29][5][0]);
+    EXPECT(kv_gxm_shader_available(&g, 17) == 1 && kv_gxm_shader_available(&g, 25) == 1);
+    EXPECT(kv_gxm_shader_available(&g, 28) == 1 && kv_gxm_shader_available(&g, 24) == 1);
+    EXPECT(g.effects->fragment[17][5][0] == saved17 && g.effects->fragment[25][5][0] == saved25);
+    EXPECT(g.effects->fragment[28][5][0] == saved28 && !g.closing);
+    injected_stage = 0; patch_failure_id = NULL;
+    g.effects->source[29] = runtime_ps7;
+    g.effects->ids[29] = (SceGxmShaderPatcherId)(const void *)runtime_ps7;
+    g.shader_capabilities |= 1U << 29;
+    EXPECT(effects_optional_initialize(&g) == 0);
+    TestProgram *ps7 = program_info(g.effects->fragment[29][5][0]);
+    EXPECT(kv_gxm_shader_available(&g, 29) == 1 && ps7 && !ps7->blended);
+    if (ps7) EXPECT(ps7->format == SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4);
+    for (unsigned b = 0; b < EFFECT_BLENDS; ++b)
+        if (b != 5) EXPECT(!g.effects->fragment[29][b][0]);
+    ++cases;
+    invalid_sampler_program = runtime_ps7;
+    EXPECT(effects_sampler_metadata(&g, 29, runtime_ps7) == 0);
+    EXPECT(kv_gxm_shader_available(&g, 29) == 0 && !g.effects->ids[29]);
+    EXPECT(!g.effects->source[29] && !g.effects->fragment[29][5][0]);
+    EXPECT(g.effects->optional_status[29] == KV_BAD_ARGUMENT && !g.closing);
+    EXPECT(g.effects->fragment[17][5][0] == saved17 && g.effects->fragment[25][5][0] == saved25);
+    EXPECT(g.effects->fragment[28][5][0] == saved28 && kv_gxm_shader_available(&g, 24) == 1);
+    /* Existing entries keep the original fatal metadata result. */
+    EXPECT(effects_sampler_metadata(&g, 17, runtime_ps7) == KV_BAD_ARGUMENT);
+    g.effects->source[29] = runtime_ps7;
+    g.effects->ids[29] = (SceGxmShaderPatcherId)(const void *)runtime_ps7;
+    g.shader_capabilities |= 1U << 29;
+    unregister_failure_id = g.effects->ids[29];
+    EXPECT(effects_sampler_metadata(&g, 29, runtime_ps7) == -74);
+    EXPECT(g.effects->ids[29] == unregister_failure_id && kv_gxm_shader_available(&g, 29) == 1);
+    unregister_failure_id = NULL;
+    EXPECT(effects_sampler_metadata(&g, 29, runtime_ps7) == 0);
+    EXPECT(!g.effects->ids[29] && kv_gxm_shader_available(&g, 29) == 0);
+    invalid_sampler_program = NULL;
+    memset(host_runtime_programs, 0, sizeof(host_runtime_programs));
     EXPECT(effects_destroy(&g) == 0 && !g.effects);
     EXPECT(programs_released == programs_created);
     printf("%s all effects output variants, cache reuse and release\n",failures==before?"PASS":"FAIL");
@@ -586,7 +666,9 @@ SceUInt64 sceKernelGetProcessTimeWide(void) { static SceUInt64 t; return ++t; }
 
 /* This SDK double reports no live default uniforms. Real shader ABI is ARM/GPU tested separately. */
 const SceGxmProgramParameter *sceGxmProgramFindParameterByName(const SceGxmProgram *p, const char *name) {
-    (void)p; (void)name; return NULL;
+    if (p == invalid_sampler_program && !strcmp(name, "tex2"))
+        return (const SceGxmProgramParameter *)(const void *)p;
+    return NULL;
 }
 SceGxmParameterCategory sceGxmProgramParameterGetCategory(const SceGxmProgramParameter *p) {
     (void)p; return SCE_GXM_PARAMETER_CATEGORY_UNIFORM;

@@ -60,6 +60,8 @@ int32_t kv_image_decode_bounded(const uint8_t *encoded, uint32_t length, KvDecod
 int32_t kv_image_decode_gray_bounded(const uint8_t *encoded, uint32_t length, KvDecodedImage *out, uint32_t max_bytes);
 void kv_image_free(KvDecodedImage *image);
 void kv_image_decode_stats(KvImageDecodeStats *out);
+/* Allocation-free identity check for immutable offline image coverage metadata. */
+int32_t kv_image_sha256(const uint8_t *bytes, uint32_t length, char hex[65]);
 
 #ifdef __cplusplus
 }

@@ -250,8 +250,8 @@ impl Touch {
             pflags: [false; 8],
             wbtn: Default::default(),
             panel_key: None,
-            // sub_4DCC0: the panel's cursor starts on fast forward
-            panel_last: 3,
+            // Start on Auto when the platform disables the fast-forward button.
+            panel_last: if super::STORY_FAST_FORWARD_ENABLED { 3 } else { 2 },
             trail: Trail::default(),
             trail_t: 0.0,
             zl: None,
@@ -687,6 +687,7 @@ impl Ui {
     /// (sub_50F0), Q.SAVE / Q.LOAD unless saving is off (F025, sub_47B10).
     pub(super) fn panel_ok(&self, game: &Game, b: usize) -> bool {
         match b {
+            3 => super::STORY_FAST_FORWARD_ENABLED,
             // (Witch on the Holy Night has no gallery replay: nothing sets object 184's flag)
             4 => crate::assets::witch() || self.gal_ret[0] != 2,
             5 | 6 => game.var("F025") == 0,
@@ -707,6 +708,7 @@ impl Ui {
     /// as the panel opens): object 209 lit in auto mode, 207 unavailable without a previous scene.
     fn panel_flags_scene(&mut self, game: &Game) {
         self.touch.pflags[2] = game.auto;
+        self.touch.pflags[3] = !super::STORY_FAST_FORWARD_ENABLED;
         self.touch.pflags[0] = !game.can_prev_scene();
     }
 
@@ -910,12 +912,13 @@ impl Ui {
                     panel_rewind = Some(if t > 107.0 { 64 } else if t >= 8.0 { ((t as i32) * 64 - 512) / 100 } else { 0 });
                     self.touch.held_frames += f;
                 }
-                Some(3) => panel_skip = true,
+                Some(3) if super::STORY_FAST_FORWARD_ENABLED => panel_skip = true,
                 _ => self.touch.held_frames = 0.0,
             }
             // Witch on the Holy Night: cases 1 / 3 press their object every held frame (jp_AE040(.., 10))
             if let Some(b @ (1 | 3)) = held_button
                 && crate::assets::witch()
+                && self.panel_ok(game, b)
             {
                 self.touch.flash[b] = 10.0;
             }
@@ -935,7 +938,9 @@ impl Ui {
             self.touch.arrow_a = 0.0;
         }
         let staff = self.screen == Screen::Game && game.mode_task() && !game.in_choice();
-        let zr = if staff {
+        let zr = if !super::STORY_FAST_FORWARD_ENABLED {
+            None
+        } else if staff {
             self.touch.zr.map(|_| 32)
         } else if in_game && self.touch.panel == Panel::Closed {
             // (Witch on the Holy Night's jp_40ED0: held ZR, key 19, starts the fast skip, AE0670, at 64)
@@ -950,7 +955,15 @@ impl Ui {
         let zl = if in_game && self.touch.panel == Panel::Closed && !self.w.zl_block { self.touch.zl.map(|_| ramp(255)) } else { None };
         // forward: skip at the speed (unread text still stops it unless the config allows it);
         // backward: rewind, one ring entry a frame without running the script
-        let fwd = if panel_skip { 64 } else { zr.unwrap_or(speed.max(0) as u32) };
+        let fwd = if !super::STORY_FAST_FORWARD_ENABLED { 0 }
+            else if panel_skip { 64 } else { zr.unwrap_or(speed.max(0) as u32) };
+        if !super::STORY_FAST_FORWARD_ENABLED {
+            // Also release stale manual state restored by a mode task. Do not
+            // touch auto playback or the separate scene/load seek state.
+            game.skip_mode = false;
+            game.set_skip(false);
+            game.speed = 1;
+        }
         if game.skip_mode && self.screen == Screen::Game {
             // R skip mode: on until B, R again, or unread text stops the skip
             game.set_skip(true);

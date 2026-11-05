@@ -632,11 +632,22 @@ pub struct GpuTexture {
     native: Rc<NativeTexture>,
     pub width: u32,
     pub height: u32,
+    sparse_coverage: Option<SparseCoveragePlan>,
 }
 
 pub type TexRef = Arc<GpuTexture>;
 
+/// A coverage plan belongs to exact immutable asset bytes, admitted by Assets.
+/// It changes only source geometry, never the texture allocation or UV domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SparseCoveragePlan { Img0436 }
+
 impl GpuTexture {
+    pub fn with_sparse_coverage(mut tex: TexRef, plan: SparseCoveragePlan) -> TexRef {
+        Arc::get_mut(&mut tex).expect("set sparse coverage before sharing an uploaded texture")
+            .sparse_coverage = Some(plan);
+        tex
+    }
     /// Identity plus pixel mutations; residency reloads of immutable bytes do not change it.
     pub fn render_identity(&self) -> (usize, u64) {
         (Rc::as_ptr(&self.native) as usize, self.native.content_version.get())
@@ -792,6 +803,8 @@ impl CommandEncoder {
 
 #[path = "vita_blend_chain.rs"]
 mod blend_chain;
+#[path = "vita_sparse_coverage.rs"]
+mod sparse_coverage;
 
 // Uniform inputs must agree only where the selected shader actually reads a
 // shared uniform. RimText28 reads hx/steps per glyph and keeps only RGB24 shared.
@@ -1163,7 +1176,7 @@ impl Renderer {
                 size: [width, height], bpp: 0, srgb: false, render_target: false,
                 deferred: None, last_used: Cell::new(0), content_version: Cell::new(0), rebuild_us: Cell::new(0),
             }),
-            width, height,
+            width, height, sparse_coverage: None,
         }))
     }
 
@@ -1587,7 +1600,7 @@ impl Renderer {
         let mut cache = self.device.deferred.borrow_mut();
         cache.retain(|weak| weak.strong_count() != 0);
         cache.push(Rc::downgrade(&native));
-        Ok(Arc::new(GpuTexture { native, width: logical[0], height: logical[1] }))
+        Ok(Arc::new(GpuTexture { native, width: logical[0], height: logical[1], sparse_coverage: None }))
     }
 
     pub fn owns_texture(&self, tex: &GpuTexture) -> bool {
@@ -2029,6 +2042,9 @@ impl Renderer {
         let fetch_hard_light = fetch_enabled && self.device.call(|g| g.shader_available(20))?;
         let fetch_overlay = fetch_enabled && self.device.call(|g| g.shader_available(21))?;
         let fetch_darken = fetch_enabled && self.device.call(|g| g.shader_available(25))?;
+        let fetch_dodge_alpha = fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_OP7)
+            && self.device.call(|g| g.shader_available(29))?;
         let fetch_plain_normal = fetch_enabled && self.device.call(|g| g.shader_available(23))?;
         let blend_chain = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::BLEND_CHAIN)
@@ -2038,7 +2054,11 @@ impl Renderer {
         let plain_forcealpha = knife_perf::optimizations::enabled(knife_perf::optimizations::PLAIN_FORCEALPHA)
             && self.device.call(|g| g.shader_available(26))?;
         let ps_shader = |q: &Quad, op| {
-            if op == PsOp::Normal && fetch_plain_normal && plain_ps19_source(q) {
+            // ID29 keeps the complete PS source contract, including all material
+            // inputs. Unlike the plain specializations it needs no source gate.
+            if op == PsOp::DodgeAlpha && fetch_dodge_alpha {
+                Some(EffectShader::PsFetch7)
+            } else if op == PsOp::Normal && fetch_plain_normal && plain_ps19_source(q) {
                 Some(EffectShader::PsPlain19)
             } else {
                 select_ps_fetch(op, fetch_general, fetch_normal,
@@ -2321,6 +2341,11 @@ impl Renderer {
     fn ps_fetch_for_target(&self, target: &RenderTarget, op: PsOp) -> Result<Option<EffectShader>> {
         if target.tex.native.srgb || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FETCH) {
             return Ok(None);
+        }
+        if op == PsOp::DodgeAlpha
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_OP7)
+            && self.device.call(|g| g.shader_available(29))? {
+            return Ok(Some(EffectShader::PsFetch7));
         }
         // This method is used only by full-layout group composites. Their
         // fixed vertices/params satisfy the independent group19 ABI.
@@ -2732,6 +2757,7 @@ fn make_texture_inner(
         native,
         width: logical[0],
         height: logical[1],
+        sparse_coverage: None,
     }))
 }
 
@@ -3283,7 +3309,7 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     #[cfg(target_os = "vita")]
                     let diagnostic_draw = menu_draw_diagnostic::draw_begin(device, _command_index,
                         vertices, *shader, *blend, textures, &ids, *params, diagnostic_target);
-                    if matches!(*shader, EffectShader::Ps | EffectShader::PsFetch | EffectShader::PsFetch19 | EffectShader::PsGroup19 | EffectShader::PsFetch11 | EffectShader::PsFetch13 | EffectShader::PsPlain19 | EffectShader::PsFetch2) || params[7] == -18.0 { knife_perf::record_ps(params[0] as u32); }
+                    if matches!(*shader, EffectShader::Ps | EffectShader::PsFetch | EffectShader::PsFetch19 | EffectShader::PsGroup19 | EffectShader::PsFetch11 | EffectShader::PsFetch13 | EffectShader::PsPlain19 | EffectShader::PsFetch2 | EffectShader::PsFetch7) || params[7] == -18.0 { knife_perf::record_ps(params[0] as u32); }
                     if *shader == EffectShader::PsChain2 { knife_perf::record_ps(params[0] as u32); knife_perf::record_ps(params[1] as u32); }
                     let result = g.draw_effect(
                         vertices,
@@ -3419,6 +3445,30 @@ fn quad_vertices_inner(q: &Quad, [tw, th]: [f32; 2], scale: [f32; 2], mut vertic
         soft,
     };
     vertices.clear();
+    if knife_perf::optimizations::enabled(knife_perf::optimizations::SPARSE_COVERAGE)
+        && q.tex.sparse_coverage.is_some()
+    {
+        if let Some(rectangles) = sparse_coverage::rectangles(q) {
+            vertices.try_reserve(rectangles.len() * 6)
+                .context("reserving sparse quad vertices")?;
+            let [w, h] = sparse_coverage::IMG0436_PHYSICAL.map(|v| v as f32);
+            for &[x0, y0, x1, y1] in rectangles {
+                let uv = [[f32::from(x0) / w, f32::from(y0) / h],
+                    [f32::from(x1) / w, f32::from(y0) / h],
+                    [f32::from(x1) / w, f32::from(y1) / h],
+                    [f32::from(x0) / w, f32::from(y1) / h]];
+                let p = uv.map(|uv| mk(sparse_coverage::point(q, uv)));
+                vertices.extend_from_slice(&[p[0], p[1], p[2], p[0], p[2], p[3]]);
+            }
+            ensure!(vertices.iter().all(|v| v.pos.iter().chain(v.uv.iter()).all(|x| x.is_finite())),
+                "sparse interpolation overflowed its native coordinates");
+            knife_perf::add(Metric::SparseCoverageHit,
+                (vertices.len() * std::mem::size_of::<Vertex>()) as u64, vertices.len() as u64);
+            knife_perf::add(Metric::SparseCoverageTiles, 0, rectangles.len() as u64);
+            return Ok(vertices);
+        }
+        knife_perf::add(Metric::SparseCoverageFallback, 0, 1);
+    }
     vertices
         .try_reserve(poly.len().saturating_sub(2) * 3)
         .context("reserving clipped quad vertices")?;

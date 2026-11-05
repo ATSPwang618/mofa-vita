@@ -17,6 +17,10 @@ mod pad;
 mod touch;
 mod witch;
 
+// Vita exposes normal auto playback, without player-triggered story acceleration.
+// Keep the engine's separate seek/load machinery and desktop controls intact.
+const STORY_FAST_FORWARD_ENABLED: bool = !cfg!(target_os = "vita");
+
 pub use pad::Pad;
 pub use witch::last_atlas_error;
 

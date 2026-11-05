@@ -149,6 +149,22 @@ fn op(q: &Quad) -> Option<PsOp> {
     }
 }
 
+const MIN_INTERSECTION_PIXELS: f64 = 8_192.;
+const MIN_INTERSECTION_FRACTION: f64 = 0.5;
+
+fn overlap_is_large_enough(coverage: f64, density: f64, smaller_area: f64) -> bool {
+    coverage * density >= MIN_INTERSECTION_PIXELS
+        && coverage >= smaller_area * MIN_INTERSECTION_FRACTION
+}
+
+#[cfg(test)]
+#[test]
+fn mid_sized_overlap_is_eligible_for_pixel_local_composition() {
+    assert!(overlap_is_large_enough(12_000., 1., 16_000.));
+    assert!(!overlap_is_large_enough(8_000., 1., 16_000.));
+    assert!(!overlap_is_large_enough(12_000., 1., 30_000.));
+}
+
 /// Only metadata/CPU geometry is inspected. All source owners remain in recorded
 /// Draw commands, so deferred admission, scene read plans and retirement fences
 /// continue to observe both sources. No GPU pixels are read by the CPU.
@@ -183,7 +199,7 @@ pub(super) fn pair(
     // Region splitting can turn two draw calls into three. Do it only for a
     // substantial overlap: the measured problem is large pixel-bound effects.
     // Small UI and slivers retain their original, cheaper command sequence.
-    if coverage * density < 16_384. || coverage < area(&pa).abs().min(area(&pb).abs()) * 0.5 {
+    if !overlap_is_large_enough(coverage, density, area(&pa).abs().min(area(&pb).abs())) {
         knife_perf::add(Metric::BlendChainFallback, 0, 2);
         return None;
     }

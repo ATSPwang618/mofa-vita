@@ -44,6 +44,9 @@ mod image_needed;
 mod sound_needed;
 #[cfg(target_os="vita")]
 pub use sound_needed::SoundNeeded;
+#[cfg(any(target_os = "vita", test))]
+#[path = "sparse_source.rs"]
+mod sparse_source;
 #[cfg(target_os="vita")]
 pub use image_needed::ImageNeeded;
 
@@ -1543,6 +1546,22 @@ impl Assets {
             pixels => (pixels, None),
         };
         #[cfg(target_os = "vita")]
+        let sparse = match &pixels {
+            Pixels::GxtNative { encoded, archive, index, logical, physical, .. } => {
+                let entry = archive.entries().get(*index).map_or("", |entry| entry.name.as_str());
+                let candidate = sparse_source::candidate(knife_platform_vita::audit::ASSET_MANIFEST,
+                    &archive.name, *index, name, entry, *logical, *physical, encoded.len());
+                let verified = candidate && knife_platform_vita::image::sha256_hex(encoded)
+                    .is_some_and(|hash| &hash == sparse_source::ENVELOPE_SHA256);
+                if name == "IMG0436" {
+                    tracing::info!(name, archive = %archive.name, index, candidate, verified,
+                        "SPARSE_SOURCE plan=img0436 tile=16 halo=2 rects=68");
+                }
+                verified
+            }
+            _ => false,
+        };
+        #[cfg(target_os = "vita")]
         let rebuilt_us = match &pixels { Pixels::SharedBaked(_, _, _, us) => *us, _ => 0 };
         #[cfg(target_os = "vita")]
         let altered = false; // Native encoded UNORM8 never needs an Alter target.
@@ -1678,6 +1697,10 @@ impl Assets {
                 if rebuilt_us != 0 { r.set_image_rebuild_us(&tex, rebuilt_us)?; }
                 tex
             }
+        } else { tex };
+        #[cfg(target_os = "vita")]
+        let tex = if sparse {
+            knife_render::GpuTexture::with_sparse_coverage(tex, knife_render::SparseCoveragePlan::Img0436)
         } else { tex };
         let no_shake = self.image_info(name).is_some_and(|i| i.no_shake);
         let (width, height, center_x, center_y, level) = match self.image_info(name) {

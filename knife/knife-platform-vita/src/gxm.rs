@@ -130,6 +130,8 @@ pub enum EffectShader {
     PsChain2 = 27,
     /// Bounds and rim steps/strength are per triangle; RGB24 remains a shared uniform.
     RimTextBatched = 28,
+    /// Specialized op7 with the complete PS source/material and group ABI.
+    PsFetch7 = 29,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]

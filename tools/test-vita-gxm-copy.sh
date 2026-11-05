@@ -6,7 +6,7 @@ host_cc=${CC:-cc}
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 build="$project/.work/vita/gxm-copy/$run_id"
 mkdir -p "$build/backend/shaders/generated"
-for source in perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h jpeg_hw.h image_decode.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc shaders/generated/shaders.h shaders/generated/effects.h; do
+for source in perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h runtime_shaders.h jpeg_hw.h image_decode.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc shaders/generated/shaders.h shaders/generated/effects.h; do
     cp "$project/knife/vita/$source" "$build/backend/$source"
 done
 cp "$project/knife/vita/tests/gxm_copy_test.c" "$build/test.c"
@@ -56,7 +56,10 @@ receipt=dict(schema='knife-vita-gxm-copy-host-v1',tested_at=datetime.now(timezon
     limitations=['Real backend compiled with SDK declarations and mocked SDK calls; pixels and alpha require the independent runtime oracle.',
                  'Uncalled backend functions are discarded by linker section garbage collection.'],
     files=[artifact(p) for p in sorted(build.rglob('*')) if p.is_file()])
-for path in [build/'receipt.json',project/'doc/vita-gxm-copy-host-tests.json']:
+destinations = [build/'receipt.json']
+import os
+if os.environ.get('KV_TEST_WORK_ONLY') != '1': destinations.append(project/'doc/vita-gxm-copy-host-tests.json')
+for path in destinations:
     path.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print('RECEIPT',build/'receipt.json')
 PY

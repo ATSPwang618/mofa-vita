@@ -9,7 +9,7 @@
 #include <float.h>
 
 enum { TEST_VERTEX_FLOATS = 28, TEST_VERTEX_LIMIT = 32760,
-    TEST_SHADER_COUNT = 29, TEST_BLEND_COUNT = 10 };
+    TEST_SHADER_COUNT = 30, TEST_BLEND_COUNT = 10 };
 typedef struct Input { KvEffectVertex v[3]; float p[8]; } Input;
 static unsigned cases, checks, failures, accepted_cases, rejected_cases;
 
@@ -96,11 +96,11 @@ static void preconditions(void) {
     for (uint32_t shader = 0; shader < TEST_SHADER_COUNT; ++shader)
         for (uint32_t blend = 0; blend < TEST_BLEND_COUNT; ++blend) {
             if (shader == 24) continue; /* checked capability, never a shader */
-            if (effect_fetch_shader(shader) && blend != 5) continue;
+            if ((effect_fetch_shader(shader) || shader == 29) && blend != 5) continue;
             in = fresh();
-            in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : 1.0f;
+            in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : shader == 29 ? 7.0f : 1.0f;
             if (shader == 22 || shader == 26 || shader == 28) { memset(in.p, 0, sizeof(in.p)); }
-            else if (shader >= 19) {
+            else if (shader >= 19 && shader != 29) {
                 in.p[1] = 0; in.p[4] = -1; in.p[7] = shader == 19 ? 1 : 0;
                 if (shader == 23) in.p[5] = 0;
             }
@@ -187,6 +187,63 @@ static void preconditions(void) {
     check("invalid.maximum-count-last-vertex.infinity", large, bytes, in.p,
         TEST_VERTEX_LIMIT, 0, 0, KV_BAD_ARGUMENT, 0);
     free(large);
+}
+/* ID29 changes the operation, not the source ABI. These inputs deliberately
+ * include effects that the plain PS entries must reject. */
+static void ps7_source_contract(void) {
+    Input base = fresh(); base.p[0] = 7;
+    char name[128];
+    for (unsigned fill = 0; fill < 2; ++fill) for (unsigned noalpha = 0; noalpha < 2; ++noalpha) {
+        Input in = base; in.p[1] = fill; in.p[6] = noalpha;
+        snprintf(name, sizeof(name), "valid.ps7-source.fill.%u.noalpha.%u", fill, noalpha);
+        check(name, in.v, sizeof(in.v), in.p, 3, 29, 5, 0, 0);
+    }
+    for (unsigned field = 0; field < 20; ++field) {
+        Input in = base;
+        for (unsigned vertex = 0; vertex < 3; ++vertex) {
+            float values[28]; memcpy(values, &in.v[vertex], sizeof(values));
+            values[8 + field] = .25f;
+            if (field == 16) values[26] = 4;
+            memcpy(&in.v[vertex], values, sizeof(values));
+        }
+        snprintf(name, sizeof(name), "valid.ps7-source.haze-soft.%u", field);
+        check(name, in.v, sizeof(in.v), in.p, 3, 29, 5, 0, 0);
+    }
+    Input varying = base;
+    varying.v[1].soft[0][0] = .5f; varying.v[2].soft[1][1] = .75f;
+    check("valid.ps7-source.varying-soft", varying.v, sizeof(varying.v), varying.p, 3, 29, 5, 0, 0);
+    Input group = base; group.p[4] = -1; group.p[7] = 1;
+    check("valid.ps7-source.group", group.v, sizeof(group.v), group.p, 3, 29, 5, 0, 0);
+    const float operations[] = {0, 6, 7.5f, 8, 24};
+    for (unsigned i = 0; i < sizeof(operations) / sizeof(*operations); ++i) {
+        Input in = base; in.p[0] = operations[i];
+        snprintf(name, sizeof(name), "invalid.ps7-source.operation.%u", i);
+        check(name, in.v, sizeof(in.v), in.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    }
+    for (unsigned blend = 0; blend < TEST_BLEND_COUNT; ++blend) {
+        if (blend == 5) continue;
+        snprintf(name, sizeof(name), "invalid.ps7-source.blend.%u", blend);
+        check(name, base.v, sizeof(base.v), base.p, 3, 29, blend, KV_BAD_ARGUMENT, 0);
+    }
+    Input bad = group; bad.p[4] = 0;
+    check("invalid.ps7-source.group-and-rule", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    bad = group; bad.p[6] = 1;
+    check("invalid.ps7-source.group-and-noalpha", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    bad = group; bad.p[7] = .5f;
+    check("invalid.ps7-source.group-mode", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    bad = base; bad.p[5] = 7;
+    check("invalid.ps7-source.rule-flags", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    bad = base; bad.v[1].haze[0][3] = 1;
+    check("invalid.ps7-source.unequal-haze", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    bad = base; bad.v[0].soft[2][0] = 1; bad.v[0].soft[2][1] = 18; bad.v[0].soft[2][2] = 4;
+    check("invalid.ps7-source.soft-row", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    bad.v[0].soft[2][1] = 0; bad.v[0].soft[2][2] = 257;
+    check("invalid.ps7-source.soft-texels", bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    for (unsigned i = 0; i < 8; ++i) {
+        bad = base; bad.p[i] = INFINITY;
+        snprintf(name, sizeof(name), "invalid.ps7-source.nonfinite-param.%u", i);
+        check(name, bad.v, sizeof(bad.v), bad.p, 3, 29, 5, KV_BAD_ARGUMENT, 0);
+    }
 }
 static void finite_values(void) {
     const float bad[] = {NAN, INFINITY, -INFINITY};
@@ -367,6 +424,7 @@ int main(void) {
     puts("HOST-ONLY actual effect_inputs contract; no GPU, SDK library, or emulator execution.");
     _Static_assert(sizeof(KvEffectVertex) == TEST_VERTEX_FLOATS * sizeof(float), "test float slots match ABI");
     preconditions();
+    ps7_source_contract();
     finite_values();
     haze_and_rim();
     soft_lut();

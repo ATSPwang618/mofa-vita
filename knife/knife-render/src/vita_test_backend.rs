@@ -40,6 +40,7 @@ pub enum EffectShader {
     PlainForceAlpha = 26,
     PsChain2 = 27,
     RimTextBatched = 28,
+    PsFetch7 = 29,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -386,6 +387,16 @@ impl Gxm {
         }
         if vertices.iter().any(|v| v.haze != vertices[0].haze) {
             return Err("mock per-quad uniforms differ".into());
+        }
+        if shader == EffectShader::PsFetch7 {
+            if control.shader_capabilities & (1 << 29) == 0 {
+                return Err("mock unavailable PS7 shader".into());
+            }
+            if blend != EffectBlend::Opaque || params[0] != 7.0
+                || (params[1] != 0.0 && params[1] != 1.0) || params[2] <= 0.0 || params[3] <= 0.0
+                || (params[6] != 0.0 && params[6] != 1.0) || (params[7] != 0.0 && params[7] != 1.0) {
+                return Err("mock full PS7 ABI".into());
+            }
         }
         if matches!(shader, EffectShader::PlainSprite | EffectShader::PsPlain19 | EffectShader::PsFetch2 | EffectShader::PlainForceAlpha) {
             if control.shader_capabilities & (1u32 << shader as u32) == 0 {

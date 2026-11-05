@@ -1,0 +1,94 @@
+{
+  "schema": "knife-vita-stage-effect-r2-rollback-v1",
+  "checked_date": "2026-11-05",
+  "final_build_tag": "stage-effect-r2-reverted-20261105",
+  "hardware_verified": false,
+  "remote_write_performed": false,
+  "r2_capture": {
+    "build_tag": "stage-effect-r2-prefix-20261105",
+    "bytes": 2186353,
+    "sha256": "e3fb681474ea8a54e2e0eec63395508602b48b7ebbce89d8e1851033172cd8fb",
+    "received_samples": 81,
+    "received_sample_class_and_audit_pairs": 81,
+    "console_dropped_batches": 25,
+    "invalid_json_lines": 2,
+    "incomplete_chunk_payloads": 1,
+    "capture_limits": [
+      "Audit frame13857 has11 of45 expected banks and no sample. Audit frame16386 is complete but its sample is missing. Local counter deltas after incomplete changed-bank capture may be recovered in later full snapshots rather than their original window.",
+      "All received samples have matching frame_classes and complete audit markers; this does not establish lossless capture because25 console batches were dropped.",
+      "Scene/PC are window-end snapshots. Different input and animation histories and different redraw/reuse proportions prohibit causal r1/r2 speedup claims.",
+      "Prefix hits occur before the incomplete audit group. Command-count savings and CPU submission time do not establish GPU time savings or pixel equivalence."
+    ]
+  },
+  "r2_prefix_observation": {
+    "hit_calls": 52,
+    "miss_calls": 2,
+    "build_calls": 2,
+    "draw_saved_aux": 172,
+    "resident_bytes_peak": 2097152,
+    "bypass_calls": 3460,
+    "hit_windows": [
+      {"sample_frame": 8787, "scene": 38, "pc_endpoints": [1510, 1539], "hit_calls": 15},
+      {"sample_frame": 9013, "scene": 38, "pc_endpoints": [1539, 1545], "hit_calls": 37}
+    ],
+    "stage_restore_hit_calls": 0,
+    "qualification": "The feature ran and saved172 recorded draw commands in a narrow part of the route. Original heavy all-redraw windows have zero prefix hits. Unchanged3MiB budget still permitted actual occupancy to rise from r1 zero to r2 twoMiB."
+  },
+  "heavy_window_comparison": {
+    "scope": "Scene38 windows whose class samples contain only redraw frames. States and animation phases remain unmatched; figures describe observations rather than a controlled A/B result.",
+    "r1_build_tag": "stage-effect-r1-logs-20261105",
+    "r1_log_sha256": "45d53b36b35d27b940587e48bd69251683de509cc917952628c5602161c82d57",
+    "windows": [
+      {
+        "pc_at_end": 448,
+        "r1": {"sample_frame": 1818, "redraw_frames": 63, "reuse_frames": 0, "fps": 12.595, "redraw_render_ms_per_frame": 78.2058},
+        "r2": {"sample_frame": 6206, "redraw_frames": 63, "reuse_frames": 0, "fps": 12.595, "redraw_render_ms_per_frame": 78.1962, "prefix_hit_calls": 0}
+      },
+      {
+        "pc_at_end": 1246,
+        "r1": {"sample_frame": 3315, "redraw_frames": 31, "reuse_frames": 0, "fps": 6.076, "redraw_render_ms_per_frame": 162.6749},
+        "r2": {"sample_frame": 8108, "redraw_frames": 31, "reuse_frames": 0, "fps": 6.076, "redraw_render_ms_per_frame": 162.6523, "prefix_hit_calls": 0},
+        "path": "Retained group rendering; pure-stage prefix optimization does not cover this path."
+      },
+      {
+        "pc_at_end": 2073,
+        "r1": {"sample_frame": 5499, "redraw_frames": 71, "reuse_frames": 0, "fps": 14.194, "redraw_render_ms_per_frame": 69.1015},
+        "r2": {"sample_frame": 12705, "redraw_frames": 72, "reuse_frames": 0, "fps": 14.207, "redraw_render_ms_per_frame": 69.0074, "prefix_hit_calls": 0}
+      }
+    ],
+    "mixed_window_limit": "For example the PC1849 bracket has r1 186redraw/16reuse versus r2 19redraw/269reuse. Its FPS difference cannot be attributed to prefix caching."
+  },
+  "rollback_decision": {
+    "reason": "Insufficient benefit for the original heavy-scene objective, despite observed functional prefix hits. This is not a claim that r2 never ran or that every hit lacked benefit.",
+    "production_changes_reverted": [
+      "r2 stage-prefix expansion: restore r1 eligibility and prefix matching behavior instead of the tracked-source/stable-prefix relaxation.",
+      "r2 empty-draw early return.",
+      "r2 presentation path without clear."
+    ],
+    "preserved": [
+      "Other r1 rendering optimizations and diagnostic counters.",
+      "Performance logging enabled by default for the current diagnostic package.",
+      "Existing input behavior, audio buffering and resource recovery."
+    ],
+    "minimum_fps_guarantee": null,
+    "next_direction": "Investigate the unchanged group-heavy PC1246 rendering and batch retirement waits with a separate bounded hypothesis and pixel validation; do not assume a stable prefix exists."
+  },
+  "rollback_validation": {
+    "provenance": "Reported by the current implementation task; this evidence-writing subtask did not repeat tests or builds.",
+    "render_tests_passed": 118,
+    "native_present_cases_passed": 18,
+    "native_present_checks_passed": 418,
+    "authority": "Host command/state contracts and native present checks; not physical Vita GPU pixels or hardware frame-rate acceptance.",
+    "final_build_verification": "passed: optimized ARM Vita release and VPK package check, KNIF00540 ATTRIBUTE2=12, 21 engine entries",
+    "artifact_hash_verification": "passed: delivered files hashed after copying, production source hashes match build receipt",
+    "packaged_eboot_matches_standalone": true,
+    "logging": {"build_tag_in_elf": true, "quiet_build": false, "performance_console_default": true, "performance_console_forced_off": false},
+    "hardware_verified": false
+  },
+  "artifacts": [
+    {"path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin", "verification": "passed", "bytes": 9853247, "sha256": "4e869ae17753adef023aa63078f3f65390f98443db96fb807888a60aff0553a6"},
+    {"path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk", "verification": "passed", "bytes": 7178297, "sha256": "c02dd340265aa819e3dc2664049a9655ba41f7c4ecb7b9e61b1d959fc3c219f5"}
+  ],
+  "detailed_analysis_location": ".work/vita/effect-r2-evaluation/",
+  "r1_analysis_location": ".work/vita/effect-r2-analysis/"
+}

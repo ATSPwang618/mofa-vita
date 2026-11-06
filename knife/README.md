@@ -15,7 +15,7 @@
 
 Vita 包固定中文 ID2，使用 960×540 场景和合成画布。编译引擎无需游戏素材；素材由使用者自行准备。换电脑构建时使用 `python3 tools/build-vita.py --check` 检查本地环境，完整步骤见 [构建与工具链](../doc/03-构建与工具链.md)。
 
-当前配套素材包含 2026-11-01 的全剧情图库清晰度更新：从原始图像直接缩放并编码为原生 DXT，覆盖背景、CG、人物和演出图层。960×540 是渲染画布尺寸；长图可保留平移与放大需要的画面外像素，每图仍受原有总像素预算限制。素材清单哈希和安装要求见[项目根说明](../README.md#素材兼容性)，离线处理规则见 [quality540](../tools/quality540/README.md)。
+当前配套素材为 native540 离线显存限额 + r11 raw UI成员读取包。剧情图保留逻辑坐标与完整长图内容，物理采样尺寸按离线预算限制；PNG编辑工程不能直接代替运行归档。r12只更新存读档焦点逻辑，资源身份与r11一致。清单和安装说明见[素材与安装](../doc/08-素材与安装.md)，制作链见[quality540](../tools/quality540/README.md)。
 
 本地资源与临时产物的保留规则见 [仓库维护与清理](../doc/09-仓库维护与清理.md)；脚本分类见 [tools](../tools/README.md)。
 
@@ -31,3 +31,7 @@ cargo +1.99.0 run --locked --release -p knife -- -a /path/to/desktop-assets -l z
 桌面资源与 Vita 专用 GXT 包不能直接混用。Linux 桌面构建需要 GStreamer 开发包和运行时解码插件；macOS 影片使用 VideoToolbox，Windows 使用 Media Foundation。桌面配置示例见 [knife.ini.example](knife.ini.example)，Vita 入口不读取此配置。
 
 上游来源见 [UPSTREAM.txt](UPSTREAM.txt)，引擎机制研究见 [engine-writeup.md](engine-writeup.md)。引擎沿用 [MPL 2.0](LICENSE)；Vita 第三方依赖的来源和许可证见 [vendor/shacccg-ext/NOTICE](vita/vendor/shacccg-ext/NOTICE) 与同目录 `LICENSE`。游戏本体、字体、图片、音视频及汉化资源由使用者自行准备。
+
+## English
+
+This directory is the Rust engine workspace for the PS Vita port. Build from the outer repository root using `python3 tools/build-vita.py game release`. The native backend is GXM at 960×540; the desktop WGPU backend remains for development. The Vita UI currently uses Chengkong Chinese. See the [English project README](../README.en.md) for installation, logging, optimizations and release status. Full game assets are supplied separately.

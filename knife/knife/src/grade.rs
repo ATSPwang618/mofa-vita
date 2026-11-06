@@ -9,6 +9,7 @@
 
 #[path = "grade_cache.rs"]
 mod cache;
+#[cfg(target_os = "vita")]
 pub(crate) use cache::GradeKey;
 #[cfg(target_os = "vita")]
 pub(crate) fn trim_cache(need:usize) -> usize { cache::trim_lru(need) }

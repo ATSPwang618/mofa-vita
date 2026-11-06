@@ -22,6 +22,7 @@ mod witch;
 const STORY_FAST_FORWARD_ENABLED: bool = !cfg!(target_os = "vita");
 
 pub use pad::Pad;
+#[cfg(target_os = "vita")]
 pub use witch::last_atlas_error;
 
 /// The BGM of a Witch on the Holy Night title (`witch::title_bgm`): `Game::play_title_bgm` must

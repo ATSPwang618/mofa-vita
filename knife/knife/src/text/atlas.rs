@@ -211,8 +211,6 @@ impl<T, G> GlyphAtlas<T, G> {
         Self { texture, glyphs: HashMap::new(), previous: None, size, shelf_x: 0, shelf_y: 0, shelf_h: 0 }
     }
 
-    pub fn size(&self) -> u32 { self.size }
-
     /// Same shelf admission as place(), without changing coordinates or owners.
     pub fn fits(&self, width: u32, height: u32) -> bool {
         let Some(w) = width.checked_add(PAD) else { return false };

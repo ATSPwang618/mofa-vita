@@ -26,7 +26,7 @@ python tools/vitadeck/test_logging_multiclient.py -v
 
 四个真实 TCP 用例覆盖：空闲长连接与游戏流并存、同 IP 两连接的半行隔离、拆分 UTF-8 与断线末行、PC 文件保存。测试不需要 Qt，也不启动 VitaDeck。
 
-`--baseline <原始 components/logging.py>` 可对照复现原接收器。2026-11-02 原版的空闲连接用例失败，补丁四项通过；安装后的真实 VitaDeck 也通过双连接与中文接收测试，并收到 `540p-d734b38-poolfix-20261102` 实机日志。详见 [日志恢复记录](../../doc/13-VitaDeck日志接收修复.md)。
+`--baseline <原始 components/logging.py>` 可对照复现原接收器。2026-11-02 原版的空闲连接用例失败，补丁四项通过；安装后的真实 VitaDeck 也通过双连接与中文接收测试，并收到 `540p-d734b38-poolfix-20261102` 实机日志。详见 [日志恢复记录](../../doc/06-性能采集与分析.md)。
 
 `--baseline-marshal <已提取模块>` 可在匹配的稳定 Python 版本下运行安装版原循环；它同样复现了空闲长连接阻塞。
 
@@ -36,7 +36,7 @@ python tools/vitadeck/test_logging_multiclient.py -v
 
 设备恢复FTP后，可以用 `push_eboot.py` 更新引擎，并在显式选择时写入回放请求。脚本覆盖 `ux0:/app/KNIF00540/eboot.bin`，不会上传或删除素材；上传后用RETR重新读取EBOOT并比较字节数与SHA-256，读回不一致时返回失败。
 
-当前r8 `stage-effect-r8-hardware-test-20261106` 默认开启GPU测试组合。设备没有 `optimization-profile.txt`，或其内容恰为旧标准值 `all`、`all ps-all-operations`、`all ps-full-material` 时，只更新EBOOT即可启用；启动日志 `optimization_profile` 会报告实际来源与mask `0x4fdfffffff`。其他自定义文件继续覆盖默认值。若需明确设置，将交付目录的配置复制到 `ux0:data/WitchontheHolyNight/optimization-profile.txt`，内容为 `hardware-test`。脚本本身不会修改该文件，迁移在引擎启动时完成，也不会重写设备文件。独立关闭方法与Half/Tiled实际运行规则见 [r8默认实机测试](../../doc/34-hardware-test-defaults.md)。
+当前r8 `stage-effect-r8-hardware-test-20261106` 默认开启GPU测试组合。设备没有 `optimization-profile.txt`，或其内容恰为旧标准值 `all`、`all ps-all-operations`、`all ps-full-material` 时，只更新EBOOT即可启用；启动日志 `optimization_profile` 会报告实际来源与mask `0x4fdfffffff`。其他自定义文件继续覆盖默认值。若需明确设置，将交付目录的配置复制到 `ux0:data/WitchontheHolyNight/optimization-profile.txt`，内容为 `hardware-test`。脚本本身不会修改该文件，迁移在引擎启动时完成，也不会重写设备文件。独立关闭方法与Half/Tiled实际运行规则见 [r8默认实机测试](../../doc/05-优化记录与实测数据.md)。
 
 ```powershell
 python tools/vitadeck/push_eboot.py `

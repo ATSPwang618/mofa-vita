@@ -521,26 +521,38 @@ impl Default for Settings {
 static GROUP_SHAPES: std::sync::Mutex<Vec<((u8, u8), u32)>> = std::sync::Mutex::new(Vec::new());
 /// Groups seen, and how many have the single-layer + single-mask shape that could be
 /// composited inline instead of through two surfaces.
+#[cfg(target_os = "vita")]
 static GROUP_TOTAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// Frames that re-rendered the stage, and how many of them had exactly the same draw
 /// list as the frame before. A high ratio means the stage could be cached instead of
 /// rebuilding ~40 layer draws every frame.
+#[cfg(target_os = "vita")]
 static STAGE_FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static STAGE_REPEATS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static LAST_STAGE_HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// Per-draw hashes of the previous frame, to count how many layers changed and whether
 /// the changed ones form one contiguous run (which decides if the static part can be
 /// cached as one segment).
+#[cfg(target_os = "vita")]
 static LAST_LAYER_HASHES: std::sync::Mutex<Vec<u64>> = std::sync::Mutex::new(Vec::new());
+#[cfg(target_os = "vita")]
 static LAYER_FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static CHANGED_0: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static CHANGED_1: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static CHANGED_SOME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static CONTIGUOUS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// Layer groups whose mask is a single full-canvas opaque white quad and whose opacity is 1.
 /// Those groups composite to exactly their layer stack, so the three surface passes can be
 /// replaced by a direct draw into the stage.
+#[cfg(target_os = "vita")]
 static NEUTRAL_GROUPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(target_os = "vita")]
 static GROUP_INLINE_CANDIDATES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[cfg(target_os = "vita")]
@@ -6387,6 +6399,7 @@ impl Game {
     /// with 0 or 1 pixel quads can be composited inline instead of through two surfaces,
     /// which is what decides how far the group path can be reduced.
     /// "frames:singles:runs:contiguous" for the per-layer change distribution.
+    #[cfg(target_os = "vita")]
     pub fn layer_change_summary() -> String {
         let frames = LAYER_FRAMES.load(std::sync::atomic::Ordering::Relaxed);
         let singles = CHANGED_1.load(std::sync::atomic::Ordering::Relaxed);
@@ -6397,15 +6410,15 @@ impl Game {
     }
 
     /// "stage frames:repeats", to size the value of caching the stage composite.
+    #[cfg(target_os = "vita")]
     pub fn stage_repeat_summary() -> String {
         let frames = STAGE_FRAMES.load(std::sync::atomic::Ordering::Relaxed);
         let repeats = STAGE_REPEATS.load(std::sync::atomic::Ordering::Relaxed);
         format!("{frames}:{repeats}")
     }
 
+    #[cfg(target_os = "vita")]
     pub fn group_shape_summary() -> String {
-        #[cfg(not(target_os = "vita"))]
-        return String::new();
         #[cfg(target_os = "vita")]
         {
         let Ok(table) = GROUP_SHAPES.lock() else { return String::new() };
@@ -6417,6 +6430,7 @@ impl Game {
     }
 
     fn render_stage(&mut self, r: &mut Renderer, enc: &mut CommandEncoder) -> anyhow::Result<()> {
+        #[cfg(target_os = "vita")]
         use crate::stage::Draw;
         #[cfg(target_os = "vita")]
         self.group_cache.begin_frame();
@@ -6692,20 +6706,18 @@ impl Game {
         // Group surface draws are buffered per target: a pass costs 8-20 ms on hardware
         // regardless of how few quads it holds, and alternating stage/group draws used to
         // open one pass per layer. Buffering gives each target one pass per composite.
+        #[cfg(target_os = "vita")]
         let mut pending: [Vec<Quad>; 2] = [Vec::new(), Vec::new()];
+        #[cfg(target_os = "vita")]
         let mut pending_clear: [bool; 2] = [false, false];
         // Quads seen since the last composite, for the shape histogram.
+        #[cfg(target_os = "vita")]
         let mut group_pixels = 0u8;
+        #[cfg(target_os = "vita")]
         let mut group_masks = 0u8;
-        // Group compositing costs three passes per layer group (pixel surface, mask
-        // surface, composite) and a heavy scene has a dozen of them. Flattening draws the
-        // group's layers straight into the stage and drops the mask, which loses masked and
-        // PS-blended layer effects in exchange for those passes.
-        // Off: every layer group carries a mask (measured shapes 2/2, 3/2, 5/1), so dropping
-        // the mask pass made masked glows show their raw sprite rectangle on hardware.
-        let flatten_groups = false;
         // True while the mask surface is known to be all zeros, which makes the group's
         // composite a no-op.
+        #[cfg(target_os = "vita")]
         let mut mask_clean = true;
         for d in draws {
             let quad = match d {
@@ -6720,47 +6732,8 @@ impl Game {
                         group_pixels = 0;
                         group_masks = 0;
                     }
-                    // A plain alpha group at full opacity can be drawn per layer with the mask
-                    // sampled as a texture, which removes the pixel-surface pass and the
-                    // composite pass. Other blends keep the surface path: their composite
-                    // applies the group blend and opacity to the group as a whole.
-                    #[cfg(target_os = "vita")]
-                    {
-                        // Disabled: on hardware this made whole background layers disappear
-                        // (only a mask-shaped strip of the scene remained), so the per-layer
-                        // mask product is not equivalent to the surface composite here.
-                        // Keep the actual surface composite. Mask alpha=1 alone does
-                        // not permit flattening arbitrary pixel blends: Opaque/PS
-                        // writes and intermediate RGBA8 rounding change the result.
-                        let mask_as_texture = false;
-                        let simple = mask_as_texture
-                            && (alpha - 1.0).abs() < 1e-6
-                            && matches!(blend, Blend::Alpha | Blend::Over)
-                            // The masked path replaces the rule slot with the mask and uses the
-                            // sprite shader, so it must not swallow a layer rule or a shade that
-                            // computes colour differently.
-                            && pending[0].iter().all(|q| q.rule.is_none()
-                                && q.shade == Shade::Sprite);
-                        if simple && !pending[0].is_empty() {
-                            // The mask pass cannot run inside the open stage pass.
-                            r.draw(enc, &self.stage_rt, clear.take(), &std::mem::take(&mut run));
-                            self.group_targets(r, enc);
-                            let mask_tex = self.group_rt.as_ref().unwrap()[1].tex.clone();
-                            if !pending[1].is_empty() || pending_clear[1] {
-                                let quads = std::mem::take(&mut pending[1]);
-                                let fresh = std::mem::replace(&mut pending_clear[1], false);
-                                self.draw_group_surface(r, enc, 1, fresh, &quads, cache_groups);
-                            }
-                            for mut q in std::mem::take(&mut pending[0]) {
-                                q.masked = true;
-                                q.rule = Some(knife_render::RuleMask::new(mask_tex.clone(), 0.0));
-                                run.push(q);
-                            }
-                            pending_clear[0] = false;
-                            mask_clean = false;
-                            continue;
-                        }
-                    }
+                    // Preserve surface composition: the retired flatten/mask-as-texture
+                    // experiments lost backgrounds and masked effects on hardware.
                     // Group producers can precede these stage writes only when neither
                     // side samples the other's destination. Keep the old order on alias.
                     #[cfg(target_os = "vita")]
@@ -6832,21 +6805,8 @@ impl Game {
                     }
                     continue;
                 }
-                Draw::Pixel { quad, clear } => {
-                    if flatten_groups {
-                        // Draw the layer itself straight into the stage.
-                        run.push(quad);
-                        continue;
-                    }
-                    (0, quad, clear)
-                }
-                Draw::Mask { quad, clear } => {
-                    if flatten_groups {
-                        // The mask only matters to the dropped composite.
-                        continue;
-                    }
-                    (1, quad, clear)
-                }
+                Draw::Pixel { quad, clear } => (0, quad, clear),
+                Draw::Mask { quad, clear } => (1, quad, clear),
             };
             let (k, q, fresh) = quad;
             #[cfg(target_os = "vita")]

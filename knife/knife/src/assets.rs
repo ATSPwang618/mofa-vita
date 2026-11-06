@@ -1,6 +1,8 @@
 //! Game data access: archives, exe tables, scripts, sound archive and a GPU texture cache.
 
-use knife_perf::{Metric, Scope, Gauge};
+use knife_perf::{Metric, Scope};
+#[cfg(target_os = "vita")]
+use knife_perf::Gauge;
 use crate::grade::Bake;
 #[cfg(target_os = "vita")]
 use std::rc::Rc;
@@ -684,11 +686,6 @@ impl Assets {
         // Tsukihime's bubble font is in the message font list (`<folder>3`), whose line feed it shares
         let bubble_feed = if self.build == Build::Witch { bubble.line_feed } else { msg.line_feed };
         crate::text::set_font_metrics(msg.line_feed, msg.ascent, msg.baseline, bubble.ascent, bubble_feed);
-    }
-
-    /// jp_9A700: the languages the data declares.
-    pub fn languages(&self) -> usize {
-        self.languages
     }
 
     /// sub_2DE70: the game language for a config word (negative or past the data's languages: the system's).

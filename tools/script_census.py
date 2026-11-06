@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ASSET = ROOT / "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/allscr.mrg"
-DEFAULT_OUT = ROOT / "doc/evidence/29-script-census.json"
+DEFAULT_OUT = ROOT / ".work/reports/script-census.json"
 
 
 def sha256(path: Path) -> str:

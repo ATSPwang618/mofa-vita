@@ -1,0 +1,168 @@
+{
+  "schema": "knife-doc-history-index-v1",
+  "ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f",
+  "documents": [
+    {
+      "path": "doc/10-资源加载失败修复.md",
+      "bytes": 5238,
+      "sha256": "d4485e3405d915672b5ce560eee394a8db6b2381d0b164980beef2897f67ab81",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/11-高清纹理显存与崩溃修复.md",
+      "bytes": 7531,
+      "sha256": "59d4edb352f3aac2e542b800ac56c5b9d142f9b13722d3732c694a47a8e1fd51",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/12-透明调色板纹理排查.md",
+      "bytes": 6846,
+      "sha256": "dc16d2dfdd6f1960f04bb0db25e6b22bb0ace6b11fb8875a49f0cc43eafd28a2",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/13-VitaDeck日志接收修复.md",
+      "bytes": 3828,
+      "sha256": "2fc71e149146be4930ff18f911817ae29ccbc7bb634ec3aa06df5f67466c4491",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/14-演出材质离线显存限额.md",
+      "bytes": 7734,
+      "sha256": "eb3360348c7b95c0df79562b37ad80c413e3558588ec04fab3cec6a30c7dd1ae",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/15-读档与转场目标分配恢复.md",
+      "bytes": 7183,
+      "sha256": "7267544e6d0818fad18420aee1948846151613518c05cd0108f3cc3e1528e15d",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/16-BGM预读缓冲调整.md",
+      "bytes": 5954,
+      "sha256": "84c5f244d082605b363c06b2b3fab969cbc838344c37b449ed6545e7fbdc2da7",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/17-书库与图录加载修复.md",
+      "bytes": 7717,
+      "sha256": "2ea921ed5f90eb7104731e539940629c1c4bb072c9c490f9179ca8f7b24b7f38",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/18-关闭手动快进.md",
+      "bytes": 3124,
+      "sha256": "c0ec3b21feb09fddbaffe743198baf481daa93890d2e4de8438aa7ce86f8d032",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/19-特效前缀与显示冗余优化.md",
+      "bytes": 6738,
+      "sha256": "a983f68cf22827064de2af58eca0e346472c891e08f677f8309726aa1f1eb1c2",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/20-r2实机复核与回退.md",
+      "bytes": 6181,
+      "sha256": "efea73516d93c3a193066d9f157f5773ed84a06d13c31227731f16e5b7edab7c",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/21-重场景op7专用着色器.md",
+      "bytes": 5434,
+      "sha256": "564533d3248d46ee1b1ccb1e4a9772cbac2cbad9eaed381a28dac78cfd97e811",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/22-op7专用shader实机复核.md",
+      "bytes": 4639,
+      "sha256": "ad80b169783db0f6b483a57ce757d4367ad02bfe69a0f0f4fbfcc8ce7b23a00c",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/23-scene38-PC1246-脚本素材与融合可行性分析.md",
+      "bytes": 12539,
+      "sha256": "e2d0f1a6787e5e9dc8f36e4d6cc07cfc21c45f115092efbf3aca1b1a988f2c04",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/24-scene38-透明覆盖优化.md",
+      "bytes": 5035,
+      "sha256": "af64453a25c07e0ffe12fcc7dec961aa4c501cc1333659a1bcfb485d4cb7456d",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/29-script-census.md",
+      "bytes": 1790,
+      "sha256": "644d9907bbe09d46335b7e921531655783f0ef4fc8f1912c38bd99128331dc45",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/30-GPU实验脚手架.md",
+      "bytes": 1866,
+      "sha256": "f52fe7c5c7d99007b6f5b34a839d0f0f60835243779fc93e455e2849b42c366a",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/31-GPU回放诊断.md",
+      "bytes": 4161,
+      "sha256": "ed4cabc094f9d92f80e5451751e5d3fb8521c59584705d5755987d76c1cbd0d0",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/31-stage-effect-r5-gpu-work.md",
+      "bytes": 3993,
+      "sha256": "20e3bc004e40efc03a3aab9d7cd964808740812a4cc9f9ac9076bfb4ed12a5d5",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/32-stage-effect-r6-full-material.md",
+      "bytes": 3833,
+      "sha256": "4dcb9fa9a1c695db7594708d9e84e72704d8ef8716342997737ce3f05cdb0a46",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/33-global-offline-shaders.md",
+      "bytes": 7052,
+      "sha256": "df08eb486e9ff35a9b67855e53041377e05d98ef2c6e0af6fbca41480a689813",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/34-hardware-test-defaults.md",
+      "bytes": 6067,
+      "sha256": "04d3ea1f8403b440586a6be902119b55e082da0f2b880bb8dc45533f29de4a30",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/35-op7-work.md",
+      "bytes": 7141,
+      "sha256": "9a3141d6f757d6752a0cfe9c22ffb0308e2a82f375d4533b99b34989597f6bec",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/36-material-coverage.md",
+      "bytes": 6521,
+      "sha256": "a5664d2cc1d753cf85450eae7a7891e5b06f69c7272765c23ed6c94ed89b0ccb",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/37-r10-long-hardware.md",
+      "bytes": 8307,
+      "sha256": "72eb49e32f43b8f7b5002dd5889f521fffc0c03db92c0fc2188f792e63c08685",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/38-r11-ui-group.md",
+      "bytes": 7597,
+      "sha256": "daa8e708b796007d542634bd79da73d4fd613cddf0b727c17b6e1cdc3964b49a",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    },
+    {
+      "path": "doc/39-r12-save-focus.md",
+      "bytes": 4075,
+      "sha256": "95b5f82fd71042f240041d3709a474c8f8dbc0670ea53a3e8065d50ac7efd3e5",
+      "git_ref": "ee10580225b0ec5e9aebf782c413dda00a4f651f"
+    }
+  ]
+}

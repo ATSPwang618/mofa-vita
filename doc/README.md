@@ -1,6 +1,6 @@
 # 技术文档索引
 
-文档对应 `perf/render` 基线 `24b0467` 加本地调整，最后整理于 **2026-11-06**。当前实机候选是 `stage-effect-r9-op7-work-20261106`，新增全游戏材质条件下的FP32精简OP7与相邻双OP7有界融合，65个离线GXP；默认开启两项新开关并继承r8实验配置，详见 [35](35-op7-work.md)。r9已通过host/native/ARM/VPK检查，尚无实机FPS或GPU像素差分结果。r8默认策略见 [34](34-hardware-test-defaults.md)，全24OP路径见 [33](33-global-offline-shaders.md)，r5计划见 [31](31-stage-effect-r5-gpu-work.md)。历史约6.076→7.034 FPS结果见 [22](22-op7专用shader实机复核.md)，不能代替本版性能。VitaDeck默认开启；分辨率、素材、按键、音频和存档未附带调整。
+当前本地实机候选为`stage-effect-r10-material-coverage-20261106`，基于`perf/render / 248ea872`。新增17个全游戏按材质选路的精简程序，82个离线GXP；`hardware-test`默认开启新增组合，VitaDeck日志默认开启。已通过host/native/ARM/VPK检查；r10实机FPS和GXM像素差分待验证。详见[36-材质覆盖](36-material-coverage.md)，上一版OP7与融合见[35](35-op7-work.md)。
 
 代码是实现事实来源。旧文档内的行号只辅助定位，以当前文件、常量和函数名为准。历史捕获、构建验证与实机验证分开表述：r2/r3/r4 使用旧的 480×270/720×404，后续 540p 优化记录也不能替代本次新素材包的实机回归。
 
@@ -75,3 +75,5 @@
 - [32-r6完整材质Shader](32-stage-effect-r6-full-material.md)：三个完整材质入口的历史扩展。
 - [33-r7全游戏离线专用Shader](33-global-offline-shaders.md)：24种PS运算与63个PC预编译GXP的来源；默认配置以r8为准。
 - [34-r8默认开启实机测试路径](34-hardware-test-defaults.md)：最新hardware-test默认、Group/Half/Tiled/Blur/Scene实际选路、旧标准配置展开及日志核对。
+
+- [36-r10全游戏材质组合覆盖](36-material-coverage.md)：新增17个有限入口、独立开关、真实离线成本、原生回退和交付身份。

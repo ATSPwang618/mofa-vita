@@ -6,8 +6,9 @@ const MEASURE_FRAMES: usize = 120;
 const ABBA: [bool; 4] = [false, true, true, false];
 
 fn replay_toggle(profile: u64) -> (&'static str, u64) {
-    use knife_perf::optimizations::{PS_ALL_OPERATIONS, PS_FULL_MATERIAL, PS_PLAIN_MATERIAL, PS_PLAIN_OP7, PS_CHAIN_OP7};
-    if profile & (PS_PLAIN_OP7 | PS_CHAIN_OP7) == (PS_PLAIN_OP7 | PS_CHAIN_OP7) { ("ps-chain-op7",PS_CHAIN_OP7) }
+    use knife_perf::optimizations::{PS_ALL_OPERATIONS, PS_FULL_MATERIAL, PS_PLAIN_MATERIAL, PS_PLAIN_OP7, PS_CHAIN_OP7, PS_MATERIAL_VARIANTS};
+    if profile & PS_MATERIAL_VARIANTS != 0 { ("ps-material-variants",PS_MATERIAL_VARIANTS) }
+    else if profile & (PS_PLAIN_OP7 | PS_CHAIN_OP7) == (PS_PLAIN_OP7 | PS_CHAIN_OP7) { ("ps-chain-op7",PS_CHAIN_OP7) }
     else if profile & PS_PLAIN_OP7 != 0 { ("ps-plain-op7",PS_PLAIN_OP7) }
     else if profile & PS_ALL_OPERATIONS != 0 { ("ps-all-operations",PS_ALL_OPERATIONS) }
     else if profile & PS_FULL_MATERIAL != 0 { ("ps-full-material", PS_FULL_MATERIAL) }
@@ -460,9 +461,11 @@ mod tests {
     }
     #[test]
     fn op7_replay_changes_only_one_new_bit() {
-        use knife_perf::optimizations::{HARDWARE_TEST,PS_PLAIN_OP7,PS_CHAIN_OP7};
-        assert_eq!(replay_toggle(HARDWARE_TEST),("ps-chain-op7",PS_CHAIN_OP7));
-        assert_eq!(replay_toggle(HARDWARE_TEST & !PS_CHAIN_OP7),("ps-plain-op7",PS_PLAIN_OP7));
+        use knife_perf::optimizations::{HARDWARE_TEST,PS_PLAIN_OP7,PS_CHAIN_OP7,PS_MATERIAL_VARIANTS};
+        assert_eq!(replay_toggle(HARDWARE_TEST),("ps-material-variants",PS_MATERIAL_VARIANTS));
+        let profile=HARDWARE_TEST & !PS_MATERIAL_VARIANTS;
+        assert_eq!(replay_toggle(profile),("ps-chain-op7",PS_CHAIN_OP7));
+        assert_eq!(replay_toggle(profile & !PS_CHAIN_OP7),("ps-plain-op7",PS_PLAIN_OP7));
         for profile in [HARDWARE_TEST,HARDWARE_TEST & !PS_CHAIN_OP7] {
             let (_,bit)=replay_toggle(profile);let baseline=profile & !bit;
             for candidate in ABBA {assert_eq!((baseline | if candidate {bit} else {0}) & !bit,profile & !bit);}

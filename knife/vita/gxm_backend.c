@@ -146,6 +146,7 @@ typedef struct BatchSlot { Block vertices; uint32_t used, first_sequence, last_s
 #define KV_OPT_PS_ALL_OPERATIONS (UINT64_C(1) << 38)
 #define KV_OPT_PS_PLAIN_OP7      (UINT64_C(1) << 39)
 #define KV_OPT_PS_CHAIN_OP7      (UINT64_C(1) << 40)
+#define KV_OPT_PS_MATERIAL_VARIANTS (UINT64_C(1) << 41)
 enum { BATCH_SLOTS = 2, BATCH_MAX_BYTES = 4 * 1024 * 1024 };
 #ifdef KV_GXM_DEV_DIAGNOSTICS
 static void native_trace(const char *stage, const Block *block) {
@@ -214,7 +215,7 @@ struct KvGxm {
     BatchSlot batches[BATCH_SLOTS];
     uint32_t batch_index, batch_active, sequence, dependency_pending;
     uint64_t shader_capabilities;
-    uint64_t shader_capabilities_high; /* IDs64..87 only; independent of option bits. */
+    uint64_t shader_capabilities_high; /* IDs64..104 only; independent of option bits. */
     uint32_t target_driver_bytes;
     uint32_t display_target_driver_bytes, display_target_scenes;
     uint32_t tiled_probe_attempted, tiled_probe_native_ready, tiled_targets_ready;
@@ -232,14 +233,14 @@ struct KvGxm {
    unknown public IDs and UINT32_MAX never reach a 64-bit shift boundary. */
 static int shader_capability_ready(const KvGxm *g, uint32_t shader) {
     if (shader < 64) return (g->shader_capabilities & (UINT64_C(1) << shader)) != 0;
-    if (shader <= 87) return (g->shader_capabilities_high & (UINT64_C(1) << (shader - 64))) != 0;
+    if (shader < 105) return (g->shader_capabilities_high & (UINT64_C(1) << (shader - 64))) != 0;
     return 0;
 }
 static void shader_capability_set(KvGxm *g, uint32_t shader, int ready) {
     uint64_t *bank;
     uint32_t bit;
     if (shader < 64) { bank = &g->shader_capabilities; bit = shader; }
-    else if (shader <= 87) { bank = &g->shader_capabilities_high; bit = shader - 64; }
+    else if (shader < 105) { bank = &g->shader_capabilities_high; bit = shader - 64; }
     else return;
     if (ready) *bank |= UINT64_C(1) << bit;
     else *bank &= ~(UINT64_C(1) << bit);
@@ -562,7 +563,7 @@ int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t capacity) {
        skip their shader cache/compiler admission. */
     const uint64_t shader_options = (UINT64_C(1) << 3) | (UINT64_C(1) << 4)
         | KV_OPT_PS_PLAIN_MATERIAL | KV_OPT_HALF_COLOR | KV_OPT_BLUR_WEIGHTS
-        | KV_OPT_PS_FULL_MATERIAL | KV_OPT_PS_ALL_OPERATIONS | KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7;
+        | KV_OPT_PS_FULL_MATERIAL | KV_OPT_PS_ALL_OPERATIONS | KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7 | KV_OPT_PS_MATERIAL_VARIANTS;
     if (result >= 0 && (kv_render_options() & shader_options)) {
         /* Compilation and complete optional program admission are startup work.
            A rejected optional shader returns to its original rendering chain. */

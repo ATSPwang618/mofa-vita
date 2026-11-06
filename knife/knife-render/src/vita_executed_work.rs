@@ -27,14 +27,14 @@ impl DrawWork {
         target_size: [u32;2], target_role: u32) -> Self {
         let id = shader as u32;
         let direct = params[7] == -18.0;
-        let ps = matches!(id,14|17..=21|23|25|27|29..=31|48..=52|54..=56|64..=87) || direct;
+        let ps = matches!(id,14|17..=21|23|25|27|29..=31|48..=52|54..=56|64..=104) || direct;
         let op = |v: f32| if v.is_finite() && v.fract() == 0.0 && (1.0..=24.0).contains(&v) { v as u8 } else { 0 };
         let ops = if ps { [op(params[0]), if id == 27 { op(params[1]) } else { 0 }] } else { [0;2] };
         let op_count = u8::from(ops[0] != 0) + u8::from(ops[1] != 0);
         let mut flags = 0u8;
         // Chain UV/tint and RimText bounds use haze slots as transport, but are
         // not wave effects. Classify actual material inputs rather than storage.
-        if matches!(id,0..=3|6|7|9|14|16..=21|23|25|29..=31|48..=52|54..=56|64..=87)
+        if matches!(id,0..=3|6|7|9|14|16..=21|23|25|29..=31|48..=52|54..=56|64..=104)
             && vertices.iter().any(|v|v.haze.iter().flatten().any(|x|*x!=0.0)) { flags |= 1; }
         if vertices.iter().any(|v|v.soft[2][0]>0.0) { flags |= 4; }
         if ps && !direct && id != 27 {
@@ -182,7 +182,7 @@ impl Stats {
         out.push_str("],\"program_counts\":[");
         let mut emitted=0usize;let mut omitted=0usize;
         let mut selected=[false;128];
-        for id in [48usize,57,30,31,21,29,54,55,56].into_iter().chain(64usize..88).chain([49usize,50,51,52,53]).chain(0..128) {
+        for id in [48usize,57,30,31,21,29,54,55,56].into_iter().chain(88usize..105).chain(64usize..88).chain([49usize,50,51,52,53]).chain(0..128) {
             if selected[id]{continue;}selected[id]=true;
             let count=self.programs[id];if count==0{continue;}
             let mut row=String::with_capacity(26);let _=write!(row,"[{id},{count}]");

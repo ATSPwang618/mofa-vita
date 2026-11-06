@@ -21,6 +21,8 @@
 #include <limits.h>
 #include <errno.h>
 
+#include "material_variants.h"
+
 enum { CACHE_ABI = 5, MAX_PROGRAM = 1024 * 1024, MIN_PROGRAM = 156 };
 #include "diagnostic_log.h"
 static struct {
@@ -46,10 +48,11 @@ static const char *const cache_root = KV_SHADER_CACHE_ROOT;
 static const char *validation_reason;
 static int full_material_shader(uint32_t shader) { return shader >= 54 && shader <= 56; }
 static int all_operation_shader(uint32_t shader) { return shader >= 64 && shader <= 87; }
-static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 29 || shader == 30 || shader == 31 || shader == 57 || (shader >= 32 && shader <= 52) || full_material_shader(shader) || all_operation_shader(shader); }
+static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 29 || shader == 30 || shader == 31 || shader == 57 || (shader >= 32 && shader <= 52) || full_material_shader(shader) || all_operation_shader(shader) || material_shader(shader); }
 /* Option bits are independent of the native program IDs. Disabled experiments
    neither read cached binaries nor invoke the runtime compiler. */
 static int runtime_shader_enabled(uint32_t shader, uint64_t options) {
+    if (material_shader(shader)) return material_enabled(shader,options);
     if (shader == 48) return (options & (UINT64_C(1) << 39)) != 0;
     if (shader == 57) return (options & (UINT64_C(3) << 39)) == (UINT64_C(3) << 39);
     /* IDs 30/31 are the r5 plain-material candidates.  Keep their source
@@ -68,13 +71,14 @@ static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 29, 54, 5
     32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
     48, 49, 50, 51, 52, 53, 57,
     64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
-    76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87 };
+    76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104 };
 static int runtime_shader_id(uint32_t shader) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
         if (runtime_shader_ids[i] == shader) return 1;
     return 0;
 }
 static uint32_t runtime_entry_abi(uint32_t shader) {
+    if (material_shader(shader)) return KNIFE_RUNTIME_ENTRY_ABI | shader << 16 | material_operation(shader) << 24;
     if (shader == 57) return KNIFE_RUNTIME_ENTRY_ABI | 7U << 8 | 7U << 16;
     /* Bind the shared entry to its compile-time operation, independently of
        both the program ID and existing two-operation chain macro identity. */
@@ -114,6 +118,23 @@ static const char *entry_for(uint32_t shader) {
         case 55: return "fs_ps6_full_fetch";
         case 56: return "fs_ps13_full_fetch";
         case 57: return "fs_ps_chain2_fetch";
+        case 88: return "fs_material_88";
+        case 89: return "fs_material_89";
+        case 90: return "fs_material_90";
+        case 91: return "fs_material_91";
+        case 92: return "fs_material_92";
+        case 93: return "fs_material_93";
+        case 94: return "fs_material_94";
+        case 95: return "fs_material_95";
+        case 96: return "fs_material_96";
+        case 97: return "fs_material_97";
+        case 98: return "fs_material_98";
+        case 99: return "fs_material_99";
+        case 100: return "fs_material_100";
+        case 101: return "fs_material_101";
+        case 102: return "fs_material_102";
+        case 103: return "fs_material_103";
+        case 104: return "fs_material_104";
         default: return shader >= 32 && shader < 48 ? "fs_ps_chain2_fetch" : NULL;
     }
 }
@@ -124,7 +145,11 @@ static uint32_t runtime_macro_definitions(uint32_t shader, const char *defines[4
     defines[1] = "KNIFE_RUNTIME_PS_SPECIALIZED=1";
     defines[2] = defines[3] = NULL;
     uint32_t count = fetch_shader(shader) ? (shader >= 19 ? 2 : 1) : 0;
-    if (all_operation_shader(shader)) {
+    if (material_shader(shader)) {
+        snprintf(values[0],sizeof(values[0]),"KNIFE_MATERIAL_VARIANT=%u",(unsigned)shader);
+        defines[2]=values[0];count=3;
+        if(material_half(shader)){defines[3]="KNIFE_RUNTIME_HALF_COLOR=1";count=4;}
+    } else if (all_operation_shader(shader)) {
         snprintf(values[0], sizeof(values[0]), "KNIFE_PS_FULL_OP=%u", (unsigned)(shader - 63));
         defines[2] = values[0]; count = 3;
     } else if (shader >= 49 && shader <= 52) {
@@ -226,6 +251,7 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     if (shader == 53 && blur_weights != 1) REJECT("blur_weight_array_missing");
     if (!(sampler_bits & 1) || (shader == 15 && !(sampler_bits & 2))
         || (shader == 19 && !(sampler_bits & 4))) REJECT("required_sampler_missing");
+    if (material_shader(shader) && sampler_bits != 1u) REJECT("material_requires_one_source_sampler");
     if (shader == 29 && sampler_bits != 13u) REJECT("ps7_requires_full_source_samplers");
     if ((full_material_shader(shader) || all_operation_shader(shader)) && sampler_bits != (shader == 81 ? 9u : 13u)) REJECT("full_ps_requires_full_source_samplers");
     if (((shader >= 32 && shader < 48) || shader == 57) && sampler_bits != 5u) REJECT("chain2_requires_two_sources");

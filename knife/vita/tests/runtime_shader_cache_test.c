@@ -174,6 +174,19 @@ static void all_operation_metadata(void) {
         fixture(data,13); data[122]=1; EXPECT(!validate(data,sizeof(data),shader));
         fixture(data,13); data[123]=3; EXPECT(!validate(data,sizeof(data),shader));
     }
+    for(unsigned shader=88;shader<105;++shader) {
+        ++cases;
+        EXPECT(runtime_shader_id(shader) && fetch_shader(shader));
+        char entry[32],value[32];snprintf(entry,sizeof(entry),"fs_material_%u",shader);
+        EXPECT(!strcmp(entry_for(shader),entry));
+        EXPECT(runtime_entry_abi(shader)==(KNIFE_RUNTIME_ENTRY_ABI|(shader<<16)|(material_operation(shader)<<24)));
+        const char *defs[4];char vals[2][32];
+        EXPECT(runtime_macro_definitions(shader,defs,vals)==(material_half(shader)?4u:3u));
+        snprintf(value,sizeof(value),"KNIFE_MATERIAL_VARIANT=%u",shader);EXPECT(!strcmp(defs[2],value));
+        EXPECT(!runtime_shader_enabled(shader,UINT64_MAX & ~(UINT64_C(1)<<41)));
+        EXPECT(runtime_shader_enabled(shader,UINT64_MAX));
+        for(unsigned bits=0;bits<16;++bits){fixture(data,bits);EXPECT(validate(data,sizeof(data),shader)==(bits==1));}
+    }
     for(unsigned shader=58;shader<=63;++shader) EXPECT(!runtime_shader_id(shader));
     for(unsigned bits=0;bits<16;++bits) {
         fixture(data,bits);
@@ -186,7 +199,7 @@ static void all_operation_metadata(void) {
     EXPECT(!runtime_shader_enabled(57,UINT64_C(1)<<39) && !runtime_shader_enabled(57,UINT64_C(1)<<40));
     EXPECT(runtime_shader_enabled(57,UINT64_C(3)<<39));
     EXPECT(runtime_entry_abi(57)==(KNIFE_RUNTIME_ENTRY_ABI|7U<<8|7U<<16));
-    EXPECT(!runtime_shader_id(88) && !runtime_shader_id(127) && !runtime_shader_id(UINT32_MAX));
+    EXPECT(!runtime_shader_id(105) && !runtime_shader_id(127) && !runtime_shader_id(UINT32_MAX));
     const char *defines[4]; char macro_values[2][32];
     EXPECT(runtime_macro_definitions(17,defines,macro_values)==1);
     EXPECT(runtime_macro_definitions(29,defines,macro_values)==2);

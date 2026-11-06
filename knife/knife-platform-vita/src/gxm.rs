@@ -171,6 +171,23 @@ pub enum EffectShader {
     PsAll22 = 85,
     PsAll23 = 86,
     PsAll24 = 87,
+    PsMaterial88 = 88,
+    PsMaterial89 = 89,
+    PsMaterial90 = 90,
+    PsMaterial91 = 91,
+    PsMaterial92 = 92,
+    PsMaterial93 = 93,
+    PsMaterial94 = 94,
+    PsMaterial95 = 95,
+    PsMaterial96 = 96,
+    PsMaterial97 = 97,
+    PsMaterial98 = 98,
+    PsMaterial99 = 99,
+    PsMaterial100 = 100,
+    PsMaterial101 = 101,
+    PsMaterial102 = 102,
+    PsMaterial103 = 103,
+    PsMaterial104 = 104,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]

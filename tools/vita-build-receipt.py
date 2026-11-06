@@ -79,7 +79,7 @@ sources += [root / 'knife/Cargo.toml', root / 'knife/Cargo.lock',
 # Asset regeneration is independent of compiling the checked-in metadata. Its
 # tools are recorded when present, never required as hidden packaging inputs.
 sources.extend(root / 'tools' / name for name in (
-    'offline_vita_shaders.py', 'generate-ps-operation-shaders.py', 'generate-vita-stream-index.py', 'generate-vita-atlas-index.py', 'vita_image_metadata.py',
+    'offline_vita_shaders.py', 'generate-material-variants.py', 'generate-ps-operation-shaders.py', 'generate-vita-stream-index.py', 'generate-vita-atlas-index.py', 'vita_image_metadata.py',
     'migrate-vita-native-color.py', 'native-color-blocks.c', 'generate_vita_asset_profile_540.py',
     'prepare_vita_ui_ranges.py',
 ) if (root / 'tools' / name).is_file())

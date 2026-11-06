@@ -43,6 +43,7 @@ pub const PS_FULL_MATERIAL: u64 = 1u64 << 37;
 pub const PS_ALL_OPERATIONS: u64 = 1u64 << 38;
 pub const PS_PLAIN_OP7: u64 = 1u64 << 39;
 pub const PS_CHAIN_OP7: u64 = 1u64 << 40;
+pub const PS_MATERIAL_VARIANTS: u64 = 1u64 << 41;
 pub const FEATURES: &[(&str, u64)] = &[
     ("shared-atlas", SHARED_ATLAS), ("gxt-ready", GXT_READY),
     ("batch-arena", BATCH_ARENA), ("group-fused", GROUP_FUSED),
@@ -76,6 +77,7 @@ pub const FEATURES: &[(&str, u64)] = &[
     ("ps-all-operations", PS_ALL_OPERATIONS),
     ("ps-plain-op7", PS_PLAIN_OP7),
     ("ps-chain-op7", PS_CHAIN_OP7),
+    ("ps-material-variants", PS_MATERIAL_VARIANTS),
 ];
 // Bits 0..28 are admitted by the existing renderer profile. Sparse coverage
 // and newer capacity experiments remain explicit opt-ins and are excluded from
@@ -94,9 +96,9 @@ pub const IMPLEMENTED: u64 = SHARED_ATLAS | GXT_READY | BATCH_ARENA | GROUP_FUSE
 /// `all` remains the admitted baseline; this preset does not imply GPU acceptance.
 pub const HARDWARE_TEST_PROFILE: &str = "hardware-test";
 pub const HARDWARE_TEST: u64 = IMPLEMENTED | PS_ALL_OPERATIONS | GROUP_BOUNDS
-    | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | PS_PLAIN_OP7 | PS_CHAIN_OP7;
+    | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | PS_PLAIN_OP7 | PS_CHAIN_OP7 | PS_MATERIAL_VARIANTS;
 pub const KNOWN: u64 = IMPLEMENTED | SPARSE_COVERAGE | PS_PLAIN_MATERIAL | GROUP_BOUNDS
-    | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | RT_SCENES_4 | PS_FULL_MATERIAL | PS_ALL_OPERATIONS | PS_PLAIN_OP7 | PS_CHAIN_OP7;
+    | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | RT_SCENES_4 | PS_FULL_MATERIAL | PS_ALL_OPERATIONS | PS_PLAIN_OP7 | PS_CHAIN_OP7 | PS_MATERIAL_VARIANTS;
 // Executable startup explicitly selects a profile before creating resources.
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
 pub fn set(mask: u64) {
@@ -172,9 +174,9 @@ mod tests {
     fn hardware_test_enables_latest_candidates_without_rollback_modes() {
         // Baseline bits 0..28,30 plus candidates 31..35,38. Sparse rollback,
         // capacity four and the superseded full-material path stay disabled.
-        assert_eq!(parse("hardware-test").unwrap(), 0x1cf_dfff_ffff);
+        assert_eq!(parse("hardware-test").unwrap(), 0x3cf_dfff_ffff);
         assert_eq!(parse("hardware-test -half-color -tiled-targets -rt-scenes-2").unwrap(),
-            0x1c4_dfff_ffff);
+            0x3c4_dfff_ffff);
         assert!(parse("hardware-test rt-scenes-4").is_err());
         assert!(parse("hardware-test typo").is_err());
     }
@@ -183,11 +185,11 @@ mod tests {
     fn hardware_test_startup_expands_only_legacy_stock_files() {
         for stock in ["all", "all ps-all-operations", "all ps-full-material", "\r\nall ps-all-operations\r\n"] {
             let selected = resolve_startup("hardware-test", Some(stock)).unwrap();
-            assert_eq!(selected.mask, 0x1cf_dfff_ffff, "stock profile {stock:?}");
+            assert_eq!(selected.mask, 0x3cf_dfff_ffff, "stock profile {stock:?}");
             assert!(selected.legacy_expanded, "stock profile {stock:?}");
         }
         assert_eq!(resolve_startup("hardware-test", None).unwrap(),
-            StartupProfile { mask: 0x1cf_dfff_ffff, legacy_expanded: false });
+            StartupProfile { mask: 0x3cf_dfff_ffff, legacy_expanded: false });
     }
 
     #[test]
@@ -197,7 +199,7 @@ mod tests {
             ("all -half-color", 0x5fff_ffff),
             ("all ps-all-operations -tiled-targets", 0x40_5fff_ffff),
             ("all -ps-fetch ps-all-operations", 0x40_5fff_ffef),
-            ("hardware-test -half-color -rt-scenes-2 rt-scenes-4", 0x1d6_dfff_ffff),
+            ("hardware-test -half-color -rt-scenes-2 rt-scenes-4", 0x3d6_dfff_ffff),
             ("all ps-full-material -ps-full-material", 0x5fff_ffff),
             ("all,ps-all-operations", 0x40_5fff_ffff),
         ] {

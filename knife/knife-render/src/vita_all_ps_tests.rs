@@ -196,3 +196,31 @@ fn half_overlay_keeps_one_precision_when_blend_chain_is_also_enabled() {
     assert!(draws.iter().all(|(shader, _)| *shader == EffectShader::PsHalf13));
     assert_eq!(draws.iter().map(|(_, count)| *count).sum::<usize>(), 12);
 }
+
+
+#[test]
+fn material_variants_route_globally_and_keep_per_entry_fallback() {
+ let profile=knife_perf::optimizations::HARDWARE_TEST;let _scope=Options::set(profile);
+ let(mut r,c)=setup();let target=r.create_target(960,540,"material candidates");
+ let operations=[1,1,6,6,7,7,13,13,1,6,7,13,3,4,5,11,14];
+ let bases=[49,49,50,50,48,48,52,52,64,69,70,76,66,67,68,74,77];
+ for index in 0..17 {
+  let op=OPS[operations[index]-1];let id=88+index as u32;
+  for variant in 0..6 {
+   knife_perf::optimizations::set(if variant==2 {profile & !knife_perf::optimizations::PS_MATERIAL_VARIANTS}else{profile});
+   c.borrow_mut().shader_capabilities=(1u64<<17)|(1u64<<48)|(15u64<<49);
+   c.borrow_mut().shader_capabilities_high=((1u64<<24)-1)|if variant==1 {0}else{1u64<<(id-64)};
+   let shade=if index<8 {if index%2==0 {Shade::Fill}else{Shade::NoAlpha}}else{Shade::Fill};
+   let mut q=Quad{shade,blend:Blend::Ps(op),..Quad::rect(r.white.clone(),[0.,0.,960.,540.],[0.3,0.6,0.8,0.4])};
+   if (8..12).contains(&index){q.haze[0]=[0.01,-0.5,0.7,1.];q.haze[1]=[-0.01,0.2,-0.5,0.];}
+   q.clip=Some([[1.,1.],[959.,1.],[959.,539.],[1.,539.]]);
+   if variant==3 {q.rule=Some(RuleMask::new(r.white.clone(),0.3));}
+   if variant==4 {q.soft=Some(SoftClip{inner:[0.,0.,960.,540.],pivot:[480.,270.],rot:0.2,radius:1.,row:0,texels:4,fill:0.});}
+   if variant==5 {q.masked=true;}
+   c.borrow_mut().events.clear();let mut e=r.encoder();r.try_draw(&mut e,&target,None,&[q]).unwrap();
+   r.try_present(e,&target).unwrap();
+   let actual=c.borrow().events.iter().find_map(|event|match event {Event::Draw{shader,..}=>Some(*shader as u32),_=>None}).unwrap();
+   assert_eq!(actual,if variant==0 {id}else if variant<=2 {bases[index]}else{63+operations[index] as u32},"id={id} variant={variant}");
+  }
+ }
+}

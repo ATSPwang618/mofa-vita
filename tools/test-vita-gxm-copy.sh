@@ -6,7 +6,7 @@ host_cc=${CC:-cc}
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 build="$project/.work/vita/gxm-copy/$run_id"
 mkdir -p "$build/backend/shaders/generated"
-for source in perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h runtime_shaders.h jpeg_hw.h image_decode.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc shaders/generated/shaders.h shaders/generated/effects.h; do
+for source in material_variants.h perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h runtime_shaders.h jpeg_hw.h image_decode.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc shaders/generated/shaders.h shaders/generated/effects.h; do
     cp "$project/knife/vita/$source" "$build/backend/$source"
 done
 cp "$project/knife/vita/tests/gxm_copy_test.c" "$build/test.c"

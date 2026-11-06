@@ -6,7 +6,7 @@ host_cc=${CC:-cc}
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 build="$project/.work/vita/runtime-shader-cache/$run_id"
 mkdir -p "$build/backend/tests" "$build/backend/shaders/generated"
-for source in runtime_shaders.c shader_sha256.h shader_module_exports.h shader_extensions.h diagnostic_log.h shaders/generated/runtime_source.h tests/runtime_shader_cache_stubs.h; do
+for source in material_variants.h runtime_shaders.c shader_sha256.h shader_module_exports.h shader_extensions.h diagnostic_log.h shaders/generated/runtime_source.h tests/runtime_shader_cache_stubs.h; do
     cp "$project/knife/vita/$source" "$build/backend/$source"
 done
 cp "$project/knife/vita/tests/runtime_shader_cache_test.c" "$build/test.c"

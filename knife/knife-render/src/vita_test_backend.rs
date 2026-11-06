@@ -73,6 +73,23 @@ pub enum EffectShader {
     PsAll22 = 85,
     PsAll23 = 86,
     PsAll24 = 87,
+    PsMaterial88 = 88,
+    PsMaterial89 = 89,
+    PsMaterial90 = 90,
+    PsMaterial91 = 91,
+    PsMaterial92 = 92,
+    PsMaterial93 = 93,
+    PsMaterial94 = 94,
+    PsMaterial95 = 95,
+    PsMaterial96 = 96,
+    PsMaterial97 = 97,
+    PsMaterial98 = 98,
+    PsMaterial99 = 99,
+    PsMaterial100 = 100,
+    PsMaterial101 = 101,
+    PsMaterial102 = 102,
+    PsMaterial103 = 103,
+    PsMaterial104 = 104,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -451,6 +468,19 @@ impl Gxm {
                 !(shader == EffectShader::PsChain2 && row == 0 && column < 2)
                     && *value != vertices[0].haze[row][column]))) {
             return Err("mock per-quad uniforms differ".into());
+        }
+        if (88..=104).contains(&(shader as u32)) {
+            let id=shader as usize;
+            let op=[1.,1.,6.,6.,7.,7.,13.,13.,1.,6.,7.,13.,3.,4.,5.,11.,14.][id-88];
+            if control.shader_capabilities_high & (1u64 << (id-64))==0
+                || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_MATERIAL_VARIANTS)
+                || blend!=EffectBlend::Opaque || params[0]!=op || params[4]>=0. || params[5]!=0. || params[7]!=0.
+                || vertices.iter().any(|v| v.soft.iter().flatten().any(|x|*x!=0.)
+                    || (!(96..=99).contains(&id) && v.haze.iter().flatten().any(|x|*x!=0.))) {
+                return Err("mock material variant contract".into());
+            }
+            if id<96 && (params[1]!=if id%2==0 {1.} else {0.}
+                || params[6]!=if id%2==0 {0.} else {1.}) { return Err("mock fixed shade contract".into()); }
         }
         if (64..=87).contains(&(shader as u32)) {
             if control.shader_capabilities_high & (1u64 << (shader as u32-64))==0 {return Err("mock unavailable all-operation shader".into());}

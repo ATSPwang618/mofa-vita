@@ -6,7 +6,7 @@
 
 本仓库只包含**引擎源码、构建工具与生成元数据**。游戏本体、字体、音视频和汉化数据由使用者自备，不入库；**编译 VPK 不需要游戏素材**。
 
-2026-11-06 当前本地实机候选 **`stage-effect-r9-op7-work-20261106`** 在r8基础上新增全游戏材质选路的精简FP32 OP7（程序48）与相邻双OP7有界融合（内部57），保持960×540和现有素材。两项默认随 `hardware-test` 开启，有效mask `0x1cfdfffffff`；其他r8实验保持原配置，旧标准配置迁移继续有效。65个PC离线GXP已内嵌，VitaDeck默认开启，启动打印版本及候选准入，执行日志记录48/57是否真正命中。已通过host/native/ARM/VPK检查；**尚未取得r9实机FPS和GXM像素一致性结果，不能承诺已超过10FPS**。实现、独立A/B与回退见 [r9 OP7工作量优化](doc/35-op7-work.md)；r8历史默认策略见 [34](doc/34-hardware-test-defaults.md)。
+2026-11-06 当前本地实机候选 **`stage-effect-r10-material-coverage-20261106`** 在r9基础上增加17个通用材质精简程序：Fill/NoAlpha、仅Haze、plain OP3/4/5/11/14，覆盖各章节符合条件的绘制。82个PC离线GXP内嵌，`hardware-test`默认开启`ps-material-variants`，mask=`0x3cfdfffffff`；VitaDeck默认日志开启。已通过host/native/ARM/VPK检查，**r10实机帧率收益与GPU像素一致性待验证**。实现、单项A/B、日志和回退见 [r10材质覆盖](doc/36-material-coverage.md)。原OP7精简与双层融合继续保留，见[r9](doc/35-op7-work.md)。
 
 上一候选 **`stage-effect-r7-all-ops-offline-20261106`** 将全部 **24 种 PS 混合运算**专用化：程序64–87使用完整材质源处理，普通Stage、Group Pixel/Mask与最终Composite按实际OP通用选路，不按章节、PC或图片名匹配。PC已编译63个GXP（含全部24个新程序），共111,076字节，嵌入EBOOT，启动优先验证并加载；运行时编译保留为逐项失败回退。r8继续使用该离线程序集，保持960×540和原资源。详见 [全游戏离线专用Shader](doc/33-global-offline-shaders.md)。
 

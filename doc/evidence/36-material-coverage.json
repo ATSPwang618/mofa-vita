@@ -1,0 +1,249 @@
+{
+  "schema": "knife-vita-r10-material-coverage-v1",
+  "build_tag": "stage-effect-r10-material-coverage-20261106",
+  "branch": "perf/render",
+  "base_commit": "248ea872c0d7d7b8d0d0a1e74d3685b377a7e563",
+  "implementation": [
+    "8 exact Fill/NoAlpha source variants",
+    "4 haze-only FP32 variants",
+    "5 plain FP32 operations",
+    "global material routing and per-program native fallback",
+    "independent bit41 ABBA comparison"
+  ],
+  "hardware_verified": false,
+  "rgba8_gpu_equivalence_verified": false,
+  "performance_verified": false,
+  "default_mask_hex": "0x3cfdfffffff",
+  "default_features": [
+    "shared-atlas",
+    "gxt-ready",
+    "batch-arena",
+    "group-fused",
+    "ps-fetch",
+    "async-submit",
+    "compact-stream",
+    "direct-stage",
+    "texture-pool",
+    "decode-owner",
+    "gray-r8",
+    "animation-window",
+    "dependency-graph",
+    "source-rename",
+    "grade-cache",
+    "stream-index",
+    "coalesce-bake",
+    "resource-io-cache",
+    "stage-prefix",
+    "group-batch",
+    "ui-pass-cache",
+    "plain-forcealpha",
+    "ui-source-prefetch",
+    "archive-glow-bounds",
+    "blend-chain",
+    "producer-reuse",
+    "async-rebake",
+    "target-ring",
+    "ps-op7",
+    "ps-plain-material",
+    "group-bounds",
+    "half-color",
+    "tiled-targets",
+    "blur-weights",
+    "rt-scenes-2",
+    "ps-all-operations",
+    "ps-plain-op7",
+    "ps-chain-op7",
+    "ps-material-variants"
+  ],
+  "program_costs": [
+    {
+      "id": 88,
+      "baseline": 49,
+      "primary": 18,
+      "baseline_primary": 26
+    },
+    {
+      "id": 89,
+      "baseline": 49,
+      "primary": 18,
+      "baseline_primary": 26
+    },
+    {
+      "id": 90,
+      "baseline": 50,
+      "primary": 28,
+      "baseline_primary": 36
+    },
+    {
+      "id": 91,
+      "baseline": 50,
+      "primary": 31,
+      "baseline_primary": 36
+    },
+    {
+      "id": 92,
+      "baseline": 48,
+      "primary": 27,
+      "baseline_primary": 36
+    },
+    {
+      "id": 93,
+      "baseline": 48,
+      "primary": 25,
+      "baseline_primary": 36
+    },
+    {
+      "id": 94,
+      "baseline": 52,
+      "primary": 34,
+      "baseline_primary": 42
+    },
+    {
+      "id": 95,
+      "baseline": 52,
+      "primary": 36,
+      "baseline_primary": 42
+    },
+    {
+      "id": 96,
+      "baseline": 64,
+      "primary": 75,
+      "baseline_primary": 228
+    },
+    {
+      "id": 97,
+      "baseline": 69,
+      "primary": 86,
+      "baseline_primary": 238
+    },
+    {
+      "id": 98,
+      "baseline": 70,
+      "primary": 81,
+      "baseline_primary": 233
+    },
+    {
+      "id": 99,
+      "baseline": 76,
+      "primary": 92,
+      "baseline_primary": 244
+    },
+    {
+      "id": 100,
+      "baseline": 66,
+      "primary": 29,
+      "baseline_primary": 227
+    },
+    {
+      "id": 101,
+      "baseline": 67,
+      "primary": 31,
+      "baseline_primary": 229
+    },
+    {
+      "id": 102,
+      "baseline": 68,
+      "primary": 40,
+      "baseline_primary": 237
+    },
+    {
+      "id": 103,
+      "baseline": 74,
+      "primary": 44,
+      "baseline_primary": 241
+    },
+    {
+      "id": 104,
+      "baseline": 77,
+      "primary": 49,
+      "baseline_primary": 246
+    }
+  ],
+  "offline_programs": 82,
+  "offline_bytes": 125292,
+  "shader_source_sha256": "7e0edbb8e7ae13f22aa1a2d989787ef92b5f5c72ccf51db0d559fdaccd4c30c2",
+  "arm_program_table_growth_bytes": 5644,
+  "driver_allocation_growth_measured": false,
+  "startup_profile_bytes": [
+    785,
+    810
+  ],
+  "standalone_eboot_matches_vpk": true,
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 10148863,
+      "sha256": "b438f1fa0678ebfe4608fc243aae9396509a31c179f26957face0011297b4a17"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7265529,
+      "sha256": "78337235c66fc25ece3da78d7a332e7a613b1a30d9f6d9aa1e96c601b87b2e76"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/build-receipt-r10.json",
+      "bytes": 85901,
+      "sha256": "04b138005abe1afd896ecdb056568ddd6a3ece67f89bf3b649d92360f78c4b29"
+    }
+  ],
+  "tests": [
+    {
+      "path": ".work/vita/r10-rust-tests.log",
+      "bytes": 44773,
+      "sha256": "91bef3f3e60f7e7a66d3311a2844b628ef4721fb73481370bddab8d35c69ebf9"
+    },
+    {
+      "path": ".work/vita/r10-gxm.log",
+      "bytes": 101583,
+      "sha256": "35063539d369d0d10b7372a67414e6d69c876a92bd1d6e94c0e6cb2cc316fa3b"
+    },
+    {
+      "path": ".work/vita/r10-cache.log",
+      "bytes": 2533,
+      "sha256": "60039be0f6fec55d02c41b63e105a1d01dea381d46e050e18ac0b3c37b654f73"
+    },
+    {
+      "path": ".work/vita/r10-effects.log",
+      "bytes": 6590,
+      "sha256": "0a24a54e88e55ad37444ff8007a5060fa6dc3c50dd586dd5d1943dda8a646eb0"
+    },
+    {
+      "path": ".work/vita/r10-inputs.log",
+      "bytes": 473,
+      "sha256": "8174cdbc2bf4f8d1bbd601f12d455208f8ebdbdca82302cf5a733474b5dedc45"
+    },
+    {
+      "path": ".work/vita/r10-profile.log",
+      "bytes": 103,
+      "sha256": "379025f38ef1ca06b0c553b017ff062cd3677a9df91d842489bc6947bea9d2a6"
+    },
+    {
+      "path": ".work/vita/r10-replay.log",
+      "bytes": 114,
+      "sha256": "0dc07b69decc116911b64f5ec4925433bfcbd627e7c36381f9a0106ea940313e"
+    },
+    {
+      "path": ".work/vita/r10-material-tests.log",
+      "bytes": 252,
+      "sha256": "1a9339ed4c20f4a98a6a47f6df4f756bf9723598e835d1bdb5473e9f2c17a15c"
+    },
+    {
+      "path": ".work/vita/r10-offline-validation.log",
+      "bytes": 113,
+      "sha256": "30b9a43bf45271ae757a47e716f33ddf7086b34960cdb949228fb56482d559b0"
+    },
+    {
+      "path": ".work/vita/r10-build.log",
+      "bytes": 11550,
+      "sha256": "e4d9f8279f8addc700c781be405537755227a13afcc7343ba0d8c6c3fad9d04d"
+    }
+  ],
+  "rollback": ".work/vita/rollback/stage-effect-r9-op7-work-20261106",
+  "limitations": [
+    "Static instruction counts are not GPU times or FPS gains.",
+    "CPU differential tests use controlled samples and half-local rounding; GXM output requires hardware pixel comparison.",
+    "Rule, soft clip and group mask retain their complete source path; this does not replace every effect with a plain shader.",
+    "The new capability range is tested through actual C registration, patch failure, cost refusal and draw gating.",
+    "Existing texture/RT/ring budgets and resolution are unchanged. Added shader patch memory still needs hardware observation."
+  ]
+}

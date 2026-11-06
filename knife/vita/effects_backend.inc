@@ -1,7 +1,9 @@
 /* Private implementation included by gxm_backend.c. No host GL/VitaGL path. */
 #include "shaders/generated/effects.h"
 
-enum { EFFECT_SHADERS = 88, EFFECT_PUBLIC_SHADERS = 88, EFFECT_BLENDS = 10, EFFECT_VERTICES = 32760 };
+#include "material_variants.h"
+
+enum { EFFECT_SHADERS = 105, EFFECT_PUBLIC_SHADERS = 105, EFFECT_BLENDS = 10, EFFECT_VERTICES = 32760 };
 struct KvEffects {
     Block buffer, vertex_usse, fragment_usse, vertices, indices;
     SceGxmShaderPatcher *patcher;
@@ -23,21 +25,22 @@ struct KvEffects {
     uint32_t index_used;
     uint32_t index_base;
 };
-/* 64 -> 88 program slots adds only these host-side program/handle tables.
-   Vita's 32-bit layout adds 24 * 332 = 7,968 bytes; GPU rings, vertex payload,
+/* 64 -> 105 slots; r10 adds 17 * 332 = 5,644 bytes over r9 on ARM32.
+   These are host-side program/handle tables; GPU rings, vertex payload,
    textures, targets and synchronization allocations keep their prior sizes. */
 enum { EFFECT_SHADER_SLOT_BYTES = sizeof(SceGxmShaderPatcherId) + sizeof(const SceGxmProgram *)
     + sizeof(int) + EFFECT_BLENDS * OUTPUT_MODES * sizeof(SceGxmFragmentProgram *)
     + EFFECT_BLENDS * OUTPUT_MODES * 7 * sizeof(const SceGxmProgramParameter *),
     EFFECT_TABLE_ADDED_BYTES = (EFFECT_SHADERS - 64) * EFFECT_SHADER_SLOT_BYTES };
 #if UINTPTR_MAX == UINT32_MAX
-_Static_assert(EFFECT_TABLE_ADDED_BYTES == 7968, "all-operation Vita program table growth");
+_Static_assert(EFFECT_TABLE_ADDED_BYTES == 13612, "all-operation Vita program table growth");
 #endif
 static int effect_chain_variant(uint32_t shader) { return (shader >= 32 && shader < 48) || shader == 57; }
 static int effect_full_material_shader(uint32_t shader) { return shader >= 54 && shader <= 56; }
 static int effect_all_operation_shader(uint32_t shader) { return shader >= 64 && shader <= 87; }
 static int effect_full_source_shader(uint32_t shader) { return shader == 29 || effect_full_material_shader(shader) || effect_all_operation_shader(shader); }
 static int effect_candidate_enabled(uint32_t shader, uint64_t options) {
+    if (material_shader(shader)) return material_enabled(shader,options);
     if (shader == 48) return (options & KV_OPT_PS_PLAIN_OP7) != 0;
     if (shader == 57) return (options & (KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7)) == (KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7);
     if (shader >= 49 && shader <= 52) return (options & KV_OPT_HALF_COLOR) != 0;
@@ -46,7 +49,7 @@ static int effect_candidate_enabled(uint32_t shader, uint64_t options) {
     return 1;
 }
 static int effect_fetch_shader(uint32_t shader) {
-    return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 27 || shader == 29 || shader == 30 || shader == 31 || effect_chain_variant(shader) || (shader >= 48 && shader <= 52) || effect_full_material_shader(shader) || effect_all_operation_shader(shader);
+    return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 27 || shader == 29 || shader == 30 || shader == 31 || effect_chain_variant(shader) || (shader >= 48 && shader <= 52) || effect_full_material_shader(shader) || effect_all_operation_shader(shader) || material_shader(shader);
 }
 static int effect_ps_shader(uint32_t shader) { return shader == 14 || effect_fetch_shader(shader); }
 static const SceGxmProgram *legacy_effect_source(uint32_t shader) {
@@ -340,7 +343,7 @@ static int effects_sampler_metadata(KvGxm *g, uint32_t shader, const SceGxmProgr
         const SceGxmProgramParameter *p = sceGxmProgramFindParameterByName(fs, samplers[unit]);
         if (p && (sceGxmProgramParameterGetCategory(p) != SCE_GXM_PARAMETER_CATEGORY_SAMPLER
             || sceGxmProgramParameterGetResourceIndex(p) != unit)) {
-            if (effect_full_source_shader(shader) || effect_chain_variant(shader) || (shader >= 48 && shader <= 53)) {
+            if (material_shader(shader) || effect_full_source_shader(shader) || effect_chain_variant(shader) || (shader >= 48 && shader <= 53)) {
                 g->effects->optional_status[shader] = KV_BAD_ARGUMENT;
                 return disable_optional_shader(g, shader);
             }
@@ -428,20 +431,20 @@ int32_t kv_gxm_chain_pair_available(KvGxm *g, uint32_t first, uint32_t second) {
     return g->effects && pair>=0 && (g->effects->chain_admitted & (1U << pair)) ? 1 : 0;
 }
 static int effects_optional_initialize(KvGxm *g) {
-    int status_by_shader[47] = {0};
-    const uint32_t optional[47] = {15, 17, 18, 19, 20, 21, 22, 23, 25, 26, 28, 29, 30, 31,
+    int status_by_shader[64] = {0};
+    const uint32_t optional[64] = {15, 17, 18, 19, 20, 21, 22, 23, 25, 26, 28, 29, 30, 31,
         49, 50, 51, 52, 53, 54, 55, 56,
         64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
-        76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 48};
+        76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 48, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104};
     for (uint32_t i = 22; i < 46; ++i) status_by_shader[i] = KV_STATE;
     int available = kv_runtime_shader_available(11);
-    for (uint32_t i = 0; i < 47; ++i) {
+    for (uint32_t i = 0; i < 64; ++i) {
         if (!effect_candidate_enabled(optional[i], kv_render_options())) continue;
         available |= kv_runtime_shader_available(optional[i]);
     }
     if (available) {
         CHECK(g, effects_ensure(g));
-        for (uint32_t i = 0; i < 47; ++i) {
+        for (uint32_t i = 0; i < 64; ++i) {
             const uint32_t shader = optional[i];
             if (!effect_candidate_enabled(shader, kv_render_options())) continue;
             status_by_shader[i] = g->effects->optional_status[shader];
@@ -450,6 +453,19 @@ static int effects_optional_initialize(KvGxm *g) {
                 continue;
             }
             int status = 0;
+            if (material_shader(shader)) {
+                const SceGxmProgram *candidate=bound_effect_source(g->effects,shader);
+                const SceGxmProgram *reference=bound_effect_source(g->effects,material_baseline(shader));
+                const uint32_t cost=effect_primary_count(candidate);
+                const uint32_t base_cost=effect_primary_count(reference);
+                if (!cost || !base_cost || cost>=base_cost) status=KV_STATE;
+                char line[256];
+                const int bytes=snprintf(line,sizeof(line),
+                    "{\"kind\":\"material_variant_cost\",\"shader\":%u,\"operation\":%u,\"baseline\":%u,"
+                    "\"primary\":%u,\"baseline_primary\":%u,\"cost_admitted\":%u}\n",
+                    shader,material_operation(shader),material_baseline(shader),cost,base_cost,status>=0);
+                if(bytes>0 && (size_t)bytes<sizeof(line)) (void)kv_perf_console(line,(uint32_t)bytes);
+            }
             for (uint32_t blend = 0; status >= 0 && blend < EFFECT_BLENDS; ++blend) {
                 if (effect_fetch_shader(shader) && blend != 5) continue;
                 status = effects_program_mode(g, shader, blend, 0);
@@ -475,6 +491,17 @@ static int effects_optional_initialize(KvGxm *g) {
             }
         }
     }
+    uint32_t material_ready=0;
+    for(uint32_t id=88;id<105;++id) if(g->effects && shader_capability_ready(g,id)
+        && g->effects->fragment[id][5][0]) material_ready|=UINT32_C(1)<<(id-88);
+    char material_line[256];
+    const int material_bytes=snprintf(material_line,sizeof(material_line),
+        "{\"kind\":\"material_variant_capabilities\",\"selected\":%u,\"ready_mask\":%u,"
+        "\"first_program\":88,\"variants\":17,\"table_growth_from_r9\":%u}\n",
+        (unsigned)((kv_render_options() & KV_OPT_PS_MATERIAL_VARIANTS)!=0),material_ready,
+        (unsigned)(17*EFFECT_SHADER_SLOT_BYTES));
+    if(material_bytes>0 && (size_t)material_bytes<sizeof(material_line))
+        (void)kv_perf_console(material_line,(uint32_t)material_bytes);
     CHECK(g, effects_chain_initialize(g));
     char op7_summary[384];
     const int op7_bytes=snprintf(op7_summary,sizeof(op7_summary),
@@ -1024,6 +1051,7 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
         || (shader == 54 && params[0] != 1.0f)
         || (shader == 55 && params[0] != 6.0f)
         || (shader == 56 && params[0] != 13.0f)
+        || (material_shader(shader) && params[0] != (float)material_operation(shader))
         || (effect_all_operation_shader(shader) && params[0] != (float)(shader - 63))) return KV_BAD_ARGUMENT;
     for (uint32_t i = 0; i < 8; ++i)
         if (!isfinite(params[i]) || ((shader == 22 || shader == 26 || shader == 28) && params[i] != 0)) return KV_BAD_ARGUMENT;
@@ -1037,6 +1065,10 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
     if ((shader == 30 || shader == 31 || (shader >= 48 && shader <= 52)) && (!packed_integer(params[1],0,1)
         || params[4] >= 0 || params[5] != 0 || !packed_integer(params[6],0,1) || params[7] != 0))
         return KV_BAD_ARGUMENT;
+    if (material_shader(shader) && (!packed_integer(params[1],0,1)
+        || params[4]>=0 || params[5]!=0 || !packed_integer(params[6],0,1) || params[7]!=0)) return KV_BAD_ARGUMENT;
+    if (shader>=88 && shader<=95 && (params[1] != ((shader-88)%2==0 ? 1.0f:0.0f)
+        || params[6] != ((shader-88)%2==0 ? 0.0f:1.0f))) return KV_BAD_ARGUMENT;
     if (shader == 27 && (!chain_ps_op(params[0]) || !chain_ps_op(params[1])
         || ((params[0] == 7 || params[1] == 7) && params[0] != params[1])
         || params[4] != -1 || params[5] != 0 || params[6] != 0 || params[7] != 0)) return KV_BAD_ARGUMENT;
@@ -1050,7 +1082,7 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
             for (uint32_t j = 0; j < 4; ++j)
                 if (!((shader == 27 && row == 0 && j < 2) || (shader == 28 && (row == 0 || j < 3)))
                     && v[i].haze[row][j] != v[0].haze[row][j]) return KV_BAD_ARGUMENT;
-        if (shader >= 19 && shader != 27 && shader != 28 && !effect_full_source_shader(shader)) {
+        if (shader >= 19 && shader != 27 && shader != 28 && !effect_full_source_shader(shader) && !material_haze(shader)) {
             // Specialised entries have an exact no-haze/no-soft ABI.
             // Refuse a direct FFI caller which would silently lose haze/soft.
             for (uint32_t row = 0; row < 2; ++row)
@@ -1059,6 +1091,10 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
             for (uint32_t row = 0; row < 3; ++row)
                 for (uint32_t j = 0; j < 4; ++j)
                     if (v[i].soft[row][j] != 0) return KV_BAD_ARGUMENT;
+        }
+        if (material_haze(shader)) {
+            for(uint32_t row=0;row<3;++row) for(uint32_t j=0;j<4;++j)
+                if(v[i].soft[row][j]!=0) return KV_BAD_ARGUMENT;
         }
         if (shader == 27) {
             if (v[i].haze[0][2] != 0 || v[i].haze[0][3] != 0) return KV_BAD_ARGUMENT;
@@ -1134,7 +1170,7 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
        generic fallback first, but this native guard keeps the public C entry
        safe for direct callers and for a compiler/cache rejection. */
     if (!effect_candidate_enabled(shader, kv_render_options())) return KV_STATE;
-    if (((shader >= 48 && shader <= 52) || shader == 30 || shader == 31 || effect_full_material_shader(shader) || effect_all_operation_shader(shader))
+    if (((shader >= 48 && shader <= 52) || shader == 30 || shader == 31 || effect_full_material_shader(shader) || effect_all_operation_shader(shader) || material_shader(shader))
         && (!g->effects || !shader_capability_ready(g, shader))) return KV_STATE;
     if (shader == 27) {
         const int pair = chain_pair_index((uint32_t)params[0], (uint32_t)params[1]);

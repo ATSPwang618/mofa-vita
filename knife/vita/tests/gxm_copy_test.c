@@ -818,6 +818,37 @@ static void all_operations_high_bank(void) {
     g.scene_open=0;EXPECT(effects_destroy(&g)==0);
     memset(host_runtime_programs,0,sizeof(host_runtime_programs));kv_render_set_options(0);
 }
+static void material_variant_startup_failures(void) {
+    ++cases; KvGxm g={.thread=7}; owner=&g;
+    g.effects=calloc(1,sizeof(*g.effects)); EXPECT(g.effects!=NULL); if(!g.effects)return;
+    static uint32_t tokens[105][16];memset(tokens,0,sizeof(tokens));
+    for(unsigned id=88;id<105;++id){
+        unsigned ids[2]={id,material_baseline(id)};
+        for(unsigned k=0;k<2;++k){unsigned s=ids[k];tokens[s][15]=k?100:20;
+            const SceGxmProgram *p=(const SceGxmProgram*)(const void*)tokens[s];
+            host_runtime_programs[s]=p;g.effects->source[s]=p;
+            g.effects->ids[s]=(SceGxmShaderPatcherId)(const void*)p;shader_capability_set(&g,s,1);}
+    }
+    tokens[96][15]=101; /* Cost rejection retains the complete base. */
+    kv_render_set_options(KV_OPT_PS_MATERIAL_VARIANTS|KV_OPT_HALF_COLOR|KV_OPT_PS_PLAIN_OP7);
+    patch_failure_id=g.effects->ids[90];injected_stage=10;injected_status=-73;
+    EXPECT(effects_optional_initialize(&g)==0 && !g.closing);
+    injected_stage=0;patch_failure_id=NULL;g.scene_open=1;
+    KvEffectVertex vertices[3]={0};const KvGxmTexture *inputs[4]={NULL,NULL,NULL,NULL};
+    for(unsigned id=88;id<105;++id){
+        EXPECT(kv_gxm_shader_available(&g,id)==(id!=90 && id!=96));
+        if(id==90 || id==96){EXPECT(!g.effects->ids[id]);continue;}
+        EXPECT(g.effects->fragment[id][5][0]!=NULL);
+        float params[8]={(float)material_operation(id),id<96 && id%2==0,960,540,-1,0,id<96 && id%2!=0,0};
+        unsigned used=g.effects->used;
+        kv_render_set_options(0);EXPECT(draw_effect_inner(&g,vertices,3,id,5,inputs,params)==KV_STATE);
+        kv_render_set_options(KV_OPT_PS_MATERIAL_VARIANTS|KV_OPT_HALF_COLOR|KV_OPT_PS_PLAIN_OP7);
+        shader_capability_set(&g,id,0);EXPECT(draw_effect_inner(&g,vertices,3,id,5,inputs,params)==KV_STATE);
+        EXPECT(g.effects->used==used);shader_capability_set(&g,id,1);
+    }
+    g.scene_open=0;EXPECT(effects_destroy(&g)==0);
+    memset(host_runtime_programs,0,sizeof(host_runtime_programs));kv_render_set_options(0);
+}
 static void startup_target(int srgb, int fail_gamma) {
     KvGxm g={.thread=7}; KvGxmTexture *target=NULL;
     owner=&g; creating_texture=1; injected_stage=fail_gamma ? 4 : 0;
@@ -1133,6 +1164,7 @@ int main(void) {
     output_programs();
     full_material_missing_logs();
     all_operations_high_bank();
+    material_variant_startup_failures();
     startup_target(1,0); startup_target(0,0); startup_target(1,1);
     seal_baked_texture(0); seal_baked_texture(8); seal_baked_texture(9); seal_invalid();
     KvPerfSample audit[KV_PERF_COUNT];

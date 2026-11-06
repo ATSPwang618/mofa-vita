@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = ["gxm_backend.c", "gxm_backend.h", "effects_backend.inc", "perf_audit.h",
+SOURCES = ["material_variants.h", "gxm_backend.c", "gxm_backend.h", "effects_backend.inc", "perf_audit.h",
     "perf_counters.def", "jpeg_hw.h", "image_decode.h", "runtime_shaders.h", "gpu_lifetime.inc",
     "movie_gxm.inc", "shaders/generated/shaders.h", "shaders/generated/effects.h"]
 

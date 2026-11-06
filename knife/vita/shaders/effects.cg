@@ -965,6 +965,284 @@ __nativecolor __regformat unsigned char4 fs_ps13_plain_half_fetch(FragmentInput 
 }
 #endif
 
+// BEGIN GENERATED MATERIAL VARIANTS
+// Generated from existing source/operation bodies; do not hand edit.
+#ifdef KNIFE_MATERIAL_VARIANT
+PsSample ps_material_source(FragmentInput i) {
+#if KNIFE_MATERIAL_VARIANT >= 96 && KNIFE_MATERIAL_VARIANT <= 99
+    float4 t = tex2D(tex0, haze_uv(i));
+    if (i.hx.w > 0.5) { t.rgb = t.rgb * t.a; }
+#else
+    float4 t = tex2D(tex0, i.uv);
+#endif
+    if (tu.params2.z > 0.5) { t.a = 1.0; }
+    float3 s = t.rgb * i.color.rgb;
+    s = lerp(s, i.color.rgb, 1.0 - step(float3(tu.params.y, tu.params.y, tu.params.y), float3(0.5, 0.5, 0.5)));
+    PsSample result;
+    result.texel = t;
+    result.source = s;
+    result.opacity = i.color.a;
+    result.alpha = t.a * i.color.a;
+    return result;
+}
+#if KNIFE_MATERIAL_VARIANT == 88
+__nativecolor __regformat unsigned char4 fs_material_88(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (0.0 > 0.5) { t.a = 1.0; }
+    float3 source = 1.0 > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    half3 s = half3(source);
+    half3 d = half3(native_unpack(destination).rgb);
+    half3 r = half3(ps_mix(float3(d), min(float3(d) + float3(s), float3(1.0, 1.0, 1.0)), a));
+    return native_pack(float4(float3(r), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 89
+__nativecolor __regformat unsigned char4 fs_material_89(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (1.0 > 0.5) { t.a = 1.0; }
+    float3 source = 0.0 > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    half3 s = half3(source);
+    half3 d = half3(native_unpack(destination).rgb);
+    half3 r = half3(ps_mix(float3(d), min(float3(d) + float3(s), float3(1.0, 1.0, 1.0)), a));
+    return native_pack(float4(float3(r), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 90
+__nativecolor __regformat unsigned char4 fs_material_90(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (0.0 > 0.5) { t.a = 1.0; }
+    float3 s = 1.0 > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    half3 d = half3(native_unpack(destination).rgb);
+    const float3 one = float3(1.0, 1.0, 1.0);
+    float3 k = max(one - s, float3(0.0, 0.0, 0.0));
+    float3 raw = min(float3(d) / k, one);
+    half3 r = half3(float3(k.r > 0.0 ? raw.r : 1.0,
+        k.g > 0.0 ? raw.g : 1.0, k.b > 0.0 ? raw.b : 1.0));
+    half3 mixed = half3(ps_mix(float3(d), float3(r), a));
+    return native_pack(float4(float3(mixed), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 91
+__nativecolor __regformat unsigned char4 fs_material_91(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (1.0 > 0.5) { t.a = 1.0; }
+    float3 s = 0.0 > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    half3 d = half3(native_unpack(destination).rgb);
+    const float3 one = float3(1.0, 1.0, 1.0);
+    float3 k = max(one - s, float3(0.0, 0.0, 0.0));
+    float3 raw = min(float3(d) / k, one);
+    half3 r = half3(float3(k.r > 0.0 ? raw.r : 1.0,
+        k.g > 0.0 ? raw.g : 1.0, k.b > 0.0 ? raw.b : 1.0));
+    half3 mixed = half3(ps_mix(float3(d), float3(r), a));
+    return native_pack(float4(float3(mixed), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 92
+__nativecolor __regformat unsigned char4 fs_material_92(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (0.0 > 0.5) { t.a = 1.0; }
+    float3 s = lerp(t.rgb * i.color.rgb, i.color.rgb,
+        1.0 - step(float3(1.0, 1.0, 1.0), float3(0.5, 0.5, 0.5)));
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    float3 k = max(one - a * s, zero);
+    float3 raw = min(d / k, one);
+    return native_pack(float4(float3(d.r > 0.0 ? raw.r : 0.0,
+                   d.g > 0.0 ? raw.g : 0.0, d.b > 0.0 ? raw.b : 0.0), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 93
+__nativecolor __regformat unsigned char4 fs_material_93(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (1.0 > 0.5) { t.a = 1.0; }
+    float3 s = lerp(t.rgb * i.color.rgb, i.color.rgb,
+        1.0 - step(float3(0.0, 0.0, 0.0), float3(0.5, 0.5, 0.5)));
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    float3 k = max(one - a * s, zero);
+    float3 raw = min(d / k, one);
+    return native_pack(float4(float3(d.r > 0.0 ? raw.r : 0.0,
+                   d.g > 0.0 ? raw.g : 0.0, d.b > 0.0 ? raw.b : 0.0), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 94
+__nativecolor __regformat unsigned char4 fs_material_94(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (0.0 > 0.5) { t.a = 1.0; }
+    float3 source = 1.0 > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    half3 s = half3(source);
+    half3 d = half3(native_unpack(destination).rgb);
+    half3 r = half3(ps_overlay(float3(d), float3(s), a));
+    return native_pack(float4(float3(r), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 95
+__nativecolor __regformat unsigned char4 fs_material_95(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    float4 t = tex2D(tex0, i.uv);
+    if (1.0 > 0.5) { t.a = 1.0; }
+    float3 source = 0.0 > 0.5 ? i.color.rgb : t.rgb * i.color.rgb;
+    float a = t.a * i.color.a;
+    if (min(a, 0.0) == a) { return destination; }
+    half3 s = half3(source);
+    half3 d = half3(native_unpack(destination).rgb);
+    half3 r = half3(ps_overlay(float3(d), float3(s), a));
+    return native_pack(float4(float3(r), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 96
+__nativecolor __regformat unsigned char4 fs_material_96(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    if (min(a, 0.0) == a) { return destination; }
+    return native_pack(float4(ps_mix(d, min(d + s, one), a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 97
+__nativecolor __regformat unsigned char4 fs_material_97(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    if (min(a, 0.0) == a) { return destination; }
+    float3 k = max(one - s, zero);
+    float3 raw = min(d / k, one);
+    float3 r = float3(k.r > 0.0 ? raw.r : 1.0,
+                      k.g > 0.0 ? raw.g : 1.0,
+                      k.b > 0.0 ? raw.b : 1.0);
+    return native_pack(float4(ps_mix(d, r, a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 98
+__nativecolor __regformat unsigned char4 fs_material_98(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    if (min(a, 0.0) == a) { return destination; }
+    float3 k = max(one - a * s, zero);
+    float3 raw = min(d / k, one);
+    return native_pack(float4(float3(d.r > 0.0 ? raw.r : 0.0,
+               d.g > 0.0 ? raw.g : 0.0,
+               d.b > 0.0 ? raw.b : 0.0), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 99
+__nativecolor __regformat unsigned char4 fs_material_99(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    if (min(a, 0.0) == a) { return destination; }
+    return native_pack(float4(ps_overlay(d, s, a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 100
+__nativecolor __regformat unsigned char4 fs_material_100(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    if (min(a, 0.0) == a) { return destination; }
+    return native_pack(float4(ps_mix(d, max(d, s), a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 101
+__nativecolor __regformat unsigned char4 fs_material_101(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    if (min(a, 0.0) == a) { return destination; }
+    return native_pack(float4(ps_mix(d, max(d + s - one, zero), a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 102
+__nativecolor __regformat unsigned char4 fs_material_102(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    if (min(a, 0.0) == a) { return destination; }
+    float3 raw = max(one - (one - d) / s, zero);
+    float3 r = float3(s.r > 0.0 ? raw.r : 0.0,
+                      s.g > 0.0 ? raw.g : 0.0,
+                      s.b > 0.0 ? raw.b : 0.0);
+    return native_pack(float4(ps_mix(d, r, a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 103
+__nativecolor __regformat unsigned char4 fs_material_103(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    if (min(a, 0.0) == a) { return destination; }
+    float3 h = s;
+
+    return native_pack(float4(ps_hard_light(d, h, a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 104
+__nativecolor __regformat unsigned char4 fs_material_104(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    if (min(a, 0.0) == a) { return destination; }
+    float3 high = pow(d, one / (2.0 * s));
+    float3 low = pow(d, 2.0 - 2.0 * s);
+    float3 r = (s < float3(0.5, 0.5, 0.5)) ? low : high;
+    return native_pack(float4(ps_mix(d, r, a), 1.0));
+}
+#endif
+#endif
+// END GENERATED MATERIAL VARIANTS
+
 // A bounded, material-selected chain, independent of game or script identity.
 // The CPU partitions the two clipped convex footprints. Only their intersection
 // uses this entry; the other regions retain their original shader and sampling.

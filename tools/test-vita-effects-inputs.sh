@@ -13,7 +13,7 @@ mkdir -p "$build/green/shaders/generated" "$logs"
 
 # Read the same immutable inputs for every variant, retaining the real include
 # chain rather than extracting effect_inputs into an alternate implementation.
-for source in perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc jpeg_hw.h image_decode.h \
+for source in material_variants.h perf_audit.c perf_audit.h perf_counters.def gxm_backend.c gxm_backend.h effects_backend.inc gpu_lifetime.inc movie_gxm.inc jpeg_hw.h image_decode.h \
     shaders/generated/shaders.h shaders/generated/effects.h; do
     cp "$project/knife/vita/$source" "$build/green/$source"
 done
@@ -96,7 +96,7 @@ PY
         fi
         cp "$build/$variant.log" "$logs/effects-inputs-$variant.log"
     done
-    grep -qF 'FAIL precondition.shader.88: expected status -1, got 0' "$build/red-enums.log"
+    grep -qF 'FAIL precondition.shader.105: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL precondition.blend.10: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL finite.params.0.infinity: expected status -1, got 0' "$build/red-finite.log"
     grep -qF 'FAIL rule.flags.shader.9.value.4: expected status -1, got 0' "$build/red-packed.log"

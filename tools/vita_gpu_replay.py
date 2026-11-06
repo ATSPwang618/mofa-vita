@@ -21,10 +21,11 @@ MASK_FULL = 1 << 37
 MASK_ALL = 1 << 38
 MASK_PLAIN7 = 1 << 39
 MASK_CHAIN7 = 1 << 40
-ALL_CENSUS_MASKS = (MASK_ALL, MASK_PLAIN7, MASK_CHAIN7)
+MASK_MATERIAL = 1 << 41
+ALL_CENSUS_MASKS = (MASK_ALL, MASK_PLAIN7, MASK_CHAIN7, MASK_MATERIAL)
 CHECKED_MASKS = (MASK_FULL, *ALL_CENSUS_MASKS)
 TOGGLES = {"ps-plain-material": MASK_PLAIN, "ps-full-material": MASK_FULL,
-           "ps-all-operations": MASK_ALL, "ps-plain-op7": MASK_PLAIN7, "ps-chain-op7": MASK_CHAIN7}
+           "ps-all-operations": MASK_ALL, "ps-plain-op7": MASK_PLAIN7, "ps-chain-op7": MASK_CHAIN7, "ps-material-variants": MASK_MATERIAL}
 FULL_PROGRAMS = (54, 55, 56)
 ABBA = (False, True, True, False)
 BLOCKS = 4
@@ -163,7 +164,7 @@ def _block(row: dict, expected_index: int, expected_candidate: bool, baseline: i
         if delta["calls"] <= 0:
             reasons.append("no_executed_work")
         if toggle_mask in CHECKED_MASKS:
-            ids = (48,) if toggle_mask == MASK_PLAIN7 else (57,) if toggle_mask == MASK_CHAIN7 else range(64,88) if toggle_mask == MASK_ALL else FULL_PROGRAMS
+            ids = range(88,105) if toggle_mask == MASK_MATERIAL else (48,) if toggle_mask == MASK_PLAIN7 else (57,) if toggle_mask == MASK_CHAIN7 else range(64,88) if toggle_mask == MASK_ALL else FULL_PROGRAMS
             delta["full_programs"] = _full_program_delta(row["executed_work_before"], row["executed_work_after"], ids)
             exercised = sum(delta["full_programs"].values())
             if expected_candidate and exercised == 0:

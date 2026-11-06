@@ -2165,7 +2165,17 @@ impl Renderer {
         let plain_sprite = self.device.call(|g| g.shader_available(22))?;
         let plain_forcealpha = knife_perf::optimizations::enabled(knife_perf::optimizations::PLAIN_FORCEALPHA)
             && self.device.call(|g| g.shader_available(26))?;
-        let ps_shader = |q: &Quad, op| {
+        let material_shaders = if fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_MATERIAL_VARIANTS) {
+            self.device.call(|g| {
+                let mut ready = [false; 17];
+                for (index, shader) in MATERIAL_PS_SHADERS.iter().enumerate() {
+                    ready[index] = g.shader_available(*shader as u32)?;
+                }
+                Ok(ready)
+            })?
+        } else { [false; 17] };
+        let base_ps_shader = |q: &Quad, op| {
             // The independently selected FP32 plain OP7 preserves the generic
             // operation exactly and wins over Half only for this material.
             if op == PsOp::DodgeAlpha && fetch_plain_op7 && plain_material_ps_source(q) {
@@ -2211,6 +2221,11 @@ impl Renderer {
                         || (plain_material_enabled && plain_material_ps_source(q))),
                     fetch_darken && plain_ps_source(q))
             }
+        };
+        let ps_shader = |q: &Quad, op| {
+            let base = base_ps_shader(q, op);
+            base.and_then(|previous| material_variant(q, op, previous))
+                .filter(|shader| material_shaders[*shader as usize - 88]).or(base)
         };
         let source_shader = |q: &Quad| {
             if q.shade == Shade::RimText && batched_rim { EffectShader::RimTextBatched }
@@ -2986,6 +3001,33 @@ fn select_ps_fetch(op: PsOp, general: bool, normal: bool,
     else if op == PsOp::Overlay && plain_overlay { Some(EffectShader::PsFetch13) }
     else if op == PsOp::Darken && plain_darken { Some(EffectShader::PsFetch2) }
     else if general { Some(EffectShader::PsFetch) } else { None }
+}
+
+// Fixed variants keep the precision of the selected baseline. No scene/asset gate.
+const MATERIAL_PS_SHADERS: [EffectShader;17] = [EffectShader::PsMaterial88,EffectShader::PsMaterial89,EffectShader::PsMaterial90,EffectShader::PsMaterial91,EffectShader::PsMaterial92,EffectShader::PsMaterial93,EffectShader::PsMaterial94,EffectShader::PsMaterial95,EffectShader::PsMaterial96,EffectShader::PsMaterial97,EffectShader::PsMaterial98,EffectShader::PsMaterial99,EffectShader::PsMaterial100,EffectShader::PsMaterial101,EffectShader::PsMaterial102,EffectShader::PsMaterial103,EffectShader::PsMaterial104];
+fn material_variant(q: &Quad, op: PsOp, base: EffectShader) -> Option<EffectShader> {
+    if !matches!(q.shade, Shade::Sprite | Shade::Fill | Shade::NoAlpha)
+        || q.rule.is_some() || q.soft.is_some() || q.masked { return None; }
+    let index = match op { PsOp::Add=>Some(0), PsOp::Dodge=>Some(1),
+        PsOp::DodgeAlpha=>Some(2), PsOp::Overlay=>Some(3), _=>None };
+    let plain=q.haze.iter().flatten().all(|value| *value==0.0);
+    if let Some(index)=index {
+        if !plain { return Some(MATERIAL_PS_SHADERS[8+index]); }
+        let expected=[EffectShader::PsHalf1,EffectShader::PsHalf6,
+            EffectShader::PsPlain7,EffectShader::PsHalf13][index];
+        if base==expected {
+            let shade=match q.shade { Shade::Fill=>0, Shade::NoAlpha=>1, _=>return None };
+            return Some(MATERIAL_PS_SHADERS[index*2+shade]);
+        }
+    }
+    if plain {
+        for (index, operation) in [3u32,4,5,11,14].into_iter().enumerate() {
+            if op as u32==operation && base as u32==63+operation {
+                return Some(MATERIAL_PS_SHADERS[12+index]);
+            }
+        }
+    }
+    None
 }
 
 const ALL_PS_SHADERS:[EffectShader;24]=[EffectShader::PsAll1,EffectShader::PsAll2,EffectShader::PsAll3,EffectShader::PsAll4,EffectShader::PsAll5,EffectShader::PsAll6,EffectShader::PsAll7,EffectShader::PsAll8,EffectShader::PsAll9,EffectShader::PsAll10,EffectShader::PsAll11,EffectShader::PsAll12,EffectShader::PsAll13,EffectShader::PsAll14,EffectShader::PsAll15,EffectShader::PsAll16,EffectShader::PsAll17,EffectShader::PsAll18,EffectShader::PsAll19,EffectShader::PsAll20,EffectShader::PsAll21,EffectShader::PsAll22,EffectShader::PsAll23,EffectShader::PsAll24];

@@ -11,12 +11,12 @@ pub struct NativeSample { pub calls: u64, pub us: u64, pub bytes: u64, pub aux: 
 include!(concat!(env!("OUT_DIR"), "/perf_names.rs"));
 const _: () = assert!(std::mem::size_of::<NativeSample>() == 32);
 unsafe extern "C" {
-    fn kv_render_set_options(options: u32);
+    fn kv_render_set_options(options: u64);
     fn kv_perf_set_enabled(enabled: u32);
     fn kv_perf_snapshot(out: *mut NativeSample, count: u32) -> i32;
     fn kv_perf_console(line: *const u8, length: u32) -> i32;
 }
-pub fn set_options(options: u32) { unsafe { kv_render_set_options(options); } }
+pub fn set_options(options: u64) { unsafe { kv_render_set_options(options); } }
 pub fn set_enabled(enabled: bool) { unsafe { kv_perf_set_enabled(u32::from(enabled)); } }
 pub fn snapshot() -> Result<[NativeSample; NATIVE_NAMES.len()], &'static str> {
     let mut out = [NativeSample::default(); NATIVE_NAMES.len()];

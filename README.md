@@ -6,7 +6,11 @@
 
 本仓库只包含**引擎源码、构建工具与生成元数据**。游戏本体、字体、音视频和汉化数据由使用者自备，不入库；**编译 VPK 不需要游戏素材**。
 
-2026-11-05 当前本地版本 `stage-effect-r4-sparse-20261105` 先优化 scene38/PC1246 的 IMG0436 星点层：按精确 DXT5 非零 alpha 和过滤邻域生成 68 个互不重叠的矩形，在原 Quad 内提交一次 Draw。该层源域覆盖约减少 73.9%，保留 960×540 输出、原纹理和混合顺序；这是几何覆盖证明，实机 FPS 与画面仍待验证。默认输出带版本号的 VitaDeck 日志，配套素材无需重传；详见 [透明覆盖优化](doc/24-scene38-透明覆盖优化.md)。
+2026-11-06 当前本地实机候选 **`stage-effect-r9-op7-work-20261106`** 在r8基础上新增全游戏材质选路的精简FP32 OP7（程序48）与相邻双OP7有界融合（内部57），保持960×540和现有素材。两项默认随 `hardware-test` 开启，有效mask `0x1cfdfffffff`；其他r8实验保持原配置，旧标准配置迁移继续有效。65个PC离线GXP已内嵌，VitaDeck默认开启，启动打印版本及候选准入，执行日志记录48/57是否真正命中。已通过host/native/ARM/VPK检查；**尚未取得r9实机FPS和GXM像素一致性结果，不能承诺已超过10FPS**。实现、独立A/B与回退见 [r9 OP7工作量优化](doc/35-op7-work.md)；r8历史默认策略见 [34](doc/34-hardware-test-defaults.md)。
+
+上一候选 **`stage-effect-r7-all-ops-offline-20261106`** 将全部 **24 种 PS 混合运算**专用化：程序64–87使用完整材质源处理，普通Stage、Group Pixel/Mask与最终Composite按实际OP通用选路，不按章节、PC或图片名匹配。PC已编译63个GXP（含全部24个新程序），共111,076字节，嵌入EBOOT，启动优先验证并加载；运行时编译保留为逐项失败回退。r8继续使用该离线程序集，保持960×540和原资源。详见 [全游戏离线专用Shader](doc/33-global-offline-shaders.md)。
+
+r5的有限材质、覆盖观测和独立实验见 [r5 GPU工作优化](doc/31-stage-effect-r5-gpu-work.md)，r6的三个完整材质入口见 [r6完整材质扩展](doc/32-stage-effect-r6-full-material.md)。本轮已开启的候选仍各自保留独立关闭开关；已撤回的sparse-coverage不重新启用，Scene容量4与2互斥，不同时开启。
 
 2026-11-05 上一版本 `stage-effect-r3-heavy-ps7-20261105` 优先优化约 6 FPS 的 PC1246 重场景：为其中最频繁的 op7 增加完整材质专用 shader29，保留原公式、特效与 960×540 分辨率；不可用时回退原路径。默认开启 VitaDeck 日志和版本号，增加 `draw_ps7`/`ps_fetch7_29` 便于确认实际接管。用户新实机日志确认29已启用，目标全重绘窗口约6.076→7.034 FPS、render约162.65→140.27 ms；有小幅收益但仍卡顿，详见[实机复核](doc/22-op7专用shader实机复核.md)。实现和host验证见 [重场景 op7 专用着色器](doc/21-重场景op7专用着色器.md)。上一轮无目标收益的 r2 前缀、空 draw、present clear 实验继续保持撤回，对照见 [r2 实机复核与回退](doc/20-r2实机复核与回退.md)。
 
@@ -39,7 +43,7 @@
 - **完整剧情引擎**：演出指令、motion/effects、group pixel-mask 合成、电影播放（MP4）、BGM/语音/SE（Opus）、存档/读档（带缩略图）、回想、正常速度自动播放、文本窗口控制；Vita 关闭玩家手动快进。
 - **全部菜单**：标题、环境设置（含逐角色语音音量）、书库 Archive、CG 鉴赏、乐曲鉴赏、系统菜单；固定中文 ID2。
 - **开机感谢页**：TYPE-MOON 影像与原版注意画面之间播放两页感谢图（每页约 5 秒，任意键跳过），向参与和支持本项目的朋友致谢；源图与打包脚本见 [tools/credit-intro](tools/credit-intro/README.md)。
-- **运行时 shader 编译与缓存**：首次启动编译专用 Cg 程序并写入数据根下的 `shader-cache/`，之后全部命中就不再加载编译器；缓存键包含源码 SHA、编译器 SHA、编译策略、缓存 ABI 与 shader id。
+- **PC离线Shader与逐项回退**：EBOOT内嵌63个已编译GXP，含OP1–24完整源处理专用程序；启动元数据校验通过后直接注册、patch。单项不可用才读取设备缓存或运行时编译，绘制仍按已就绪能力选路。源码SHA变化会阻止陈旧离线程序和缓存被误用。
 - **跨平台构建**：Windows（自动调用 WSL）/ Linux 上用 `tools/build-vita.py` 一条命令出 VPK；同一套引擎另有桌面 WGPU 后端用于调试。
 - **单一 540p 构建档**：`TITLE_ID = KNIF00540`（SFO `ATTRIBUTE2=12`，扩大主内存）。旧的 270p 变体与相关死代码已彻底移除。
 

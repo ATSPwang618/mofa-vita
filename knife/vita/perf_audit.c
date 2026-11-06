@@ -30,9 +30,9 @@ void kv_perf_native_state(uint32_t out[2]) {
     out[0] = atomic_load_explicit(&native_phase, memory_order_relaxed);
     out[1] = atomic_load_explicit(&native_detail, memory_order_relaxed);
 }
-static _Atomic uint32_t render_options;
-void kv_render_set_options(uint32_t options) { atomic_store_explicit(&render_options, options, memory_order_relaxed); }
-uint32_t kv_render_options(void) { return atomic_load_explicit(&render_options, memory_order_relaxed); }
+static _Atomic uint64_t render_options;
+void kv_render_set_options(uint64_t options) { atomic_store_explicit(&render_options, options, memory_order_relaxed); }
+uint64_t kv_render_options(void) { return atomic_load_explicit(&render_options, memory_order_relaxed); }
 typedef struct KvPerfCounter { _Atomic uint64_t calls, us, bytes, aux; } KvPerfCounter;
 static KvPerfCounter counters[KV_PERF_COUNT];
 _Static_assert(KV_PERF_COUNT <= 32 * 8, "console audit bank index bound");

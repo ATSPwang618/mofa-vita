@@ -30,13 +30,15 @@ fn main() {
     println!("cargo:rerun-if-changed=../vita/gxm_backend.h");
     println!("cargo:rerun-if-changed=../vita/effects_backend.inc");
     println!("cargo:rerun-if-changed=../vita/gpu_lifetime.inc");
-    for name in ["runtime_shaders.c", "runtime_shaders.h", "shader_sha256.h", "shader_module_exports.h", "shader_extensions.c", "shader_extensions.h", "vendor/shacccg-ext/libSceShaccCgExt.a", "shaders/effects.cg", "shaders/generated/runtime_source.h"] {
+    for name in ["runtime_shaders.c", "runtime_shaders.h", "shader_sha256.h", "shader_module_exports.h", "shader_extensions.c", "shader_extensions.h", "vendor/shacccg-ext/libSceShaccCgExt.a", "shaders/effects.cg", "shaders/generated/runtime_source.h", "shaders/generated/offline_programs.h"] {
         println!("cargo:rerun-if-changed=../vita/{name}");
     }
     println!("cargo:rerun-if-changed=../vita/shaders/generated/effects.h");
     println!("cargo:rerun-if-changed=../vita/vendor/shacccg-ext/NOTICE");
     println!("cargo:rerun-if-changed=../vita/vendor/dependencies");
     println!("cargo:rerun-if-changed=../../tools/generate-runtime-shaders.py");
+    println!("cargo:rerun-if-changed=../../tools/generate-ps-operation-shaders.py");
+    println!("cargo:rerun-if-changed=../../tools/offline_vita_shaders.py");
     println!("cargo:rerun-if-changed=../vita/audio_decode.c");
     println!("cargo:rerun-if-changed=../vita/audio_decode.h");
     println!("cargo:rerun-if-changed=../vita/audio_output.c");

@@ -6,6 +6,8 @@ use knife_platform_vita::audit;
 #[derive(Default, Clone, Copy)]
 pub struct FrameProbe {
     pub native_available: bool,
+    pub executed_draws: u64,
+    pub estimated_covered_pixels: u64,
     pub misses: u64,
     pub reload_us: u64,
     pub upload_bytes: u64,
@@ -35,10 +37,12 @@ pub struct FrameProbe {
 }
 impl FrameProbe {
     pub fn capture() -> Self {
+        let (executed_draws, estimated_covered_pixels) = knife_render::executed_work_snapshot();
         let ps = knife_perf::get(Metric::CopyPs);
         let group = knife_perf::get(Metric::CopyGroup);
         let atlas = knife_perf::get(Metric::AtlasDemandWait);
         let mut value = Self {
+            executed_draws, estimated_covered_pixels,
             misses: knife_perf::get(Metric::GxtMiss).calls + knife_perf::get(Metric::ImageMiss).calls,
             reload_us: knife_perf::get(Metric::GxtReload).us + knife_perf::get(Metric::ImageReload).us,
             stage_redraws: knife_perf::get(Metric::StageRedraw).calls,
@@ -74,6 +78,8 @@ impl FrameProbe {
     }
     pub fn delta(self, old: Self) -> Self {
         Self { native_available: self.native_available && old.native_available,
+            executed_draws: self.executed_draws.saturating_sub(old.executed_draws),
+            estimated_covered_pixels: self.estimated_covered_pixels.saturating_sub(old.estimated_covered_pixels),
             misses: self.misses.saturating_sub(old.misses),
             reload_us: self.reload_us.saturating_sub(old.reload_us),
             upload_bytes: self.upload_bytes.saturating_sub(old.upload_bytes),
@@ -103,6 +109,8 @@ impl FrameProbe {
         }
     }
     fn add(&mut self, value: Self) {
+        self.executed_draws = self.executed_draws.saturating_add(value.executed_draws);
+        self.estimated_covered_pixels = self.estimated_covered_pixels.saturating_add(value.estimated_covered_pixels);
         self.misses = self.misses.saturating_add(value.misses);
         self.reload_us = self.reload_us.saturating_add(value.reload_us);
         self.upload_bytes = self.upload_bytes.saturating_add(value.upload_bytes);
@@ -137,6 +145,7 @@ impl FrameProbe {
 }
 
 fn probe_json(out: &mut String, p: FrameProbe) {
+    let _ = write!(out, ",\"executed_draws\":{},\"estimated_covered_pixels\":{}", p.executed_draws, p.estimated_covered_pixels);
     let _ = write!(out, ",\"deferred_misses\":{}", p.misses);
     let _ = write!(out, ",\"reload_us\":{}", p.reload_us);
     let _ = write!(out, ",\"upload_bytes\":{}", p.upload_bytes);

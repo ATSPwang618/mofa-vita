@@ -38,7 +38,8 @@ enum { KV_BAD_ARGUMENT = -1, KV_STATE = -2, KV_BUDGET = -3, KV_ALLOC = -4 };
 /* Defined in effects_backend.inc: invalidates the cached pass state and the vertex ring. */
 void kv_reset_effect_state(void);
 void kv_reset_effect_ring(KvGxm *g);
-enum { KV_TEXTURE_LINEAR = 0, KV_TEXTURE_MOVIE = 1, KV_TEXTURE_COMPRESSED = 2 };
+enum { KV_TEXTURE_LINEAR = 0, KV_TEXTURE_MOVIE = 1, KV_TEXTURE_COMPRESSED = 2,
+    KV_TEXTURE_TILED = 3 };
 enum { OUTPUT_MODES = 1 };
 
 /* Timing probes: the GXM owner thread is single, so plain counters are enough. */
@@ -128,10 +129,24 @@ typedef struct Block {
     TexturePage *page; PoolSpan *span;
 } Block;
 typedef struct BatchSlot { Block vertices; uint32_t used, first_sequence, last_sequence; } BatchSlot;
-enum { KV_OPT_BATCH_ARENA = 1U << 2, KV_OPT_ASYNC_SUBMIT = 1U << 5,
-    KV_OPT_COMPACT_STREAM = 1U << 6, KV_OPT_TEXTURE_POOL = 1U << 8,
-    KV_OPT_DEPENDENCY_GRAPH = 1U << 12, KV_OPT_SOURCE_RENAME = 1U << 13,
-    BATCH_SLOTS = 2, BATCH_MAX_BYTES = 4 * 1024 * 1024 };
+#define KV_OPT_BATCH_ARENA       (UINT64_C(1) << 2)
+#define KV_OPT_ASYNC_SUBMIT      (UINT64_C(1) << 5)
+#define KV_OPT_COMPACT_STREAM    (UINT64_C(1) << 6)
+#define KV_OPT_TEXTURE_POOL      (UINT64_C(1) << 8)
+#define KV_OPT_DEPENDENCY_GRAPH  (UINT64_C(1) << 12)
+#define KV_OPT_SOURCE_RENAME     (UINT64_C(1) << 13)
+#define KV_OPT_PS_PLAIN_MATERIAL (UINT64_C(1) << 30)
+#define KV_OPT_GROUP_BOUNDS      (UINT64_C(1) << 31)
+#define KV_OPT_HALF_COLOR        (UINT64_C(1) << 32)
+#define KV_OPT_TILED_TARGETS     (UINT64_C(1) << 33)
+#define KV_OPT_BLUR_WEIGHTS      (UINT64_C(1) << 34)
+#define KV_OPT_RT_SCENES_2       (UINT64_C(1) << 35)
+#define KV_OPT_RT_SCENES_4       (UINT64_C(1) << 36)
+#define KV_OPT_PS_FULL_MATERIAL  (UINT64_C(1) << 37)
+#define KV_OPT_PS_ALL_OPERATIONS (UINT64_C(1) << 38)
+#define KV_OPT_PS_PLAIN_OP7      (UINT64_C(1) << 39)
+#define KV_OPT_PS_CHAIN_OP7      (UINT64_C(1) << 40)
+enum { BATCH_SLOTS = 2, BATCH_MAX_BYTES = 4 * 1024 * 1024 };
 #ifdef KV_GXM_DEV_DIAGNOSTICS
 static void native_trace(const char *stage, const Block *block) {
     FILE *log = fopen("ux0:data/knife-woh-dev/gxm-native.log", "a");
@@ -165,6 +180,7 @@ struct KvGxmTexture {
     SceGxmSyncObject *sync;
     SceGxmColorSurface surface;
     uint32_t width, height, pitch, bpp, srgb, storage;
+    uint32_t target_scenes, target_driver_bytes;
     int ready, rendered, retiring;
     uint32_t last_use, last_read, last_write;
     uint64_t rename_identity;
@@ -197,7 +213,11 @@ struct KvGxm {
     uint32_t back, front, quads;
     BatchSlot batches[BATCH_SLOTS];
     uint32_t batch_index, batch_active, sequence, dependency_pending;
-    uint32_t shader_capabilities;
+    uint64_t shader_capabilities;
+    uint64_t shader_capabilities_high; /* IDs64..87 only; independent of option bits. */
+    uint32_t target_driver_bytes;
+    uint32_t display_target_driver_bytes, display_target_scenes;
+    uint32_t tiled_probe_attempted, tiled_probe_native_ready, tiled_targets_ready;
     uint32_t gpu_covered_sequence, scene_kind, scene_ps_ops, previous_scene_ps_ops;
     uint32_t plan_ready, plan_need_sequence, plan_hazards, plan_kind;
     KvGxmTexture *plan_target;
@@ -208,6 +228,22 @@ struct KvGxm {
     TexturePage *texture_pages;
     KvGxmStats stats;
 };
+/* Program IDs are not option positions. Guard the bank before every shift so
+   unknown public IDs and UINT32_MAX never reach a 64-bit shift boundary. */
+static int shader_capability_ready(const KvGxm *g, uint32_t shader) {
+    if (shader < 64) return (g->shader_capabilities & (UINT64_C(1) << shader)) != 0;
+    if (shader <= 87) return (g->shader_capabilities_high & (UINT64_C(1) << (shader - 64))) != 0;
+    return 0;
+}
+static void shader_capability_set(KvGxm *g, uint32_t shader, int ready) {
+    uint64_t *bank;
+    uint32_t bit;
+    if (shader < 64) { bank = &g->shader_capabilities; bit = shader; }
+    else if (shader <= 87) { bank = &g->shader_capabilities_high; bit = shader - 64; }
+    else return;
+    if (ready) *bank |= UINT64_C(1) << bit;
+    else *bank &= ~(UINT64_C(1) << bit);
+}
 
 #ifdef KV_GXM_DEV_DIAGNOSTICS
 static void native_texture_trace(const KvGxm *g, const KvGxmTexture *t) {
@@ -264,7 +300,9 @@ static int block_alloc_inner(KvGxm *g, Block *b, uint32_t requested, int cdram, 
     b->size = (requested + alignment - 1) & ~(alignment - 1);
     b->cdram = cdram;
     uint32_t *used = cdram ? &g->stats.cdram_mapped_bytes : &g->stats.main_mapped_bytes;
-    const uint32_t reserved = cdram ? g->stats.parameter_reserved_bytes : 0;
+    /* Driver-owned render target memory and later mapped blocks share the
+       same main-memory ceiling, whichever allocation happens first. */
+    const uint32_t reserved = cdram ? g->stats.parameter_reserved_bytes : g->target_driver_bytes;
     const uint32_t limit = cdram ? CDRAM_LIMIT : MAIN_MAP_LIMIT;
     if (reserved > limit || b->size > limit - reserved || *used > limit - reserved - b->size) {
         if (cdram) g->texture_allocation_failed = 1;
@@ -349,6 +387,67 @@ static void display_callback(const void *data) {
 
 #include "gpu_lifetime.inc"
 
+/* Scene capacity belongs to each native render target.  It does not change
+ * the independently bounded two-slot vertex arena or display queue depth. */
+static uint32_t target_scene_capacity(void) {
+    const uint64_t selected = kv_render_options() & (KV_OPT_RT_SCENES_2 | KV_OPT_RT_SCENES_4);
+    return selected == KV_OPT_RT_SCENES_2 ? 2 : selected == KV_OPT_RT_SCENES_4 ? 4 : 1;
+}
+static void target_capacity_log(uint32_t width, uint32_t height, uint32_t requested,
+    uint32_t selected, uint32_t bytes, int status, const char *reason) {
+    char line[352];
+    const int length=snprintf(line,sizeof(line),
+        "{\"kind\":\"target_scene_capacity\",\"width\":%u,\"height\":%u,"
+        "\"requested\":%u,\"selected\":%u,\"queried_driver_bytes\":%u,"
+        "\"status\":%d,\"reason\":\"%s\",\"vertex_slots\":2}\n",
+        width,height,requested,selected,bytes,status,reason);
+    if(length>0 && (size_t)length<sizeof(line)) (void)kv_perf_console(line,(uint32_t)length);
+}
+static int target_create_capacity(KvGxm *g, uint32_t width, uint32_t height,
+    uint32_t capacity, SceGxmRenderTarget **out, uint32_t *driver_bytes) {
+    const SceGxmRenderTargetParams params={.width=width,.height=height,
+        .scenesPerFrame=capacity,.multisampleMode=SCE_GXM_MULTISAMPLE_NONE,.driverMemBlock=-1};
+    unsigned int bytes=0;
+    int status=sceGxmGetRenderTargetMemSize(&params,&bytes);
+    if(status>=0 && (!bytes || g->stats.main_mapped_bytes>MAIN_MAP_LIMIT
+        || bytes>MAIN_MAP_LIMIT-g->stats.main_mapped_bytes
+        || g->target_driver_bytes>MAIN_MAP_LIMIT-g->stats.main_mapped_bytes-bytes))
+        status=KV_BUDGET;
+    *driver_bytes=bytes;
+    if(status<0) return status;
+    const uint64_t started=kv_probe_now();
+    status=sceGxmCreateRenderTarget(&params,out);
+    kv_probe_add(&kv_gxm_timing_counters.target_create_us,&kv_gxm_timing_counters.target_create_calls,started);
+    /* A successful SDK return without an object is an invalid native
+       contract.  Reject it before the caller dereferences the target and
+       before accounting any driver bytes. */
+    if (status >= 0 && (!out || !*out)) status = KV_STATE;
+    if(status<0 && out && *out) {
+        const int cleanup=sceGxmDestroyRenderTarget(*out);
+        if(cleanup<0) {
+            g->target_driver_bytes+=bytes;
+            g->closing=1; return fail(g,"target capacity rollback retained owner",cleanup);
+        }
+        *out=NULL;
+    }
+    if(status>=0) g->target_driver_bytes+=bytes;
+    return status;
+}
+static int display_target_create(KvGxm *g) {
+    const int status=target_create_capacity(g,WIDTH,HEIGHT,1,&g->target,
+        &g->display_target_driver_bytes);
+    if(status>=0) g->display_target_scenes=1;
+    return status;
+}
+static int display_target_destroy(KvGxm *g) {
+    if(g->target) {
+        CHECK(g,sceGxmDestroyRenderTarget(g->target));
+        g->target=NULL;
+        g->target_driver_bytes-=g->display_target_driver_bytes;
+        g->display_target_driver_bytes=g->display_target_scenes=0;
+    }
+    return 0;
+}
 static int initialize(KvGxm *g) {
     /* SDKs before the named DEFAULT enum use the same documented zero value. */
     const SceGxmInitializeParams init = { .flags = 0,
@@ -373,9 +472,7 @@ static int initialize(KvGxm *g) {
         .fragmentUsseRingBufferMemSize = g->fragment_usse.size,
         .fragmentUsseRingBufferOffset = g->fragment_usse.offset };
     CHECK(g, sceGxmCreateContext(&context, &g->context));
-    const SceGxmRenderTargetParams target = { .width = WIDTH, .height = HEIGHT,
-        .scenesPerFrame = 1, .multisampleMode = SCE_GXM_MULTISAMPLE_NONE, .driverMemBlock = -1 };
-    CHECK(g, sceGxmCreateRenderTarget(&target, &g->target));
+    CHECK(g, display_target_create(g));
     for (uint32_t i = 0; i < BUFFERS; ++i) {
         CHECK(g, block_alloc(g, &g->display[i], STRIDE * HEIGHT * 4, 1, 1));
         uint32_t *pixels = g->display[i].base;
@@ -458,7 +555,15 @@ int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t capacity) {
     if (!g) { snprintf(error, capacity, "backend allocation"); return KV_ALLOC; }
     g->thread = sceKernelGetThreadId();
     int result = initialize(g);
-    if (result >= 0 && (kv_render_options() & ((1U << 3) | (1U << 4)))) {
+    /* Runtime shader compilation is also required when a newer optional entry
+       is selected on its own (for example the r5 plain-material profile or
+       the blur-weight candidate).  Tying this solely to the historical group
+       and PS-fetch bits made otherwise valid diagnostic profiles silently
+       skip their shader cache/compiler admission. */
+    const uint64_t shader_options = (UINT64_C(1) << 3) | (UINT64_C(1) << 4)
+        | KV_OPT_PS_PLAIN_MATERIAL | KV_OPT_HALF_COLOR | KV_OPT_BLUR_WEIGHTS
+        | KV_OPT_PS_FULL_MATERIAL | KV_OPT_PS_ALL_OPERATIONS | KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7;
+    if (result >= 0 && (kv_render_options() & shader_options)) {
         /* Compilation and complete optional program admission are startup work.
            A rejected optional shader returns to its original rendering chain. */
         (void)kv_runtime_shader_initialize();
@@ -479,7 +584,7 @@ int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t capacity) {
 }
 int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader) {
     if (!active(g)) return KV_STATE;
-    return shader < 32 && (g->shader_capabilities & (1U << shader)) ? 1 : 0;
+    return shader_capability_ready(g, shader);
 }
 
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
@@ -696,6 +801,12 @@ int32_t kv_gxm_dev_swap_display_target(KvGxm *g, KvGxmTexture *t) {
     SceGxmRenderTarget *previous = g->target;
     g->target = t->target;
     t->target = previous;
+    uint32_t previous_bytes=g->display_target_driver_bytes;
+    g->display_target_driver_bytes=t->target_driver_bytes;
+    t->target_driver_bytes=previous_bytes;
+    uint32_t previous_scenes=g->display_target_scenes;
+    g->display_target_scenes=t->target_scenes;
+    t->target_scenes=previous_scenes;
     return 0;
 #else
     (void)t;
@@ -837,7 +948,7 @@ int32_t kv_gxm_destroy(KvGxm *g) {
     if (g->patcher) { CHECK(g, sceGxmShaderPatcherDestroy(g->patcher)); g->patcher = NULL; }
     TRACE("destroy: programs released");
     TRACE("destroy: before render target release");
-    if (g->target) { CHECK(g, sceGxmDestroyRenderTarget(g->target)); g->target = NULL; }
+    CHECK(g, display_target_destroy(g));
     TRACE("destroy: before context release");
     if (g->context) { CHECK(g, sceGxmDestroyContext(g->context)); g->context = NULL; }
     TRACE("destroy: target and context released");

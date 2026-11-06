@@ -1,0 +1,721 @@
+{
+  "schema": "knife-vita-r8-hardware-test-defaults-v1",
+  "time_utc": "2026-11-06T00:16:39.680490+00:00",
+  "build_tag": "stage-effect-r8-hardware-test-20261106",
+  "branch": "perf/render",
+  "base_commit": "24b046713ac3d029e97d98b6c4f1633dbccfbcb2",
+  "profile": {
+    "default": "hardware-test",
+    "default_mask": 343060512767,
+    "default_features": [
+      "shared-atlas",
+      "gxt-ready",
+      "batch-arena",
+      "group-fused",
+      "ps-fetch",
+      "async-submit",
+      "compact-stream",
+      "direct-stage",
+      "texture-pool",
+      "decode-owner",
+      "gray-r8",
+      "animation-window",
+      "dependency-graph",
+      "source-rename",
+      "grade-cache",
+      "stream-index",
+      "coalesce-bake",
+      "resource-io-cache",
+      "stage-prefix",
+      "group-batch",
+      "ui-pass-cache",
+      "plain-forcealpha",
+      "ui-source-prefetch",
+      "archive-glow-bounds",
+      "blend-chain",
+      "producer-reuse",
+      "async-rebake",
+      "target-ring",
+      "ps-op7",
+      "ps-plain-material",
+      "group-bounds",
+      "half-color",
+      "tiled-targets",
+      "blur-weights",
+      "rt-scenes-2",
+      "ps-all-operations"
+    ],
+    "all_profile": "stable baseline: bits0..28 plus bit30 ps-plain-material; hardware-test is a separate candidate preset",
+    "hardware_test": {
+      "name": "hardware-test",
+      "mask": 343060512767,
+      "features": [
+        "shared-atlas",
+        "gxt-ready",
+        "batch-arena",
+        "group-fused",
+        "ps-fetch",
+        "async-submit",
+        "compact-stream",
+        "direct-stage",
+        "texture-pool",
+        "decode-owner",
+        "gray-r8",
+        "animation-window",
+        "dependency-graph",
+        "source-rename",
+        "grade-cache",
+        "stream-index",
+        "coalesce-bake",
+        "resource-io-cache",
+        "stage-prefix",
+        "group-batch",
+        "ui-pass-cache",
+        "plain-forcealpha",
+        "ui-source-prefetch",
+        "archive-glow-bounds",
+        "blend-chain",
+        "producer-reuse",
+        "async-rebake",
+        "target-ring",
+        "ps-op7",
+        "ps-plain-material",
+        "group-bounds",
+        "half-color",
+        "tiled-targets",
+        "blur-weights",
+        "rt-scenes-2",
+        "ps-all-operations"
+      ],
+      "scope": "all plus ps-all-operations, group-bounds, half-color, tiled-targets, blur-weights and rt-scenes-2; hardware acceptance pending"
+    },
+    "candidate_all_operations": "bit38 selects64..87 from PC-precompiled authored GXP, plain-first with per-entry native fallback; hardware acceptance pending",
+    "candidate_full_material": "explicit bit37 enables full-source OP1/6/13 entries54/55/56, with native capability fallback; excluded from hardware-test as superseded",
+    "file": "optimization-profile.txt in external data root; complete override except exact legacy stock values under compiled hardware-test",
+    "legacy_stock_migration": {
+      "enabled": true,
+      "exact_profiles": [
+        "all",
+        "all ps-all-operations",
+        "all ps-full-material"
+      ],
+      "trim_outer_whitespace": true,
+      "file_rewritten": false,
+      "custom_profiles_preserved": true,
+      "effective_selection_logged": true
+    },
+    "mask_type": "u64",
+    "bits": {
+      "shared-atlas": 0,
+      "gxt-ready": 1,
+      "batch-arena": 2,
+      "group-fused": 3,
+      "ps-fetch": 4,
+      "async-submit": 5,
+      "compact-stream": 6,
+      "direct-stage": 7,
+      "texture-pool": 8,
+      "decode-owner": 9,
+      "gray-r8": 10,
+      "animation-window": 11,
+      "dependency-graph": 12,
+      "source-rename": 13,
+      "grade-cache": 14,
+      "stream-index": 15,
+      "coalesce-bake": 16,
+      "resource-io-cache": 17,
+      "stage-prefix": 18,
+      "group-batch": 19,
+      "ui-pass-cache": 20,
+      "plain-forcealpha": 21,
+      "ui-source-prefetch": 22,
+      "archive-glow-bounds": 23,
+      "blend-chain": 24,
+      "producer-reuse": 25,
+      "async-rebake": 26,
+      "target-ring": 27,
+      "ps-op7": 28,
+      "sparse-coverage": 29,
+      "ps-plain-material": 30,
+      "group-bounds": 31,
+      "half-color": 32,
+      "tiled-targets": 33,
+      "blur-weights": 34,
+      "rt-scenes-2": 35,
+      "rt-scenes-4": 36,
+      "ps-full-material": 37,
+      "ps-all-operations": 38
+    },
+    "default_excludes": [
+      "sparse-coverage",
+      "rt-scenes-4",
+      "ps-full-material"
+    ],
+    "render_target_modes": {
+      "rt-scenes-2": 2,
+      "rt-scenes-4": 4,
+      "mutually_exclusive": true,
+      "fallback": 1
+    },
+    "features": [
+      "shared-atlas",
+      "gxt-ready",
+      "batch-arena",
+      "group-fused",
+      "ps-fetch",
+      "async-submit",
+      "compact-stream",
+      "direct-stage",
+      "texture-pool",
+      "decode-owner",
+      "gray-r8",
+      "animation-window",
+      "dependency-graph",
+      "source-rename",
+      "grade-cache",
+      "stream-index",
+      "coalesce-bake",
+      "resource-io-cache",
+      "stage-prefix",
+      "group-batch",
+      "ui-pass-cache",
+      "plain-forcealpha",
+      "ui-source-prefetch",
+      "archive-glow-bounds",
+      "blend-chain",
+      "producer-reuse",
+      "async-rebake",
+      "target-ring",
+      "ps-op7",
+      "sparse-coverage",
+      "ps-plain-material",
+      "group-bounds",
+      "half-color",
+      "tiled-targets",
+      "blur-weights",
+      "rt-scenes-2",
+      "rt-scenes-4",
+      "ps-full-material",
+      "ps-all-operations"
+    ],
+    "batch_dependencies": [
+      "async-submit",
+      "compact-stream"
+    ],
+    "graph_and_rename_dependencies": [
+      "batch-arena",
+      "async-submit"
+    ]
+  },
+  "performance_console_default": true,
+  "quiet_build": false,
+  "scope": "User-authorized default-on hardware candidates, global material routing, no scene/PC/asset-name special cases",
+  "runtime_paths": {
+    "group_bounds": "enabled; conservative owner/version/history proof, unknown/full fallback",
+    "half_color": "actual eligible plain49..52; incompatible FP32 chain disabled; program/material fallback",
+    "tiled_targets": "actual960x540 RGBA8 after full-byte patterned Linear->Tiled->Linear native GPU probe; not yet run on user hardware",
+    "tiled_padding": [
+      960,
+      544
+    ],
+    "tiled_probe_transient_gpu_allocations": 2,
+    "tiled_probe_extra_gpu_bytes": 4194304,
+    "tiled_probe_cpu_pattern_bytes": 2073600,
+    "blur_weights": "53, n<=16; original larger kernel fallback",
+    "scene_capacity": 2,
+    "scene_fallback": 1,
+    "scene_capacity_4_enabled": false
+  },
+  "validation": {
+    "host_render": 166,
+    "host_game": 121,
+    "host_config": 7,
+    "host_render_api_experiments": 8,
+    "receipt_profile": 4,
+    "native_gxm": {
+      "cases": 66,
+      "checks": 8422,
+      "failures": 0,
+      "sanitizers": [
+        "address",
+        "undefined"
+      ]
+    },
+    "native_shader_cache": {
+      "cases": 38,
+      "checks": 2660,
+      "failures": 0
+    },
+    "native_full_ps_inputs_checks": 11144,
+    "half_chain_regression": "negative reproducer then green166; rejects either Half source, preserves FP32 eligibility and12 original sprite vertices",
+    "arm_build_passed": true,
+    "vpk_checked": true,
+    "vpk_internal_external_eboot_equal": true,
+    "vpk_crc_verified": true,
+    "build_source_identities_verified": 331,
+    "all_embedded_gxp_payloads_found": 63
+  },
+  "offline_programs": [
+    {
+      "id": 11,
+      "bytes": 260,
+      "sha256": "8d838e218708289d63cf17ff4499e6dbe35c67cd2634ba903cd8b51e0830e650"
+    },
+    {
+      "id": 15,
+      "bytes": 544,
+      "sha256": "29ab5409bca7d1c414b9f844496e0667a2450f3372e099e8c3f7f467955718db"
+    },
+    {
+      "id": 17,
+      "bytes": 5780,
+      "sha256": "b74dbbcd2aa834aa8308f48939241ef7e7033c4b9425572b9d72022945759d83"
+    },
+    {
+      "id": 18,
+      "bytes": 2844,
+      "sha256": "d226986e16a2f8c21b248179ca132e6211467c4d3c1a5036ce2678541853a62b"
+    },
+    {
+      "id": 19,
+      "bytes": 632,
+      "sha256": "27790f39281937038769c11e6900e492edf339887d1a6abbfc6763b7964fd537"
+    },
+    {
+      "id": 20,
+      "bytes": 556,
+      "sha256": "0567d27ddee40e2d35f7ab3b5832945abca40d9a047d15c18514a9e4c980139a"
+    },
+    {
+      "id": 21,
+      "bytes": 712,
+      "sha256": "6a84026e327e60ad41116b3e96fb98a1d017f53cdc291a687e231582929fed1e"
+    },
+    {
+      "id": 22,
+      "bytes": 324,
+      "sha256": "100effa4b2bc931ae02709bfc9d68d44cc5a715d38d98c38fe6b16a38fe78873"
+    },
+    {
+      "id": 23,
+      "bytes": 576,
+      "sha256": "163aec8ac912a1ce0fd4711af20d319dc7f2d58789c68f031511bcd468b5d13c"
+    },
+    {
+      "id": 25,
+      "bytes": 420,
+      "sha256": "6dbfe3c64aecf55dacd0e14efadd976cbf844240690beccde19f3a0ec226a8c1"
+    },
+    {
+      "id": 26,
+      "bytes": 292,
+      "sha256": "cd7e1775f128861383a4840ca5b5efba0823ed52043bd760c06b46ba280b7396"
+    },
+    {
+      "id": 28,
+      "bytes": 2420,
+      "sha256": "347f219c2155315e7ed9d65096ba93633c71d91b434cbe6a23002205baf4d25f"
+    },
+    {
+      "id": 29,
+      "bytes": 2892,
+      "sha256": "e3313cd7cd0dfd9e336aeb717c56698cb581b02eaae248412e48b67066bdd613"
+    },
+    {
+      "id": 30,
+      "bytes": 576,
+      "sha256": "b12017180e771290af22983c7cd25707a12bcb00cf305585789b6b56d6cb1d64"
+    },
+    {
+      "id": 31,
+      "bytes": 688,
+      "sha256": "eef72bd117453a038402fc69d3a700e8751142e7a341de97ff4581c85cf44fda"
+    },
+    {
+      "id": 32,
+      "bytes": 600,
+      "sha256": "c3bfa92857390f98961b08cf7b76e5b4bf76b334b65a749d44c3927f96c3f182"
+    },
+    {
+      "id": 33,
+      "bytes": 736,
+      "sha256": "9550dadc224cf0c945dea678700211adc0f0b790626c5caeb4cd7360757e6b51"
+    },
+    {
+      "id": 34,
+      "bytes": 744,
+      "sha256": "140e241634cf99c0509d6769cbbaed5d56c6c4345cea31afd7f2e16b456204e2"
+    },
+    {
+      "id": 35,
+      "bytes": 584,
+      "sha256": "cdc3ff18cca74b1bfa12312ab094420ac4037519dcf1393741d94eb5b70722e6"
+    },
+    {
+      "id": 36,
+      "bytes": 736,
+      "sha256": "748a366e0f41e558bdeac95598681ec6a057e79cfa04ad329877e8909ac76e49"
+    },
+    {
+      "id": 37,
+      "bytes": 864,
+      "sha256": "497d4d24f03921264a8ecb458c26964c6fcf652a42fe9c3da4197bdb82d2cb50"
+    },
+    {
+      "id": 38,
+      "bytes": 872,
+      "sha256": "b0d195ee874d9effb9c394ab516d570c403be37d5230642edc3bd5c6210ee73f"
+    },
+    {
+      "id": 39,
+      "bytes": 720,
+      "sha256": "3e956a6ad57b5ae4c1688d80042473d1f82bed52ff86ab26dc988e66b3d5b478"
+    },
+    {
+      "id": 40,
+      "bytes": 752,
+      "sha256": "ecbbc1fec9d95f17009115eab280a97865064957d34941a7e4e4711bf21b862b"
+    },
+    {
+      "id": 41,
+      "bytes": 880,
+      "sha256": "9ea79df1162c6c6c8bcf2678ce56b2d4a596f4989c4bef691279e9def495d54f"
+    },
+    {
+      "id": 42,
+      "bytes": 888,
+      "sha256": "a291f63af6a96854cf245e265f63de041d54b16d53ac40dffb37091f39fb2518"
+    },
+    {
+      "id": 43,
+      "bytes": 736,
+      "sha256": "fac33a3e439003dd6c6fb5b41e985a6fd62c24baa4938acfd97158ced1ad3404"
+    },
+    {
+      "id": 44,
+      "bytes": 584,
+      "sha256": "4d536eca82bd76ad06b70a722ef87b7adf48ab4f0e222da2fa27a864c84c6a73"
+    },
+    {
+      "id": 45,
+      "bytes": 720,
+      "sha256": "e7b4227693bf4c3a8b772cc43db41a4f11412be73653f166379c0ccc48e5ab9c"
+    },
+    {
+      "id": 46,
+      "bytes": 728,
+      "sha256": "5d77a90e4affbd9be14d8f60b6327b2a6eaa158214dbbc275d4db1395281256d"
+    },
+    {
+      "id": 47,
+      "bytes": 568,
+      "sha256": "56274843efd0471303173e3409579e0eb12357e70052496b005ad34b00a9c632"
+    },
+    {
+      "id": 49,
+      "bytes": 576,
+      "sha256": "01adb570618d37f02e5abc82efe6f96e88451391e6df2045a49dbc7ecbcea574"
+    },
+    {
+      "id": 50,
+      "bytes": 688,
+      "sha256": "76f52776d429c6127d83f7c688e612658d9f03d1c2e922a56dfb90dcfc791bba"
+    },
+    {
+      "id": 51,
+      "bytes": 632,
+      "sha256": "cdde0e35a741e2bbf387fae3aecd189ad899953db657ed627e701c02169f380c"
+    },
+    {
+      "id": 52,
+      "bytes": 712,
+      "sha256": "3df0be186ace03fc5913ba5e762aec6a43bc39f56d1ce9ef5541a304bec68b75"
+    },
+    {
+      "id": 53,
+      "bytes": 1256,
+      "sha256": "abe43399ea0d1100b3fec1413c961767a04491821eee146c984cf8038f3e9920"
+    },
+    {
+      "id": 54,
+      "bytes": 2852,
+      "sha256": "21c0cc9c2a4d2d579c193e16c106c8d5a36614a4f107c7b5831a6ed67b347f52"
+    },
+    {
+      "id": 55,
+      "bytes": 2956,
+      "sha256": "748a3caf6adb28f2afa7f8bb3631070aa8b0d652cea29707d0d8df41f500ee0b"
+    },
+    {
+      "id": 56,
+      "bytes": 2980,
+      "sha256": "570a7cf69b7b620a45a4fc31ab794f0fe97b1d15b09b148eb439383082aeab00"
+    },
+    {
+      "id": 64,
+      "bytes": 2852,
+      "sha256": "24605e82dadc928850fc674f3e2cf4b7040716523b3bf593b6038a4d3e936b93"
+    },
+    {
+      "id": 65,
+      "bytes": 2844,
+      "sha256": "0f1b99968563d58257a3d5141640ee71d7c340dd6368ef9705a2066b9a7c7c1a"
+    },
+    {
+      "id": 66,
+      "bytes": 2844,
+      "sha256": "76b2fe8cfa6bc309eb9b6868da9c0f456837992b0dc64d993b30472f8f688dd7"
+    },
+    {
+      "id": 67,
+      "bytes": 2860,
+      "sha256": "6b3667d3c22178592a6e7a28b7fae13f8ec8de21ce14d67ca6ba69c719682402"
+    },
+    {
+      "id": 68,
+      "bytes": 2924,
+      "sha256": "c10452fbbd10699ba2c9286e205b56778cd032e73de53db4c7a28b0c4fc8654f"
+    },
+    {
+      "id": 69,
+      "bytes": 2956,
+      "sha256": "ea602e164944bb57e2409f8b72009d5d1fcffee5a13ff16a17854cbd04d8d70d"
+    },
+    {
+      "id": 70,
+      "bytes": 2892,
+      "sha256": "a1b92dcaff855e45d24988397e8ea8f01d95303c3a944ee4d3ce901761adb168"
+    },
+    {
+      "id": 71,
+      "bytes": 2844,
+      "sha256": "c06c4f8f1b9fbdb8560fae0bc1bde5cb0eadb3ed68316badb26d77a636c21a00"
+    },
+    {
+      "id": 72,
+      "bytes": 2828,
+      "sha256": "974f9bf4ff957400cd6a2249113fce9aa894bc52ce4b3d3b05248e8587f0f584"
+    },
+    {
+      "id": 73,
+      "bytes": 2844,
+      "sha256": "0ac94f9e5e6d41362a11e064bf246a7edcab1e8f2b53503680c76744762ba8e9"
+    },
+    {
+      "id": 74,
+      "bytes": 2972,
+      "sha256": "ddd848393417ec25846be90e3fdea1344cb6bd3ab4695fd10b20c9dd761880d6"
+    },
+    {
+      "id": 75,
+      "bytes": 2988,
+      "sha256": "4b9e0d3b27c92e542f824c2b466032376594fc667881ccccc6448b0b5d5f7284"
+    },
+    {
+      "id": 76,
+      "bytes": 2980,
+      "sha256": "4de9cddd879e656a00c355385b2170559495a5b15c1c06fbefee851050a31099"
+    },
+    {
+      "id": 77,
+      "bytes": 2996,
+      "sha256": "3d2776a5ce0a5930b8834dd94cf1cac8d13b22f20e8d48a70b09a3582cf7b97d"
+    },
+    {
+      "id": 78,
+      "bytes": 2844,
+      "sha256": "826d1cb686572bdfaa90f62de8caa6420a3b6a782a2a12b8e0d5efb418c4cc54"
+    },
+    {
+      "id": 79,
+      "bytes": 2548,
+      "sha256": "ce9b77ff2bfa80b2fedc577aae1260ee067fd606de2cdbf8b5a285597c3aece8"
+    },
+    {
+      "id": 80,
+      "bytes": 2556,
+      "sha256": "b7ee6403513d2bce136dc13c3b97237d5511de5d2607b83232c0e2f67a0d23c4"
+    },
+    {
+      "id": 81,
+      "bytes": 2120,
+      "sha256": "81705160759cb85abbb14aec485ec2a872ae457299f3441d5c43c8a7f6aa070d"
+    },
+    {
+      "id": 82,
+      "bytes": 2844,
+      "sha256": "90b2b6d405f67761af400719d34ccb50309863b3be12ce772c687f05f701a7b2"
+    },
+    {
+      "id": 83,
+      "bytes": 2844,
+      "sha256": "a87339e1fbc863e149f0d71a8324d2a3870eee225535b0f66ef24b3a5216727d"
+    },
+    {
+      "id": 84,
+      "bytes": 2588,
+      "sha256": "4299ed805e14efbf1db87122a4a2d7fbdee6dcd49e165ec5cd8cfe4dfea7ebf1"
+    },
+    {
+      "id": 85,
+      "bytes": 2572,
+      "sha256": "56b9ba20d37b727ed3f424fe350a45a5bdf90ca16b4600527d1baac7b5b8a999"
+    },
+    {
+      "id": 86,
+      "bytes": 2852,
+      "sha256": "daba15a2813dac77572da65d1b9f20484f06eda788e9c97ad797ff91117b8238"
+    },
+    {
+      "id": 87,
+      "bytes": 2804,
+      "sha256": "c5c34046ff6f652472c8b172a7f25ab14335688601e87d1a76eb1fa93c1dcb86"
+    }
+  ],
+  "offline_program_bytes": 111076,
+  "delivery": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 10111879,
+      "sha256": "577f753f94f07125e02e55ba224b6a98ac4c66150c4c58f48c479ed6ace9832d"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7252787,
+      "sha256": "ec5f1aab7c54efd1e1a92893537e0a1a21d0cdaabb365aca348903c8f8208dc9"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/build-receipt-r8.json",
+      "bytes": 82707,
+      "sha256": "590acef595426ac24b354255ba092643a0481f0b2df597729a235c1ea9afc527"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/optimization-profile.txt",
+      "bytes": 14,
+      "sha256": "b1c7cb1e414f07a42c0087f5854cc8a132235f6d274c6e9df54e18735a5e18fe"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/perf-enable.txt",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/版本与日志说明.txt",
+      "bytes": 2507,
+      "sha256": "445ce6839ff3a8b1afd362603497c22423aa96e494920de741ba13ce4aa532b5"
+    }
+  ],
+  "symbols": [
+    {
+      "path": ".work/vita/game-release-540p/knife.elf",
+      "bytes": 9002292,
+      "sha256": "b8ead75751f1d62ca702a1ce10f50df105a3e953254df1e9e1154a2c7392d530"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife.map",
+      "bytes": 9515106,
+      "sha256": "8368b9828e6c36a8ce6580592d72750106db48e12d057c180d8c3963522e1953"
+    }
+  ],
+  "tests": [
+    {
+      "path": ".work/vita/r8-render-tests.log",
+      "bytes": 18007,
+      "sha256": "5d3cfe6150e2527c94850960c8a5cd5507eee08da447440810fbb63d5ef9a1a9",
+      "passed": 166,
+      "scope": "host; no real GPU"
+    },
+    {
+      "path": ".work/vita/r8-game-tests.log",
+      "bytes": 18325,
+      "sha256": "a91e2937fb022623dc6f0b93158ee898a8e96063d8571d0c5f796ab977509ca7",
+      "passed": 121,
+      "scope": "host; no real GPU"
+    },
+    {
+      "path": ".work/vita/r8-render-api-tests.log",
+      "bytes": 1302,
+      "sha256": "b65afb7308772f6840efe484a92c7c77218809047935a8908728dfaeb4fc564e",
+      "passed": 8,
+      "scope": "host; no real GPU"
+    },
+    {
+      "path": ".work/logs/vita/hardware-profile-rust-tests.log",
+      "bytes": 1020,
+      "sha256": "fc4b0bf3139141b8bd3f6e385c9faa22c317387a9cbe336f35ef166adec9c617",
+      "passed": 7,
+      "scope": "host; no real GPU"
+    },
+    {
+      "path": ".work/logs/vita/hardware-profile-receipt-tests.log",
+      "bytes": 108,
+      "sha256": "c7de088752c942f7df856983ac7133eb6d77d314ffff93b5e7ac35cbc359af9f",
+      "passed": 4,
+      "scope": "build receipt/profile"
+    },
+    {
+      "path": ".work/vita/gxm-copy/20261106T000242Z-311/receipt.json",
+      "bytes": 6907,
+      "sha256": "7f8e83ca5b951811313fe5735373600d1f941cb133077f68cded4829d7b5b341",
+      "scope": "native C with mock SDK; no real GPU",
+      "result": "PASS"
+    },
+    {
+      "path": ".work/vita/experiment-inputs/run-c4sjy5e1/receipt.json",
+      "bytes": 11154,
+      "sha256": "ec8e11ca5bee7df7ea1aa6516ba56f6a290dd6398df4d49170b796437d378fca",
+      "scope": "native C with mock SDK; no real GPU",
+      "result": "see receipt"
+    },
+    {
+      "path": ".work/vita/runtime-shader-cache/20261106T000300Z-532/receipt.json",
+      "bytes": 4314,
+      "sha256": "444792006153f9d0182a0370620e7c6c8458f185ea2d3fbddc9e0febea521924",
+      "scope": "native C with mock SDK; no real GPU",
+      "result": "PASS"
+    },
+    {
+      "path": ".work/vita/r8-gxm-tests.log",
+      "bytes": 75851,
+      "sha256": "1b0bbb9fb07cbf55a39688e3be6e2f108434b1a7e174372acce25587ac69ae3f"
+    },
+    {
+      "path": ".work/vita/r8-experiment-tests.log",
+      "bytes": 473,
+      "sha256": "8ffc66935599a463ed1e4070fe95531b203fc6c0d2c3f73b789a91e7c99b7f66"
+    },
+    {
+      "path": ".work/vita/r8-cache-tests.log",
+      "bytes": 2532,
+      "sha256": "cf49b28d1b7056b26a1586728f203edb5a423286898a0af26d8d9e1172bff9c5"
+    },
+    {
+      "path": ".work/vita/r8-build.log",
+      "bytes": 11216,
+      "sha256": "b2b66116e108d87e57f6b21b320ec2de5c089cbbee8a9e0a78ab383125176ece"
+    },
+    {
+      "path": ".work/vita/r8-half-chain-red.log",
+      "bytes": 2745,
+      "sha256": "8ae3cd3f3f340721c0f2c58c34cb1a0750f7ec0e0797cbfece5782c8e22c5335"
+    }
+  ],
+  "asset_manifest": {
+    "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/vita-540p-assets.json",
+    "bytes": 1556381,
+    "sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3"
+  },
+  "assets_modified": false,
+  "assets_copied": false,
+  "rollback": ".work/vita/rollback/stage-effect-r7-all-ops-offline-20261106/",
+  "hardware_verified": false,
+  "gpu_rgba8_equivalence_verified": false,
+  "hardware_performance_verified": false,
+  "target_fps": 20,
+  "target_fps_achieved": null,
+  "remote_write_performed": false,
+  "remote_refs_observed": {
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+    "perf/render": "24b046713ac3d029e97d98b6c4f1633dbccfbcb2"
+  }
+}

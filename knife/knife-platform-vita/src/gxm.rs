@@ -1,5 +1,6 @@
 //! Thread-bound direct GXM ownership, textures, offscreen passes and game effects.
 use knife_render_api::Vertex;
+use knife_render_api::experiments::{BlurWeightCache, BlurWeightResult};
 use crate::gxt::{GxtFormat, GxtTexture};
 use std::{ffi::{c_char, c_void, CStr}, marker::PhantomData, ptr::NonNull, rc::Rc};
 
@@ -7,6 +8,8 @@ unsafe extern "C" {
     fn kv_gxm_create(out: *mut *mut c_void, error: *mut c_char, capacity: u32) -> i32;
     fn kv_gxm_shader_available(g: *mut c_void, shader: u32) -> i32;
     fn kv_gxm_chain_pair_available(g: *mut c_void, first: u32, second: u32) -> i32;
+    fn kv_gxm_set_blur_weights(g: *mut c_void, sigma: f32, half_taps: u32,
+        weights: *const f32, count: u32) -> i32;
     fn kv_gxm_texture_create(g: *mut c_void, rgba: *const u8, width: u32, height: u32,
         stride: u32, out: *mut *mut c_void) -> i32;
     fn kv_gxm_texture_destroy(g: *mut c_void, texture: *mut c_void) -> i32;
@@ -132,6 +135,42 @@ pub enum EffectShader {
     RimTextBatched = 28,
     /// Specialized op7 with the complete PS source/material and group ABI.
     PsFetch7 = 29,
+    /// Plain PsOp1 material source (Sprite/Fill/NoAlpha), native destination ABI.
+    PsFetch1 = 30,
+    /// Plain PsOp6 material source (Sprite/Fill/NoAlpha), native destination ABI.
+    PsFetch6 = 31,
+    /// Compiled experimental local-color-half entries; GPU diff admission is separate.
+    PsPlain7 = 48,
+    PsHalf1 = 49, PsHalf6 = 50, PsHalf7 = 51, PsHalf13 = 52,
+    /// Exact tap order and F32 accumulation with a separate bounded weight uniform.
+    BlurWeights = 53,
+    /// Complete PS source contract, with only the operation dispatcher removed.
+    PsFull1 = 54, PsFull6 = 55, PsFull13 = 56,
+    // Fixed-operation full-material shaders; capability bank 1.
+    PsAll1 = 64,
+    PsAll2 = 65,
+    PsAll3 = 66,
+    PsAll4 = 67,
+    PsAll5 = 68,
+    PsAll6 = 69,
+    PsAll7 = 70,
+    PsAll8 = 71,
+    PsAll9 = 72,
+    PsAll10 = 73,
+    PsAll11 = 74,
+    PsAll12 = 75,
+    PsAll13 = 76,
+    PsAll14 = 77,
+    PsAll15 = 78,
+    PsAll16 = 79,
+    PsAll17 = 80,
+    PsAll18 = 81,
+    PsAll19 = 82,
+    PsAll20 = 83,
+    PsAll21 = 84,
+    PsAll22 = 85,
+    PsAll23 = 86,
+    PsAll24 = 87,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -150,6 +189,7 @@ pub struct Gxm {
     last_texture_allocation_failed: bool,
     textures: Vec<Option<TextureRecord>>,
     scene_reads: Vec<*const c_void>,
+    blur_weights: BlurWeightCache,
     owner: Rc<()>,
     // The creating thread owns all GXM operations, including Drop.
     _thread_bound: PhantomData<Rc<()>>,
@@ -168,13 +208,13 @@ impl Gxm {
             if let Some(pointer) = NonNull::new(pointer) {
                 // C retained a partial owner. Keep an explicit cleanup guard and
                 // retry its teardown; it must never become a renderable owner.
-                let _cleanup = Self { pointer: Some(pointer), closing: true, last_texture_allocation_failed: false, textures: Vec::new(), scene_reads: Vec::new(),
+                let _cleanup = Self { pointer: Some(pointer), closing: true, last_texture_allocation_failed: false, textures: Vec::new(), scene_reads: Vec::new(), blur_weights: BlurWeightCache::default(),
                     owner: Rc::new(()), _thread_bound: PhantomData };
             }
             return Err(message);
         }
         let pointer = NonNull::new(pointer).ok_or("GXM returned a null owner")?;
-        Ok(Self { pointer: Some(pointer), closing: false, last_texture_allocation_failed: false, textures: Vec::new(), scene_reads: Vec::new(), owner: Rc::new(()), _thread_bound: PhantomData })
+        Ok(Self { pointer: Some(pointer), closing: false, last_texture_allocation_failed: false, textures: Vec::new(), scene_reads: Vec::new(), blur_weights: BlurWeightCache::default(), owner: Rc::new(()), _thread_bound: PhantomData })
     }
     fn raw(&self) -> Result<*mut c_void, String> {
         if self.closing { return Err("GXM owner is closing; only cleanup may be retried".into()); }
@@ -417,6 +457,20 @@ impl Gxm {
         let mut native = [std::ptr::null();4];
         for (i,id) in textures.iter().enumerate() {
             if let Some(id) = id { native[i] = self.texture(id)?.as_ptr().cast_const(); }
+        }
+        if shader == EffectShader::BlurWeights {
+            let n = params[3];
+            if !n.is_finite() || n < 0.0 || n > 16.0 || n.trunc() != n {
+                return Err("blur weight draw exceeds bounded kernel".into());
+            }
+            let sigma = params[2].max(0.01);
+            let BlurWeightResult::Cached(weights) = self.blur_weights.get_or_compute(sigma, n as usize) else {
+                return Err("invalid blur weight group".into());
+            };
+            // SAFETY: native synchronously copies this exact bounded F32 group;
+            // draw scope below uploads it into the shader's separate uniform.
+            self.check(unsafe { kv_gxm_set_blur_weights(self.raw()?, sigma, n as u32,
+                weights.as_ptr(), weights.len() as u32) })?;
         }
         // SAFETY: the shared repr(C) ABI is asserted in knife-render-api and C;
         // all handles are live, the complete slice/params live through synchronous submission.

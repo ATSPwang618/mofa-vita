@@ -18,6 +18,87 @@ fn scene_bytes() -> usize {
     pixels.div_ceil(256 * 1024) * (256 * 1024)
 }
 
+#[test]
+fn plain_material_specializations_route_add_dodge_and_overlay_sources() {
+    let _options = OptimizationScope::set(
+        knife_perf::optimizations::PS_FETCH | knife_perf::optimizations::PS_PLAIN_MATERIAL);
+    let (mut r, control) = setup();
+    let target = r.create_target(8, 8, "plain material target");
+    for (shade, op, expected) in [
+        (Shade::Sprite, PsOp::Add, EffectShader::PsFetch1),
+        (Shade::Fill, PsOp::Add, EffectShader::PsFetch1),
+        (Shade::NoAlpha, PsOp::Add, EffectShader::PsFetch1),
+        (Shade::Sprite, PsOp::Dodge, EffectShader::PsFetch6),
+        (Shade::Fill, PsOp::Dodge, EffectShader::PsFetch6),
+        (Shade::NoAlpha, PsOp::Dodge, EffectShader::PsFetch6),
+        (Shade::Fill, PsOp::Overlay, EffectShader::PsFetch13),
+        (Shade::NoAlpha, PsOp::Overlay, EffectShader::PsFetch13),
+    ] {
+        let mut q = Quad { shade, blend: Blend::Ps(op),
+            ..Quad::rect(r.white.clone(), [0., 0., 8., 8.], [0.6, 0.7, 0.8, 0.5]) };
+        q.clip = Some([[1., 1.], [7., 1.], [7., 7.], [1., 7.]]);
+        assert!(plain_material_ps_source(&q));
+        control.borrow_mut().shader_capabilities = (1u64 << 17) | (1u64 << 21)
+            | (1u64 << expected as u32);
+        control.borrow_mut().events.clear();
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, None, &[q]).unwrap();
+        r.try_present(enc, &target).unwrap();
+        let trace = control.borrow();
+        let draw = trace.events.iter().find_map(|event| match event {
+            Event::Draw { shader, .. } => Some(*shader), _ => None,
+        }).unwrap();
+        assert_eq!(draw, expected);
+        assert!(!trace.events.iter().any(|event| matches!(event, Event::Copy { .. })));
+    }
+}
+
+#[test]
+fn plain_material_specializations_fallback_to_generic_then_snapshot() {
+    let _options = OptimizationScope::set(
+        knife_perf::optimizations::PS_FETCH | knife_perf::optimizations::PS_PLAIN_MATERIAL);
+    let (mut r, control) = setup();
+    let target = r.create_target(4, 4, "plain material fallback");
+    let q = Quad { blend: Blend::Ps(PsOp::Add),
+        ..Quad::rect(r.white.clone(), [0., 0., 4., 4.], [1.; 4]) };
+    for (capabilities, expected, snapshot) in [
+        (1u64 << 17, EffectShader::PsFetch, false),
+        (0, EffectShader::Ps, true),
+    ] {
+        control.borrow_mut().shader_capabilities = capabilities;
+        control.borrow_mut().events.clear();
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &target, None, &[q.clone()]).unwrap();
+        r.try_present(enc, &target).unwrap();
+        let trace = control.borrow();
+        assert!(trace.events.iter().any(|event| matches!(event,
+            Event::Draw { shader, .. } if *shader == expected)));
+        assert_eq!(trace.events.iter().filter(|event| matches!(event, Event::Copy { .. })).count(),
+            usize::from(snapshot));
+    }
+}
+
+#[test]
+fn plain_material_requires_zero_effect_inputs_but_allows_geometry_clip() {
+    let (r, _) = setup();
+    let original = Quad::rect(r.white.clone(), [0., 0., 1., 1.], [1.; 4]);
+    assert!(plain_material_ps_source(&original));
+    let mut clipped = original.clone();
+    clipped.clip = Some([[0., 0.], [1., 0.], [1., 1.], [0., 1.]]);
+    assert!(plain_material_ps_source(&clipped));
+    for shade in [Shade::Text, Shade::RimText, Shade::Mono, Shade::Nega] {
+        let mut q = original.clone(); q.shade = shade;
+        assert!(!plain_material_ps_source(&q));
+    }
+    let mut q = original.clone(); q.masked = true; assert!(!plain_material_ps_source(&q));
+    let mut q = original.clone(); q.rule = Some(RuleMask::new(r.white.clone(), 0.5));
+    assert!(!plain_material_ps_source(&q));
+    let mut q = original.clone(); q.haze[0][0] = 0.1; assert!(!plain_material_ps_source(&q));
+    let mut q = original; q.soft = Some(SoftClip { inner: [0.; 4], pivot: [0.; 2],
+        rot: 0., radius: 1., row: 0, texels: 4, fill: 0. });
+    assert!(!plain_material_ps_source(&q));
+}
+
 fn setup() -> (Renderer, Control) {
     let gxm = Gxm::new().unwrap();
     let control = gxm.control.clone();
@@ -2144,6 +2225,7 @@ fn visible_ps_copies_before_its_draw_and_keeps_following_quads() {
         Command::End => "end",
         Command::Copy { .. } => "copy",
         Command::Draw { .. } => "draw",
+        Command::GroupCut(_) => "group-cut",
     }).collect();
     let copy = kinds.iter().position(|k| *k == "copy").expect("copy recorded");
     let ps_draw = kinds.iter().rposition(|k| *k == "draw").expect("draw recorded");
@@ -2181,8 +2263,8 @@ fn sparse_test_quad(r: &Renderer) -> Quad {
 #[test]
 fn sparse_coverage_single_quad_keeps_one_draw_and_one_snapshot_fallback() {
     for (fetch, capabilities, expected_shader, copies) in [
-        (true, 1u32 << 29, EffectShader::PsFetch7, 0),
-        (true, 1u32 << 17, EffectShader::PsFetch, 0),
+        (true, 1u64 << 29, EffectShader::PsFetch7, 0),
+        (true, 1u64 << 17, EffectShader::PsFetch, 0),
         (true, 0, EffectShader::Ps, 1),
         (false, (1 << 17) | (1 << 29), EffectShader::Ps, 1),
     ] {
@@ -2395,7 +2477,7 @@ fn ps7_fetch_keeps_every_general_source_material_input() {
         if kind == 5 { q.shade = Shade::Fill; }
         if kind == 6 { q.shade = Shade::NoAlpha; }
         let mut general = None;
-        for capabilities in [1u32 << 17, (1 << 17) | (1 << 29), 1 << 29] {
+        for capabilities in [1u64 << 17, (1 << 17) | (1 << 29), 1 << 29] {
             control.borrow_mut().shader_capabilities = capabilities;
             control.borrow_mut().events.clear();
             let mut enc = r.encoder();
@@ -2423,7 +2505,7 @@ fn ps7_fetch_falls_back_by_capability_and_leaves_other_ops_unchanged() {
     let (mut r, control) = setup();
     let target = r.create_target(8, 8, "op7 fallback target");
     for (enabled, op7_enabled, capabilities, op, expected, copied) in [
-        (true, true, 1u32 << 29, PsOp::DodgeAlpha, 29, false),
+        (true, true, 1u64 << 29, PsOp::DodgeAlpha, 29, false),
         (true, true, (1 << 29) | (1 << 17), PsOp::DodgeAlpha, 29, false),
         (true, true, 1 << 17, PsOp::DodgeAlpha, 17, false),
         (true, true, 0, PsOp::DodgeAlpha, 14, true),
@@ -2456,13 +2538,13 @@ fn ps7_group_fetch_keeps_group_abi_and_independent_normal_priority() {
     let pixel = r.create_target(8, 8, "op7 group pixel");
     let mask = r.create_target(8, 8, "op7 group mask");
     let mut general = None;
-    for capabilities in [1u32 << 17, (1 << 17) | (1 << 29), 1 << 29, 0] {
+    for capabilities in [1u64 << 17, (1 << 17) | (1 << 29), 1 << 29, 0] {
         control.borrow_mut().shader_capabilities = capabilities;
         let mut enc = r.encoder();
         r.try_group_composite(&mut enc, &stage, &pixel, &mask,
             Blend::Ps(PsOp::DodgeAlpha), 0.37).unwrap();
         let (shader, blend, textures, params, vertices) = enc.commands.iter().find_map(|command| match command {
-            Command::Draw { shader, blend, textures, params, vertices } => Some((*shader as u32,
+            Command::Draw { shader, blend, textures, params, vertices, .. } => Some((*shader as u32,
                 *blend, textures.each_ref().map(|tex| tex.as_ref().map(|tex| Rc::as_ptr(tex) as usize)),
                 params.map(f32::to_bits), vertices.iter().map(|v|
                     v.pos.into_iter().chain(v.uv).chain(v.color)
@@ -2485,7 +2567,7 @@ fn ps7_group_fetch_keeps_group_abi_and_independent_normal_priority() {
     assert!(enc.commands.iter().any(|command| matches!(command,
         Command::Draw { shader: EffectShader::PsGroup19, .. })));
     let _disabled = OptimizationScope::set(knife_perf::optimizations::PS_FETCH);
-    for (capabilities, expected, copied) in [(1u32 << 29, 14, true), ((1 << 29) | (1 << 17), 17, false)] {
+    for (capabilities, expected, copied) in [(1u64 << 29, 14, true), ((1 << 29) | (1 << 17), 17, false)] {
         control.borrow_mut().shader_capabilities = capabilities;
         let mut enc = r.encoder();
         r.try_group_composite(&mut enc, &stage, &pixel, &mask,
@@ -2524,7 +2606,7 @@ fn darken2_recording_uses_only_the_plain_source_and_falls_back_before_omitting_s
     let mut q = Quad::rect(r.white.clone(), [0., 0., 2., 2.], [0.4, 0.5, 0.6, 0.7]);
     q.blend = Blend::Ps(PsOp::Darken);
     for (capabilities, shade, expected, snapshot) in [
-        (1u32 << 25, Shade::Sprite, EffectShader::PsFetch2, false),
+        (1u64 << 25, Shade::Sprite, EffectShader::PsFetch2, false),
         ((1 << 25) | (1 << 17), Shade::Sprite, EffectShader::PsFetch2, false),
         ((1 << 25) | (1 << 17), Shade::NoAlpha, EffectShader::PsFetch, false),
         (1 << 25, Shade::Fill, EffectShader::Ps, true),
@@ -2751,8 +2833,9 @@ fn quantized_graph(commands:&[Command], state:&mut HashMap<usize,QuantizedSurfac
                 if let Some(clear)=clear {state.insert(id,QuantizedSurface::Clear(clear.map(f32::to_bits)));}
             }
             Command::End=>target=None,
+            Command::GroupCut(_)=>{},
             Command::Copy {..}=>panic!("eligible native-fetch path must need no snapshot copies"),
-            Command::Draw {vertices,shader,blend,textures,params}=>{
+            Command::Draw {vertices,shader,blend,textures,params,..}=>{
                 let id=target.expect("draw owns an open target");
                 let inputs=textures.each_ref().map(|t|t.as_ref().map(|t|{
                     let id=Rc::as_ptr(t)as usize;
@@ -2927,7 +3010,7 @@ fn scene_plan_contains_all_unique_draw_inputs_and_copy_source() {
     let aux = r.create_target(2, 2, "planned aux");
     let mut encoder = r.encoder();
     encoder.commands.push(Command::Begin { target: dst.tex.native.clone(), clear: None });
-    encoder.commands.push(Command::Draw { vertices: vec![Vertex { pos: [0.0; 2], uv: [0.0; 2], color: [1.0; 4], haze: [[0.0; 4]; 2], soft: [[0.0; 4]; 3] }; 6], shader: EffectShader::Sprite,
+    encoder.commands.push(Command::Draw { work: executed_work::DrawWork::pending(), vertices: vec![Vertex { pos: [0.0; 2], uv: [0.0; 2], color: [1.0; 4], haze: [[0.0; 4]; 2], soft: [[0.0; 4]; 3] }; 6], shader: EffectShader::Sprite,
         blend: EffectBlend::Alpha, textures: [Some(src.tex.native.clone()), Some(aux.tex.native.clone()), Some(src.tex.native.clone()), None], params: [0.0; 8] });
     encoder.commands.push(Command::End);
     encoder.commands.push(Command::Copy { src: dst.tex.native.clone(), dst: src.tex.native.clone(), metric: Metric::CopyPs });
@@ -2987,9 +3070,9 @@ fn indexed_gxt_registration_is_io_free_and_first_use_checks_full_source() {
 
 // Actual facade routes use the process-wide feature selection. Run this suite
 // with --test-threads=1; restore even when an assertion unwinds.
-struct OptimizationScope(u32);
+struct OptimizationScope(u64);
 impl OptimizationScope {
-    fn set(mask: u32) -> Self {
+    fn set(mask: u64) -> Self {
         let previous = knife_perf::optimizations::mask();
         knife_perf::optimizations::set(mask);
         Self(previous)

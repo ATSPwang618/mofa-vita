@@ -1060,6 +1060,7 @@ impl Layer {
 /// One step of the stage pass (`Stage::draws`). The layer group path draws some layers into the exe's
 /// "temp buffer surface" pair instead of the stage: `Pixel` (pixel, off_AE0CC8) and `Mask` (alpha,
 /// off_AE0CD0). Both persist across frames and are cleared only by a group's first draw.
+#[derive(Clone)]
 pub enum Draw {
     Stage(Quad),
     Pixel { quad: Quad, clear: bool },

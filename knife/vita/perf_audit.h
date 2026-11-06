@@ -9,8 +9,8 @@ enum KvPerfMetric {
 };
 typedef struct KvPerfSample { uint64_t calls, us, bytes, aux; } KvPerfSample;
 /* Optimization switches are independent of whether timing probes are enabled. */
-void kv_render_set_options(uint32_t options);
-uint32_t kv_render_options(void);
+void kv_render_set_options(uint64_t options);
+uint64_t kv_render_options(void);
 void kv_perf_set_enabled(uint32_t enabled);
 uint64_t kv_perf_begin(void); /* 0 when disabled: no clock or atomic counter update */
 void kv_perf_count(enum KvPerfMetric metric, uint64_t bytes);

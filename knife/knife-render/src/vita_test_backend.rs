@@ -41,6 +41,38 @@ pub enum EffectShader {
     PsChain2 = 27,
     RimTextBatched = 28,
     PsFetch7 = 29,
+    PsFetch1 = 30,
+    PsFetch6 = 31,
+    PsPlain7 = 48,
+    PsHalf1 = 49, PsHalf6 = 50, PsHalf7 = 51, PsHalf13 = 52,
+    BlurWeights = 53,
+    /// Complete PS source contract, with only the operation dispatcher removed.
+    PsFull1 = 54, PsFull6 = 55, PsFull13 = 56,
+    // Fixed-operation full-material shaders; capability bank 1.
+    PsAll1 = 64,
+    PsAll2 = 65,
+    PsAll3 = 66,
+    PsAll4 = 67,
+    PsAll5 = 68,
+    PsAll6 = 69,
+    PsAll7 = 70,
+    PsAll8 = 71,
+    PsAll9 = 72,
+    PsAll10 = 73,
+    PsAll11 = 74,
+    PsAll12 = 75,
+    PsAll13 = 76,
+    PsAll14 = 77,
+    PsAll15 = 78,
+    PsAll16 = 79,
+    PsAll17 = 80,
+    PsAll18 = 81,
+    PsAll19 = 82,
+    PsAll20 = 83,
+    PsAll21 = 84,
+    PsAll22 = 85,
+    PsAll23 = 86,
+    PsAll24 = 87,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -108,10 +140,13 @@ pub enum Event {
 #[derive(Default)]
 pub struct Trace {
     pub events: Vec<Event>,
+    pub blur_weight_uploads: Vec<(f32, usize, Vec<f32>)>,
     pub scene_plans: Vec<(Option<usize>, Vec<usize>, u32)>,
     pub fail_next_draw: bool,
+    pub fail_next_begin_batch: bool,
     /// Explicit runtime compiler/patch capabilities; unavailable by default.
-    pub shader_capabilities: u32,
+    pub shader_capabilities: u64,
+    pub shader_capabilities_high: u64,
     pub wrong_readback_length: bool,
     pub active: Option<usize>,
     /// Optional native allocation ceiling, including ordinary targets/fonts.
@@ -145,10 +180,16 @@ pub struct Gxm {
     /// Last barrier decision, so tests can assert the model runs.
     pub last_finish_before: bool,
     last_texture_allocation_failed: bool,
+    blur_weights: knife_render_api::experiments::BlurWeightCache,
 }
 
 impl Gxm {
-    pub fn begin_batch(&mut self, _basic_quads: usize, _effect_vertices: usize) -> Result<(), String> { Ok(()) }
+    pub fn begin_batch(&mut self, _basic_quads: usize, _effect_vertices: usize) -> Result<(), String> {
+        if std::mem::take(&mut self.control.borrow_mut().fail_next_begin_batch) {
+            return Err("injected native batch preparation failure".into());
+        }
+        Ok(())
+    }
     pub fn reclaim_retired(&mut self, wait: bool) -> Result<(), String> {
         if wait { self.control.borrow_mut().pressure_waits += 1; }
         Ok(())
@@ -178,11 +219,18 @@ impl Gxm {
         Ok(())
     }
     pub fn shader_available(&self, shader: u32) -> Result<bool, String> {
-        Ok(shader < 32 && self.control.borrow().shader_capabilities & (1u32 << shader) != 0)
+        let control=self.control.borrow();
+        Ok(if shader<64 {control.shader_capabilities & (1u64<<shader)!=0}
+            else if shader<128 {control.shader_capabilities_high & (1u64<<(shader-64))!=0}
+            else {false})
     }
     pub fn chain_pair_available(&self, first: u32, second: u32) -> Result<bool, String> {
         let ops = [2, 11, 13, 19];
-        Ok(self.shader_available(27)? && ops.contains(&first) && ops.contains(&second))
+        let op7 = first == 7 && second == 7
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_CHAIN_OP7)
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_PLAIN_OP7)
+            && self.shader_available(57)?;
+        Ok(self.shader_available(27)? && (op7 || (ops.contains(&first) && ops.contains(&second))))
     }
     pub fn live_render_targets(&self) -> usize {
         self.textures.values().filter(|texture| texture.target).count()
@@ -201,6 +249,7 @@ impl Gxm {
             next_id: 0,
             last_finish_before: true,
             last_texture_allocation_failed: false,
+            blur_weights: knife_render_api::experiments::BlurWeightCache::default(),
         })
     }
     #[allow(clippy::too_many_arguments)]
@@ -368,6 +417,18 @@ impl Gxm {
         textures: [Option<&TextureId>; 4],
         params: [f32; 8],
     ) -> Result<(), String> {
+        if shader == EffectShader::BlurWeights {
+            let n = params[3];
+            if !n.is_finite() || n < 0.0 || n > 16.0 || n.trunc() != n {
+                return Err("mock blur weight draw exceeds bounded kernel".into());
+            }
+            let sigma = params[2].max(0.01);
+            let knife_render_api::experiments::BlurWeightResult::Cached(weights) =
+                self.blur_weights.get_or_compute(sigma, n as usize) else {
+                    return Err("mock invalid blur weight group".into());
+                };
+            self.control.borrow_mut().blur_weight_uploads.push((sigma, n as usize, weights.to_vec()));
+        }
         let mut control = self.control.borrow_mut();
         let target = control.active.ok_or("mock draw outside pass")?;
         if control.fail_next_draw {
@@ -385,21 +446,33 @@ impl Gxm {
         if vertices.is_empty() || vertices.len() % 3 != 0 {
             return Err("mock triangle count".into());
         }
-        if vertices.iter().any(|v| v.haze != vertices[0].haze) {
+        if vertices.iter().any(|v| v.haze.iter().enumerate().any(|(row, values)|
+            values.iter().enumerate().any(|(column, value)|
+                !(shader == EffectShader::PsChain2 && row == 0 && column < 2)
+                    && *value != vertices[0].haze[row][column]))) {
             return Err("mock per-quad uniforms differ".into());
         }
-        if shader == EffectShader::PsFetch7 {
-            if control.shader_capabilities & (1 << 29) == 0 {
+        if (64..=87).contains(&(shader as u32)) {
+            if control.shader_capabilities_high & (1u64 << (shader as u32-64))==0 {return Err("mock unavailable all-operation shader".into());}
+            let op=(shader as u32-63) as f32;
+            if blend!=EffectBlend::Opaque || params[0]!=op || params[2]<=0. || params[3]<=0.
+                || ![0.,1.].contains(&params[1]) || ![0.,1.].contains(&params[6])
+                || ![0.,1.].contains(&params[7]) {return Err("mock all-operation PS ABI".into());}
+        }
+        if matches!(shader,EffectShader::PsFetch7|EffectShader::PsFull1|EffectShader::PsFull6|EffectShader::PsFull13) {
+            if control.shader_capabilities & (1u64 << shader as u32) == 0 {
                 return Err("mock unavailable PS7 shader".into());
             }
-            if blend != EffectBlend::Opaque || params[0] != 7.0
+            let op = match shader { EffectShader::PsFull1=>1., EffectShader::PsFull6=>6.,
+                EffectShader::PsFull13=>13., _=>7. };
+            if blend != EffectBlend::Opaque || params[0] != op
                 || (params[1] != 0.0 && params[1] != 1.0) || params[2] <= 0.0 || params[3] <= 0.0
                 || (params[6] != 0.0 && params[6] != 1.0) || (params[7] != 0.0 && params[7] != 1.0) {
                 return Err("mock full PS7 ABI".into());
             }
         }
-        if matches!(shader, EffectShader::PlainSprite | EffectShader::PsPlain19 | EffectShader::PsFetch2 | EffectShader::PlainForceAlpha) {
-            if control.shader_capabilities & (1u32 << shader as u32) == 0 {
+        if matches!(shader, EffectShader::PlainSprite | EffectShader::PsPlain19 | EffectShader::PsFetch2 | EffectShader::PlainForceAlpha | EffectShader::PsFetch1 | EffectShader::PsFetch6 | EffectShader::PsPlain7) {
+            if control.shader_capabilities & (1u64 << shader as u32) == 0 {
                 return Err("mock unavailable plain shader".into());
             }
             if vertices.iter().any(|v| v.haze.iter().flatten().chain(v.soft.iter().flatten()).any(|x| *x != 0.0)) {
@@ -417,6 +490,15 @@ impl Gxm {
                 || params[1] != 0.0 || params[2] <= 0.0 || params[3] <= 0.0 || params[4] >= 0.0
                 || params[6] != 0.0 || params[7] != 0.0) {
                 return Err("mock plain PS2 ABI".into());
+            }
+            if matches!(shader, EffectShader::PsFetch1 | EffectShader::PsFetch6 | EffectShader::PsPlain7)
+                && (blend != EffectBlend::Opaque
+                    || params[0] != if shader == EffectShader::PsFetch1 { 1.0 } else if shader == EffectShader::PsPlain7 {7.0} else { 6.0 }
+                    || (params[1] != 0.0 && params[1] != 1.0)
+                    || params[2] <= 0.0 || params[3] <= 0.0 || params[4] >= 0.0
+                    || params[5] != 0.0 || (params[6] != 0.0 && params[6] != 1.0)
+                    || params[7] != 0.0) {
+                return Err("mock plain material ABI".into());
             }
         }
         control.events.push(Event::Draw {

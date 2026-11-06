@@ -1,7 +1,7 @@
 /* Private implementation included by gxm_backend.c. No host GL/VitaGL path. */
 #include "shaders/generated/effects.h"
 
-enum { EFFECT_SHADERS = 48, EFFECT_PUBLIC_SHADERS = 30, EFFECT_BLENDS = 10, EFFECT_VERTICES = 32760 };
+enum { EFFECT_SHADERS = 88, EFFECT_PUBLIC_SHADERS = 88, EFFECT_BLENDS = 10, EFFECT_VERTICES = 32760 };
 struct KvEffects {
     Block buffer, vertex_usse, fragment_usse, vertices, indices;
     SceGxmShaderPatcher *patcher;
@@ -13,16 +13,40 @@ struct KvEffects {
     /* Uniform handles are resolved once per patched program: a per-draw string
        lookup cost more than the draw itself on hardware. */
     const SceGxmProgramParameter *uniforms[EFFECT_SHADERS][EFFECT_BLENDS][OUTPUT_MODES][7];
-    uint16_t chain_admitted; /* Per material pair; never shifted into capability bits. */
+    const SceGxmProgramParameter *blur_uniform[EFFECT_BLENDS][OUTPUT_MODES];
+    float blur_weights[33];
+    uint32_t blur_sigma_bits, blur_half_taps, blur_weight_count;
+    uint32_t chain_admitted; /* 16 existing pairs + 7/7; independent of capability IDs. */
     uint32_t used;
     /* Index cursor for the open scene: the vertex stream is bound once per scene and
        each draw only advances this, as the reference Vita renderer does. */
     uint32_t index_used;
     uint32_t index_base;
 };
-static int effect_chain_variant(uint32_t shader) { return shader >= 32 && shader < 48; }
+/* 64 -> 88 program slots adds only these host-side program/handle tables.
+   Vita's 32-bit layout adds 24 * 332 = 7,968 bytes; GPU rings, vertex payload,
+   textures, targets and synchronization allocations keep their prior sizes. */
+enum { EFFECT_SHADER_SLOT_BYTES = sizeof(SceGxmShaderPatcherId) + sizeof(const SceGxmProgram *)
+    + sizeof(int) + EFFECT_BLENDS * OUTPUT_MODES * sizeof(SceGxmFragmentProgram *)
+    + EFFECT_BLENDS * OUTPUT_MODES * 7 * sizeof(const SceGxmProgramParameter *),
+    EFFECT_TABLE_ADDED_BYTES = (EFFECT_SHADERS - 64) * EFFECT_SHADER_SLOT_BYTES };
+#if UINTPTR_MAX == UINT32_MAX
+_Static_assert(EFFECT_TABLE_ADDED_BYTES == 7968, "all-operation Vita program table growth");
+#endif
+static int effect_chain_variant(uint32_t shader) { return (shader >= 32 && shader < 48) || shader == 57; }
+static int effect_full_material_shader(uint32_t shader) { return shader >= 54 && shader <= 56; }
+static int effect_all_operation_shader(uint32_t shader) { return shader >= 64 && shader <= 87; }
+static int effect_full_source_shader(uint32_t shader) { return shader == 29 || effect_full_material_shader(shader) || effect_all_operation_shader(shader); }
+static int effect_candidate_enabled(uint32_t shader, uint64_t options) {
+    if (shader == 48) return (options & KV_OPT_PS_PLAIN_OP7) != 0;
+    if (shader == 57) return (options & (KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7)) == (KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7);
+    if (shader >= 49 && shader <= 52) return (options & KV_OPT_HALF_COLOR) != 0;
+    if (effect_full_material_shader(shader)) return (options & KV_OPT_PS_FULL_MATERIAL) != 0;
+    if (effect_all_operation_shader(shader)) return (options & KV_OPT_PS_ALL_OPERATIONS) != 0;
+    return 1;
+}
 static int effect_fetch_shader(uint32_t shader) {
-    return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 27 || shader == 29 || effect_chain_variant(shader);
+    return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 27 || shader == 29 || shader == 30 || shader == 31 || effect_chain_variant(shader) || (shader >= 48 && shader <= 52) || effect_full_material_shader(shader) || effect_all_operation_shader(shader);
 }
 static int effect_ps_shader(uint32_t shader) { return shader == 14 || effect_fetch_shader(shader); }
 static const SceGxmProgram *legacy_effect_source(uint32_t shader) {
@@ -92,7 +116,7 @@ static uint32_t effect_stream_layout(const KvEffectVertex *vertices, uint32_t co
     return EFFECT_STREAM_ZERO;
 }
 static uint32_t effect_draw_stream_layout(const KvEffectVertex *vertices, uint32_t count,
-    uint32_t shader, uint32_t options, int zero_ready, int constant_ready, int rim_ready) {
+    uint32_t shader, uint64_t options, int zero_ready, int constant_ready, int rim_ready) {
     if (!(options & KV_OPT_BATCH_ARENA)) return EFFECT_STREAM_FULL;
     if (shader == 28) return (options & KV_OPT_COMPACT_STREAM) && rim_ready
         ? EFFECT_STREAM_RIM64 : EFFECT_STREAM_FULL;
@@ -206,6 +230,7 @@ static int effects_initialize(KvGxm *g) {
         if (length > 0 && (size_t)length < sizeof(line)) (void)kv_perf_console(line, (uint32_t)length);
     }
     for (uint32_t i = 0; i < EFFECT_SHADERS; ++i) {
+        if (!effect_candidate_enabled(i, kv_render_options())) continue;
         const SceGxmProgram *fs = effect_source(i);
         if (!fs) continue; /* Optional PsFetch has no unsafe legacy equivalent. */
         int status = sceGxmProgramCheck(fs); ++g->stats.program_checks;
@@ -223,7 +248,7 @@ static int effects_initialize(KvGxm *g) {
             if (!fs) continue;
             status = sceGxmProgramCheck(fs); ++g->stats.program_checks;
             if (status >= 0) status = sceGxmShaderPatcherRegisterProgram(e->patcher, fs, &e->ids[i]);
-        } else if (status >= 0 && optional && i < 32) g->shader_capabilities |= 1U << i;
+        } else if (status >= 0 && optional && !effect_chain_variant(i)) shader_capability_set(g, i, 1);
         if (status < 0) return fail(g, "effects program registration", status);
         e->source[i] = fs;
         CHECK(g, effects_sampler_metadata(g, i, fs));
@@ -275,6 +300,14 @@ static int effects_program_mode(KvGxm *g, uint32_t shader, uint32_t blend, uint3
             return fail(g, effect_uniform_names[u], KV_BAD_ARGUMENT);
         e->uniforms[shader][blend][mode][u] = p;
     }
+    if (shader == 53) {
+        const SceGxmProgramParameter *p = sceGxmProgramFindParameterByName(source, "uBlurWeights");
+        if (!p || sceGxmProgramParameterGetCategory(p) != SCE_GXM_PARAMETER_CATEGORY_UNIFORM
+            || sceGxmProgramParameterGetComponentCount(p) != 1
+            || sceGxmProgramParameterGetArraySize(p) != 33)
+            return fail(g, "uBlurWeights", KV_BAD_ARGUMENT);
+        e->blur_uniform[blend][mode] = p;
+    }
     kv_perf_end(KV_PERF_PROGRAM_PATCH, patch_started, 0, 0);
     return 0;
 }
@@ -290,12 +323,13 @@ static int disable_optional_shader(KvGxm *g, uint32_t shader) {
             e->fragment[shader][b][mode] = NULL;
         }
         memset(e->uniforms[shader][b][mode], 0, sizeof(e->uniforms[shader][b][mode]));
+        if (shader == 53) e->blur_uniform[b][mode] = NULL;
     }
     if (e->ids[shader]) {
         CHECK(g, sceGxmShaderPatcherUnregisterProgram(e->patcher, e->ids[shader]));
         e->ids[shader] = NULL;
     }
-    if (shader < 32) g->shader_capabilities &= ~(1U << shader);
+    shader_capability_set(g, shader, 0);
     e->source[shader] = legacy_effect_source(shader);
     if (e->source[shader]) CHECK(g, sceGxmShaderPatcherRegisterProgram(e->patcher, e->source[shader], &e->ids[shader]));
     return 0;
@@ -306,7 +340,7 @@ static int effects_sampler_metadata(KvGxm *g, uint32_t shader, const SceGxmProgr
         const SceGxmProgramParameter *p = sceGxmProgramFindParameterByName(fs, samplers[unit]);
         if (p && (sceGxmProgramParameterGetCategory(p) != SCE_GXM_PARAMETER_CATEGORY_SAMPLER
             || sceGxmProgramParameterGetResourceIndex(p) != unit)) {
-            if (shader == 29) {
+            if (effect_full_source_shader(shader) || effect_chain_variant(shader) || (shader >= 48 && shader <= 53)) {
                 g->effects->optional_status[shader] = KV_BAD_ARGUMENT;
                 return disable_optional_shader(g, shader);
             }
@@ -319,7 +353,7 @@ static int effects_sampler_metadata(KvGxm *g, uint32_t shader, const SceGxmProgr
    Prepatch before frames are recorded so an optional allocation/link failure
    can select ordinary text rather than fail midway through GPU execution. */
 static int effects_text_cache_initialize_program(KvGxm *g, const SceGxmProgram *runtime) {
-    g->shader_capabilities &= ~(1U << 24);
+    g->shader_capabilities &= ~(UINT64_C(1) << 24);
     /* Shader capability bits describe optional fast paths. A mandatory entry
        need not have bit 11 set; require the actual registered runtime program
        instead. The bundled legacy Alter has a different colour contract. */
@@ -331,7 +365,7 @@ static int effects_text_cache_initialize_program(KvGxm *g, const SceGxmProgram *
         const int status = effects_program_mode(g, shader[i], blend[i], 0);
         if (status < 0) return status;
     }
-    g->shader_capabilities |= 1U << 24;
+    g->shader_capabilities |= UINT64_C(1) << 24;
     return 0;
 }
 static int effects_text_cache_initialize(KvGxm *g) {
@@ -341,9 +375,11 @@ static int chain_op_index(uint32_t op) {
     switch (op) { case 2: return 0; case 11: return 1; case 13: return 2; case 19: return 3; default: return -1; }
 }
 static int chain_pair_index(uint32_t a, uint32_t b) {
+    if (a == 7 && b == 7) return 16;
     const int first=chain_op_index(a), second=chain_op_index(b);
     return first < 0 || second < 0 ? -1 : first * 4 + second;
 }
+static uint32_t chain_shader_id(uint32_t pair) { return pair == 16 ? 57 : 32 + pair; }
 static uint32_t effect_primary_count(const SceGxmProgram *program) {
     uint32_t count=0;
     /* Registered programs already passed complete GXP validation. This is the
@@ -355,46 +391,64 @@ static int chain_cost_admitted(uint32_t chain, uint32_t a, uint32_t b) {
     return chain && a && b && (uint64_t)chain <= (uint64_t)a+b;
 }
 static int effects_chain_initialize(KvGxm *g) {
-    g->shader_capabilities &= ~(1U << 27);
+    g->shader_capabilities &= ~(UINT64_C(1) << 27);
+    shader_capability_set(g, 57, 0);
     KvEffects *e=g->effects;
     if (!e) return 0;
     e->chain_admitted=0;
     const uint32_t ops[4]={2,11,13,19}, single[4]={25,20,21,23};
-    for (uint32_t pair=0;pair<16;++pair) {
-        const uint32_t shader=32+pair, a=single[pair/4], b=single[pair%4];
+    for (uint32_t pair=0;pair<17;++pair) {
+        const uint32_t shader=chain_shader_id(pair);
+        if (!effect_candidate_enabled(shader, kv_render_options())) continue;
+        const uint32_t a=pair==16 ? 48 : single[pair/4], b=pair==16 ? 48 : single[pair%4];
         const uint32_t cost=effect_primary_count(e->source[shader]);
         const uint32_t ca=effect_primary_count(e->source[a]), cb=effect_primary_count(e->source[b]);
         const int base_ready=e->fragment[a][5][0] && e->fragment[b][5][0];
         const int cost_ok=base_ready && chain_cost_admitted(cost,ca,cb);
         int status=e->ids[shader] && cost_ok ? effects_program_mode(g,shader,5,0) : KV_STATE;
-        if (status >= 0) e->chain_admitted |= (uint16_t)(1U << pair);
+        if (status >= 0) {
+            e->chain_admitted |= UINT32_C(1) << pair;
+            if (shader == 57) shader_capability_set(g, shader, 1);
+        }
         else if (e->ids[shader]) CHECK(g,disable_optional_shader(g,shader));
         char line[320];
         const int length=snprintf(line,sizeof(line),
             "{\"kind\":\"shader_chain_variant\",\"shader\":%u,\"op_a\":%u,\"op_b\":%u,"
             "\"primary\":%u,\"single_primary_sum\":%u,\"cost_admitted\":%u,\"patch_status\":%d,\"admitted\":%u}\n",
-            shader,ops[pair/4],ops[pair%4],cost,ca+cb,cost_ok,status,status>=0);
+            shader,pair==16 ? 7 : ops[pair/4],pair==16 ? 7 : ops[pair%4],cost,ca+cb,cost_ok,status,status>=0);
         if (length>0 && (size_t)length<sizeof(line)) (void)kv_perf_console(line,(uint32_t)length);
     }
-    if (e->chain_admitted) g->shader_capabilities |= 1U << 27;
+    if (e->chain_admitted) g->shader_capabilities |= UINT64_C(1) << 27;
     return 0;
 }
 int32_t kv_gxm_chain_pair_available(KvGxm *g, uint32_t first, uint32_t second) {
     if (!active(g)) return KV_STATE;
     const int pair=chain_pair_index(first,second);
+    if (pair == 16 && !effect_candidate_enabled(57, kv_render_options())) return 0;
     return g->effects && pair>=0 && (g->effects->chain_admitted & (1U << pair)) ? 1 : 0;
 }
 static int effects_optional_initialize(KvGxm *g) {
-    int status_by_shader[12] = {0};
-    const uint32_t optional[12] = {15, 17, 18, 19, 20, 21, 22, 23, 25, 26, 28, 29};
+    int status_by_shader[47] = {0};
+    const uint32_t optional[47] = {15, 17, 18, 19, 20, 21, 22, 23, 25, 26, 28, 29, 30, 31,
+        49, 50, 51, 52, 53, 54, 55, 56,
+        64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
+        76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 48};
+    for (uint32_t i = 22; i < 46; ++i) status_by_shader[i] = KV_STATE;
     int available = kv_runtime_shader_available(11);
-    for (uint32_t i = 0; i < 12; ++i) available |= kv_runtime_shader_available(optional[i]);
+    for (uint32_t i = 0; i < 47; ++i) {
+        if (!effect_candidate_enabled(optional[i], kv_render_options())) continue;
+        available |= kv_runtime_shader_available(optional[i]);
+    }
     if (available) {
         CHECK(g, effects_ensure(g));
-        for (uint32_t i = 0; i < 12; ++i) {
+        for (uint32_t i = 0; i < 47; ++i) {
             const uint32_t shader = optional[i];
+            if (!effect_candidate_enabled(shader, kv_render_options())) continue;
             status_by_shader[i] = g->effects->optional_status[shader];
-            if (!(g->shader_capabilities & (1U << shader))) continue;
+            if (!shader_capability_ready(g, shader)) {
+                if (effect_all_operation_shader(shader) && !status_by_shader[i]) status_by_shader[i] = KV_STATE;
+                continue;
+            }
             int status = 0;
             for (uint32_t blend = 0; status >= 0 && blend < EFFECT_BLENDS; ++blend) {
                 if (effect_fetch_shader(shader) && blend != 5) continue;
@@ -402,10 +456,66 @@ static int effects_optional_initialize(KvGxm *g) {
             }
             status_by_shader[i] = status;
             if (status < 0) CHECK(g, disable_optional_shader(g, shader));
+            if (effect_full_material_shader(shader)) {
+                char line[192];
+                const int length = snprintf(line, sizeof(line),
+                    "{\"kind\":\"full_material_candidate\",\"shader\":%u,\"patch_status\":%d,\"admitted\":%u}\n",
+                    shader, status, (unsigned)((g->shader_capabilities >> shader) & UINT64_C(1)));
+                if (length > 0 && (size_t)length < sizeof(line)) (void)kv_perf_console(line, (uint32_t)length);
+            }
+            if (shader >= 49 && shader <= 52) {
+                /* The user-selected hardware-test profile exercises the actual
+                   candidate. Readiness is not an RGBA8 equivalence verdict. */
+                char line[256];
+                const int length = snprintf(line, sizeof(line),
+                    "{\"kind\":\"half_color_candidate\",\"shader\":%u,\"patch_status\":%d,\"admitted\":%u,"
+                    "\"hardware_test\":true,\"rgba8_equivalence_verified\":false}\n",
+                    shader, status, (unsigned)shader_capability_ready(g, shader));
+                if (length > 0 && (size_t)length < sizeof(line)) (void)kv_perf_console(line, (uint32_t)length);
+            }
         }
     }
     CHECK(g, effects_chain_initialize(g));
+    char op7_summary[384];
+    const int op7_bytes=snprintf(op7_summary,sizeof(op7_summary),
+        "{\"kind\":\"op7_work_candidates\",\"plain48_selected\":%u,\"plain48_ready\":%u,\"plain48_patch_status\":%d,"
+        "\"chain57_selected\":%u,\"chain57_ready\":%u,\"scope\":\"global-material-geometry;FP32-ordered-RGBA8\"}\n",
+        effect_candidate_enabled(48,kv_render_options()),
+        g->effects && shader_capability_ready(g,48) && g->effects->fragment[48][5][0],status_by_shader[46],
+        effect_candidate_enabled(57,kv_render_options()),g->effects && (g->effects->chain_admitted & (UINT32_C(1)<<16))!=0);
+    if(op7_bytes>0 && (size_t)op7_bytes<sizeof(op7_summary)) (void)kv_perf_console(op7_summary,(uint32_t)op7_bytes);
     const int text_cache_status = effects_text_cache_initialize(g);
+    uint32_t all_ready_mask = 0;
+    const int all_selected = (kv_render_options() & KV_OPT_PS_ALL_OPERATIONS) != 0;
+    for (uint32_t operation = 1; operation <= 24; ++operation) {
+        const uint32_t shader = 63 + operation;
+        const int compiled = all_selected && kv_runtime_shader_available(shader);
+        const int registered = all_selected && g->effects && g->effects->ids[shader];
+        const int ready = registered && shader_capability_ready(g, shader)
+            && g->effects->fragment[shader][5][0];
+        if (ready) all_ready_mask |= UINT32_C(1) << (operation - 1);
+        char candidate[224];
+        const int bytes = snprintf(candidate, sizeof(candidate),
+            "{\"kind\":\"all_operation_candidate\",\"shader\":%u,\"operation\":%u,\"selected\":%u,"
+            "\"compiled\":%u,\"registered\":%u,\"patch_status\":%d,\"ready\":%u}\n",
+            shader, operation, all_selected, compiled, registered, status_by_shader[21 + operation], ready);
+        if (bytes > 0 && (size_t)bytes < sizeof(candidate)) (void)kv_perf_console(candidate, (uint32_t)bytes);
+    }
+    char all_summary[288];
+    const int all_bytes = snprintf(all_summary, sizeof(all_summary),
+        "{\"kind\":\"all_operation_capabilities\",\"selected\":%u,\"ready_mask\":%u,\"operations\":24,"
+        "\"effect_program_slots\":%u,\"effect_owner_bytes\":%u,\"added_table_bytes\":%u}\n",
+        all_selected, all_ready_mask, EFFECT_SHADERS, (unsigned)sizeof(KvEffects), EFFECT_TABLE_ADDED_BYTES);
+    if (all_bytes > 0 && (size_t)all_bytes < sizeof(all_summary)) (void)kv_perf_console(all_summary, (uint32_t)all_bytes);
+    /* Report the completed startup contract even when compilation or program
+       registration produced no candidate. An option bit is not readiness. */
+    unsigned full_ready[3] = {0};
+    if ((kv_render_options() & KV_OPT_PS_FULL_MATERIAL) && g->effects)
+        for (uint32_t i = 0; i < 3; ++i) {
+            const uint32_t shader = 54 + i;
+            full_ready[i] = (g->shader_capabilities & (UINT64_C(1) << shader))
+                && g->effects->ids[shader] && g->effects->fragment[shader][5][0];
+        }
     char line[1280];
     const int length = snprintf(line, sizeof(line),
         "{\"kind\":\"shader_capabilities\",\"color_contract\":\"encoded-unorm8-uchar4\",\"group15\":%u,\"ps_fetch17\":%u,\"ps_fetch19\":%u,"
@@ -417,21 +527,37 @@ static int effects_optional_initialize(KvGxm *g) {
         "\"blend_chain27\":%u,\"blend_chain_patch_status\":%d,"
         "\"rim_text28\":%u,\"rim_text_patch_status\":%d,"
         "\"ps_fetch7_29\":%u,\"fetch7_patch_status\":%d,"
-        "\"text_cache24\":%u,\"text_cache_patch_status\":%d,"
-        "\"fallback_routes\":\"group19:19/18/17/14;op2:25/17/14;op7:29/17/14;op11:20/17/14;op13:21/17/14;sprite:22/0;forcealpha:26/2;op19:23/18/17/14\"}\n",
-        (g->shader_capabilities >> 15) & 1U, (g->shader_capabilities >> 17) & 1U,
-        (g->shader_capabilities >> 18) & 1U, (g->shader_capabilities >> 19) & 1U,
-        (g->shader_capabilities >> 20) & 1U, (g->shader_capabilities >> 21) & 1U,
-        (g->shader_capabilities >> 22) & 1U, (g->shader_capabilities >> 23) & 1U,
-        (g->shader_capabilities >> 25) & 1U,
+        "\"plain_material30\":%u,\"plain_material31\":%u,"
+        "\"full1_ready\":%u,\"full6_ready\":%u,\"full13_ready\":%u,"
+        "\"text_cache24\":%u,\"text_cache_patch_status\":%d}\n",
+        (unsigned)((g->shader_capabilities >> 15) & UINT64_C(1)), (unsigned)((g->shader_capabilities >> 17) & UINT64_C(1)),
+        (unsigned)((g->shader_capabilities >> 18) & UINT64_C(1)), (unsigned)((g->shader_capabilities >> 19) & UINT64_C(1)),
+        (unsigned)((g->shader_capabilities >> 20) & UINT64_C(1)), (unsigned)((g->shader_capabilities >> 21) & UINT64_C(1)),
+        (unsigned)((g->shader_capabilities >> 22) & UINT64_C(1)), (unsigned)((g->shader_capabilities >> 23) & UINT64_C(1)),
+        (unsigned)((g->shader_capabilities >> 25) & UINT64_C(1)),
         status_by_shader[0], status_by_shader[1], status_by_shader[2], status_by_shader[3],
         status_by_shader[4], status_by_shader[5],
-        (g->shader_capabilities >> 26) & 1U, status_by_shader[9], status_by_shader[6], status_by_shader[7], status_by_shader[8],
-        (g->shader_capabilities >> 27) & 1U, g->effects && g->effects->chain_admitted ? 0 : KV_STATE,
-        (g->shader_capabilities >> 28) & 1U, status_by_shader[10],
-        (g->shader_capabilities >> 29) & 1U, status_by_shader[11],
-        (g->shader_capabilities >> 24) & 1U, text_cache_status);
+        (unsigned)((g->shader_capabilities >> 26) & UINT64_C(1)), status_by_shader[9], status_by_shader[6], status_by_shader[7], status_by_shader[8],
+        (unsigned)((g->shader_capabilities >> 27) & UINT64_C(1)), g->effects && g->effects->chain_admitted ? 0 : KV_STATE,
+        (unsigned)((g->shader_capabilities >> 28) & UINT64_C(1)), status_by_shader[10],
+        (unsigned)((g->shader_capabilities >> 29) & UINT64_C(1)), status_by_shader[11],
+        (unsigned)((g->shader_capabilities >> 30) & UINT64_C(1)), (unsigned)((g->shader_capabilities >> 31) & UINT64_C(1)),
+        full_ready[0], full_ready[1], full_ready[2],
+        (unsigned)((g->shader_capabilities >> 24) & UINT64_C(1)), text_cache_status);
     if (length > 0 && (size_t)length < sizeof(line)) (void)kv_perf_console(line, (uint32_t)length);
+    /* Keep each record below kv_perf_console's independent 900-byte limit.
+       Quad plain-source routing and full-layout group routing differ. */
+    char routes[768];
+    const int routes_length = snprintf(routes, sizeof(routes),
+        "{\"kind\":\"shader_fallback_routes\","
+        "\"quad_fallback_routes\":\"op1:30/64/54/17/14;op2:25/65/17/14;op6:31/69/55/17/14;op7:70/29/17/14;op11:20/74/17/14;op13:21/76/56/17/14;op19:23/82/18/17/14;sprite:22/0;forcealpha:26/2\","
+        "\"group_fallback_routes\":\"op1:64/54/17/14;op6:69/55/17/14;op7:70/29/17/14;op13:76/56/17/14;op19:82/19/18/17/14;other:63+op/17/14\","
+        "\"plain_source_entries\":\"21/30/31/48;source_gate_required\",\"full_source_entries\":\"54/55/56\","
+        "\"half_plain_routes\":\"op1:49;op6:50;op7:48/51;op13:52;selected_ready_source_gate\","
+        "\"all_operation_entries\":\"64..87;after_compatible_plain_before_prior_full\","
+        "\"selection\":\"first_ready_and_source_compatible;14=destination_snapshot\"}\n");
+    if (routes_length > 0 && (size_t)routes_length < sizeof(routes))
+        (void)kv_perf_console(routes, (uint32_t)routes_length);
     return 0;
 }
 static int effects_destroy(KvGxm *g) {
@@ -460,39 +586,179 @@ static int effects_destroy(KvGxm *g) {
     return 0;
 }
 static int texture_target_destroy(KvGxm *g, KvGxmTexture *t) {
-    if (t->target) { CHECK(g, sceGxmDestroyRenderTarget(t->target)); t->target = NULL; }
+    if (t->target) {
+        CHECK(g, sceGxmDestroyRenderTarget(t->target)); t->target = NULL;
+        g->target_driver_bytes-=t->target_driver_bytes;
+        t->target_driver_bytes=0; t->target_scenes=0;
+    }
     if (t->sync) { CHECK(g, sceGxmSyncObjectDestroy(t->sync)); t->sync = NULL; }
     return 0;
 }
 static int texture_target_ensure(KvGxm *g, KvGxmTexture *t) {
     if (t->target) return 0;
-    const SceGxmRenderTargetParams target = { .width = t->width, .height = t->height,
-        .scenesPerFrame = 1, .multisampleMode = SCE_GXM_MULTISAMPLE_NONE, .driverMemBlock = -1 };
     const char *stage = "effects render target";
-    const uint64_t target_start = kv_probe_now();
-    int result = sceGxmCreateRenderTarget(&target, &t->target);
-    kv_probe_add(&kv_gxm_timing_counters.target_create_us, &kv_gxm_timing_counters.target_create_calls, target_start);
+    const uint32_t requested=target_scene_capacity();
+    uint32_t selected=requested;
+    int result;
+retry_target:
+    result=target_create_capacity(g,t->width,t->height,selected,&t->target,&t->target_driver_bytes);
+    if(result>=0) t->target_scenes=selected;
 #define TARGET_STEP(label, expression) do { if (result >= 0) { stage = label; result = (expression); } } while (0)
     /* Offscreen passes are serialized by Finish before sampling/reuse. A
        display-queue sync per atlas wastes native driver objects; NULL is the
        same offscreen submission contract used by vitaGL. Display buffers
        retain their own sync objects. */
     TARGET_STEP("effects color surface", sceGxmColorSurfaceInit(&t->surface,
-        SCE_GXM_COLOR_FORMAT_A8B8G8R8, SCE_GXM_COLOR_SURFACE_LINEAR,
+        SCE_GXM_COLOR_FORMAT_A8B8G8R8, t->storage == KV_TEXTURE_TILED
+            ? SCE_GXM_COLOR_SURFACE_TILED : SCE_GXM_COLOR_SURFACE_LINEAR,
         SCE_GXM_COLOR_SURFACE_SCALE_NONE,
         SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
         t->width, t->height, t->pitch, t->pixels.base));
 #undef TARGET_STEP
     if (result < 0) {
+        const uint32_t queried_bytes=t->target_driver_bytes;
+        if(g->closing) return result;
         const int cleanup = texture_target_destroy(g, t);
         if (cleanup < 0) { g->closing = 1; return fail(g, "render target rollback retained owner", cleanup); }
+        if(selected>1 && !g->closing) {
+            target_capacity_log(t->width,t->height,requested,1,queried_bytes,result,"candidate_rejected_fallback_one");
+            selected=1; goto retry_target;
+        }
         return fail(g, stage, result);
     }
+    if(requested>1) target_capacity_log(t->width,t->height,requested,selected,
+        t->target_driver_bytes,0,"native_target_created");
+    return 0;
+}
+static int tiled_target_layout(uint32_t width,uint32_t height,uint32_t *bytes,uint32_t *padding) {
+    if(!width || !height || width>2048 || height>2048 || !bytes || !padding) return KV_BAD_ARGUMENT;
+    const uint32_t pitch=(width+31u)&~31u, rows=(height+31u)&~31u;
+    *bytes=pitch*rows*4u; *padding=*bytes-width*height*4u;
+    return 0;
+}
+static int effect_scene(KvGxm *g, KvGxmTexture *t);
+static int32_t texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
+    uint32_t height, uint32_t stride, uint32_t format, uint32_t srgb,
+    uint32_t linear, uint32_t render_target, int allow_tiled, KvGxmTexture **out);
+static int tiled_probe_draw(KvGxm *g,KvGxmTexture *target,const KvGxmTexture *source,const float tint[4]) {
+    CHECK(g,ensure_batch(g));
+    CHECK(g,effect_scene(g,target));
+    if(!(kv_render_options()&KV_OPT_BATCH_ARENA)) g->quads=0;
+    const int draw=kv_gxm_draw_quad(g,source,(float[]){0,0,WIDTH,CONTENT_H},
+        (float[]){0,0,1,1},tint,0);
+    const int end=kv_gxm_end_target(g);
+    return end<0?end:draw;
+}
+/* A GPU-written tiled image is sampled into a separate GPU-linear target.
+ * Only that linear staging target is exposed to CPU readback. No CPU untile
+ * or assumption about stale GPU-written tile backing is used as evidence. */
+static int tiled_pixel_probe(KvGxm *g,KvGxmTexture *candidate,uint32_t *max_delta) {
+    if(!g->context || !g->white || !g->vertex_program || !g->opaque_program) return KV_STATE;
+    KvGxmTexture *staging=NULL,*source=NULL;
+    uint8_t *pixels=malloc(WIDTH*CONTENT_H*4u);
+    if(!pixels) return KV_ALLOC;
+    /* A uniform fill cannot expose tile-coordinate mistakes. A private
+       point-sampled linear source varies every channel across both axes,
+       31/32-pixel boundaries, and the partial final tile row at y=539. */
+    for(uint32_t y=0;y<CONTENT_H;++y) for(uint32_t x=0;x<WIDTH;++x) {
+        const uint32_t p=(y*WIDTH+x)*4u;
+        pixels[p]=(uint8_t)(x*17u+y*3u);
+        pixels[p+1]=(uint8_t)(x*5u+y*29u);
+        pixels[p+2]=(uint8_t)(((x/31u)*43u)^((y/32u)*71u)^x^y);
+        pixels[p+3]=(uint8_t)(x*11u+y*7u+37u);
+    }
+    int status=texture_create_ex(g,pixels,WIDTH,CONTENT_H,WIDTH*4u,0,0,0,0,0,&source);
+    if(status>=0) status=texture_create_ex(g,NULL,WIDTH,CONTENT_H,0,0,0,0,1,0,&staging);
+    if(status>=0) {
+        candidate->ready=1;
+        if(async_submission(g)) status=wait_submitted(g,KV_PERF_FINISH_READBACK);
+        else perf_finish(g->context,KV_PERF_FINISH_READBACK);
+    }
+    if(status>=0) status=tiled_probe_draw(g,candidate,source,(float[]){1,1,1,1});
+    if(status>=0) {
+        if(async_submission(g)) status=wait_submitted(g,KV_PERF_FINISH_READBACK);
+        else perf_finish(g->context,KV_PERF_FINISH_READBACK);
+    }
+    if(status>=0) status=tiled_probe_draw(g,staging,candidate,(float[]){1,1,1,1});
+    if(status>=0) status=kv_gxm_texture_read(g,staging,pixels,WIDTH*CONTENT_H*4u);
+    if(status>=0) {
+        for(uint32_t y=0;y<CONTENT_H;++y) for(uint32_t x=0;x<WIDTH;++x) {
+            const uint8_t expected[4]={(uint8_t)(x*17u+y*3u),(uint8_t)(x*5u+y*29u),
+                (uint8_t)(((x/31u)*43u)^((y/32u)*71u)^x^y),(uint8_t)(x*11u+y*7u+37u)};
+            for(uint32_t c=0;c<4;++c) {
+                const uint32_t delta=(uint32_t)abs((int)pixels[(y*WIDTH+x)*4u+c]-(int)expected[c]);
+                if(delta>*max_delta) *max_delta=delta;
+            }
+        }
+        if(*max_delta) status=KV_STATE;
+    }
+    /* Readback or the explicit drain above establishes that these private
+     * textures can be destroyed. EndScene uncertainty retains the owner. */
+    if(g->context && !g->scene_open) {
+        if(async_submission(g)) { const int wait=wait_submitted(g,KV_PERF_FINISH_READBACK); if(wait<0) status=wait; }
+        else perf_finish(g->context,KV_PERF_FINISH_READBACK);
+    }
+    if(staging && !g->scene_open && !g->closing) {
+        const int cleanup=kv_gxm_texture_destroy(g,staging);
+        if(cleanup<0) status=cleanup;
+    }
+    if(source && !g->scene_open && !g->closing) {
+        const int cleanup=kv_gxm_texture_destroy(g,source);
+        if(cleanup<0) status=cleanup;
+    }
+    candidate->ready=0;
+    free(pixels);
+    kv_reset_effect_state();
+    return status;
+}
+static int tiled_target_setup(KvGxm *g,KvGxmTexture *t) {
+    t->storage=KV_TEXTURE_TILED;
+    t->pitch=(t->width+31u)&~31u;
+    int status=sceGxmTextureInitTiled(&t->descriptor,t->pixels.base,
+        SCE_GXM_TEXTURE_FORMAT_A8B8G8R8,t->width,t->height,0);
+    if(status>=0) status=sceGxmTextureSetMinFilter(&t->descriptor,SCE_GXM_TEXTURE_FILTER_POINT);
+    if(status>=0) status=sceGxmTextureSetMagFilter(&t->descriptor,SCE_GXM_TEXTURE_FILTER_POINT);
+    if(status>=0) status=sceGxmTextureSetUAddrMode(&t->descriptor,SCE_GXM_TEXTURE_ADDR_CLAMP);
+    if(status>=0) status=sceGxmTextureSetVAddrMode(&t->descriptor,SCE_GXM_TEXTURE_ADDR_CLAMP);
+    if(status>=0) status=texture_target_ensure(g,t);
+    return status;
+}
+static int tiled_target_probe(KvGxm *g,KvGxmTexture *t,uint32_t padded,uint32_t padding) {
+    g->tiled_probe_attempted=1;
+    char saved_error[sizeof(g->error)]; memcpy(saved_error,g->error,sizeof(saved_error));
+    const int status=tiled_target_setup(g,t);
+    const int native_ready=status>=0;
+    g->tiled_probe_native_ready=native_ready;
+    uint32_t delta=0;
+    const int pixel_status=native_ready?tiled_pixel_probe(g,t,&delta):KV_STATE;
+    if(g->closing || g->scene_open) {
+        g->closing=1; return fail(g,"tiled probe GPU owner retained",KV_STATE);
+    }
+    const int cleanup=texture_target_destroy(g,t);
+    if(cleanup<0 || g->closing || g->scene_open) {
+        g->closing=1; return fail(g,"tiled probe rollback retained owner",cleanup<0?cleanup:KV_STATE);
+    }
+    t->storage=KV_TEXTURE_LINEAR; t->rendered=0;
+    t->last_use=t->last_read=t->last_write=0;
+    g->plan_ready=0;
+    memset(t->pixels.base,0,t->pixels.size);
+    memcpy(g->error,saved_error,sizeof(g->error));
+    g->tiled_targets_ready=native_ready && pixel_status>=0;
+    char line[512];
+    const int length=snprintf(line,sizeof(line),
+        "{\"kind\":\"tiled_target_probe\",\"width\":960,\"height\":540,\"tile\":32,"
+        "\"padded_bytes\":%u,\"padding_bytes\":%u,\"native_setup\":%d,\"status\":%d,"
+        "\"pixel_status\":%d,\"max_byte_delta\":%u,\"production_enabled\":%s,"
+        "\"readback\":\"gpu_linear_staging\",\"pattern\":\"rgba_xy_tile_edges\",\"reason\":\"%s\"}\n",
+        padded,padding,native_ready,status,pixel_status,delta,g->tiled_targets_ready?"true":"false",
+        !native_ready?"native_setup_rejected_linear_fallback":pixel_status<0
+            ?"pixel_probe_unavailable_or_failed_linear_fallback":"pixel_probe_passed_tiled_targets_enabled");
+    if(length>0 && (size_t)length<sizeof(line)) (void)kv_perf_console(line,(uint32_t)length);
     return 0;
 }
 int32_t kv_gxm_texture_seal(KvGxm *g, KvGxmTexture *t) {
     if (!active(g) || g->scene_open || !texture_owned(g, t) || t == g->white
-        || t->storage != KV_TEXTURE_LINEAR || t->bpp != 4) return KV_STATE;
+        || (t->storage != KV_TEXTURE_LINEAR && t->storage != KV_TEXTURE_TILED) || t->bpp != 4) return KV_STATE;
 #ifdef KV_GXM_DEV_DIAGNOSTICS
     if (g->diagnostic_scanout == t) return fail(g, "DEV target is still scanned out", KV_STATE);
 #endif
@@ -506,9 +772,9 @@ int32_t kv_gxm_texture_seal(KvGxm *g, KvGxmTexture *t) {
     if (result < 0) { g->closing = 1; return fail(g, "sealing baked texture retained owner", result); }
     return 0;
 }
-int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
+static int32_t texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
     uint32_t height, uint32_t stride, uint32_t format, uint32_t srgb,
-    uint32_t linear, uint32_t render_target, KvGxmTexture **out) {
+    uint32_t linear, uint32_t render_target, int allow_tiled, KvGxmTexture **out) {
     if (owner_ok(g)) g->texture_allocation_failed = 0;
     if (!active(g) || !out || g->scene_open || !width || !height || width > 2048 || height > 2048
         || format > 1 || srgb != 0 || linear > 1 || render_target > 1
@@ -522,7 +788,12 @@ int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
     t->bpp = bpp; t->srgb = srgb; t->owner = g;
     t->next = g->textures; g->textures = t;
     const char *stage = "effects texture CDRAM allocation";
-    int result = texture_pixels_alloc(g, &t->pixels, t->pitch * height * bpp);
+    const int tiled_candidate=allow_tiled && (kv_render_options()&KV_OPT_TILED_TARGETS)
+        && !data && !format && render_target && width==WIDTH && height==CONTENT_H
+        && (!g->tiled_probe_attempted || g->tiled_targets_ready);
+    uint32_t padded=0,padding=0;
+    if(tiled_candidate) (void)tiled_target_layout(width,height,&padded,&padding);
+    int result = texture_pixels_alloc(g, &t->pixels, tiled_candidate?padded:t->pitch * height * bpp);
 #define EFFECT_TEXTURE_STEP(label, expression) do { if (result >= 0) { stage = label; result = (expression); } } while (0)
     if (result >= 0) {
         texture_initialize_padding(t, render_target ? KV_PERF_ZERO_TARGET : KV_PERF_ZERO_LINEAR, data != NULL);
@@ -532,8 +803,25 @@ int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
         if (data) kv_perf_end(bpp == 1 ? KV_PERF_UPLOAD_R8 : KV_PERF_UPLOAD_RGBA,
             copy_started, (uint64_t)width * height * bpp, t->pixels.size);
     }
-    EFFECT_TEXTURE_STEP("effects texture init", sceGxmTextureInitLinear(&t->descriptor, t->pixels.base,
-        format ? SCE_GXM_TEXTURE_FORMAT_U8_RRRR : SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, width, height, 0));
+    if(result>=0 && tiled_candidate && !g->tiled_probe_attempted)
+        result=tiled_target_probe(g,t,padded,padding);
+    if(result>=0 && tiled_candidate && g->tiled_targets_ready) {
+        char saved_error[sizeof(g->error)]; memcpy(saved_error,g->error,sizeof(saved_error));
+        const int setup=tiled_target_setup(g,t);
+        if(setup<0) {
+            if(g->closing) return setup;
+            const int cleanup=texture_target_destroy(g,t);
+            if(cleanup<0) { g->closing=1; return fail(g,"tiled target rollback retained owner",cleanup); }
+            t->storage=KV_TEXTURE_LINEAR; t->pitch=(width+7u)&~7u;
+            g->tiled_targets_ready=0;
+            memcpy(g->error,saved_error,sizeof(g->error));
+        }
+    }
+    if(result<0 && g->closing) return result;
+    if(t->storage==KV_TEXTURE_LINEAR) {
+        EFFECT_TEXTURE_STEP("effects texture init", sceGxmTextureInitLinear(&t->descriptor, t->pixels.base,
+            format ? SCE_GXM_TEXTURE_FORMAT_U8_RRRR : SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, width, height, 0));
+    }
     const SceGxmTextureFilter filter = linear ? SCE_GXM_TEXTURE_FILTER_LINEAR : SCE_GXM_TEXTURE_FILTER_POINT;
     EFFECT_TEXTURE_STEP("effects min filter", sceGxmTextureSetMinFilter(&t->descriptor, filter));
     EFFECT_TEXTURE_STEP("effects mag filter", sceGxmTextureSetMagFilter(&t->descriptor, filter));
@@ -556,6 +844,11 @@ int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
     TRACE_TEXTURE(g, t);
     *out = t;
     return 0;
+}
+int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
+    uint32_t height, uint32_t stride, uint32_t format, uint32_t srgb,
+    uint32_t linear, uint32_t render_target, KvGxmTexture **out) {
+    return texture_create_ex(g,data,width,height,stride,format,srgb,linear,render_target,1,out);
 }
 int32_t kv_gxm_texture_create_compressed(KvGxm *g, const uint8_t *data,
     uint32_t length, uint32_t width, uint32_t height, uint32_t format,
@@ -708,25 +1001,44 @@ int32_t kv_gxm_end_target(KvGxm *g) {
 static int packed_integer(float value, float low, float high) {
     return value >= low && value <= high && truncf(value) == value;
 }
-static int chain_ps_op(float op) { return op == 2 || op == 11 || op == 13 || op == 19; }
+static int chain_ps_op(float op) { return op == 2 || op == 7 || op == 11 || op == 13 || op == 19; }
 static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shader, uint32_t blend,
     const float params[8]) {
     if (!v || !params || !count || count % 3 || count > EFFECT_VERTICES
         || shader >= EFFECT_PUBLIC_SHADERS || blend >= EFFECT_BLENDS || shader == 24
+        || (shader >= 32 && shader < 48)
+        || (shader >= 57 && shader <= 63)
         || (effect_fetch_shader(shader) && blend != 5)
         || ((shader == 18 || shader == 19 || shader == 23) && params[0] != 19.0f)
         || (shader == 20 && params[0] != 11.0f)
         || (shader == 21 && params[0] != 13.0f)
         || (shader == 25 && params[0] != 2.0f)
-        || (shader == 29 && params[0] != 7.0f)) return KV_BAD_ARGUMENT;
+        || (shader == 29 && params[0] != 7.0f)
+        || (shader == 30 && params[0] != 1.0f)
+        || (shader == 31 && params[0] != 6.0f)
+        || (shader == 48 && params[0] != 7.0f)
+        || (shader == 49 && params[0] != 1.0f)
+        || (shader == 50 && params[0] != 6.0f)
+        || (shader == 51 && params[0] != 7.0f)
+        || (shader == 52 && params[0] != 13.0f)
+        || (shader == 54 && params[0] != 1.0f)
+        || (shader == 55 && params[0] != 6.0f)
+        || (shader == 56 && params[0] != 13.0f)
+        || (effect_all_operation_shader(shader) && params[0] != (float)(shader - 63))) return KV_BAD_ARGUMENT;
     for (uint32_t i = 0; i < 8; ++i)
         if (!isfinite(params[i]) || ((shader == 22 || shader == 26 || shader == 28) && params[i] != 0)) return KV_BAD_ARGUMENT;
-    if (((shader >= 19 && shader <= 21) || shader == 25) && (params[1] != 0 || params[4] >= 0 || params[6] != 0
+    if (((shader >= 19 && shader <= 20) || shader == 25) && (params[1] != 0 || params[4] >= 0 || params[6] != 0
         || params[7] != (shader == 19 ? 1.0f : 0.0f)))
         return KV_BAD_ARGUMENT;
+    if (shader == 21 && (!packed_integer(params[1],0,1) || params[4] >= 0 || params[5] != 0
+        || !packed_integer(params[6],0,1) || params[7] != 0)) return KV_BAD_ARGUMENT;
     if (shader == 23 && (!packed_integer(params[1],0,1) || !packed_integer(params[6],0,1)
         || params[4] >= 0 || params[5] != 0 || params[7] != 0)) return KV_BAD_ARGUMENT;
+    if ((shader == 30 || shader == 31 || (shader >= 48 && shader <= 52)) && (!packed_integer(params[1],0,1)
+        || params[4] >= 0 || params[5] != 0 || !packed_integer(params[6],0,1) || params[7] != 0))
+        return KV_BAD_ARGUMENT;
     if (shader == 27 && (!chain_ps_op(params[0]) || !chain_ps_op(params[1])
+        || ((params[0] == 7 || params[1] == 7) && params[0] != params[1])
         || params[4] != -1 || params[5] != 0 || params[6] != 0 || params[7] != 0)) return KV_BAD_ARGUMENT;
     for (uint32_t i = 0; i < count; ++i) {
         /* The struct has only floats and its ABI is asserted, but pointer
@@ -738,7 +1050,7 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
             for (uint32_t j = 0; j < 4; ++j)
                 if (!((shader == 27 && row == 0 && j < 2) || (shader == 28 && (row == 0 || j < 3)))
                     && v[i].haze[row][j] != v[0].haze[row][j]) return KV_BAD_ARGUMENT;
-        if (shader >= 19 && shader != 27 && shader != 28 && shader != 29) {
+        if (shader >= 19 && shader != 27 && shader != 28 && !effect_full_source_shader(shader)) {
             // Specialised entries have an exact no-haze/no-soft ABI.
             // Refuse a direct FFI caller which would silently lose haze/soft.
             for (uint32_t row = 0; row < 2; ++row)
@@ -774,8 +1086,40 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
     if (effect_ps_shader(shader) && (!packed_integer(params[7],0,1)
         || (params[7] == 1 && (params[4] >= 0 || params[6] != 0)))) return KV_BAD_ARGUMENT;
     if ((shader == 9 || effect_ps_shader(shader)) && (params[2] <= 0 || params[3] <= 0)) return KV_BAD_ARGUMENT;
-    if (shader == 10 && (!packed_integer(params[3],0,2147483520.0f)
+    if ((shader == 10 || shader == 53) && (!packed_integer(params[3],0,shader == 53 ? 16.0f : 2147483520.0f)
         || !packed_integer(params[4],0,2))) return KV_BAD_ARGUMENT;
+    return 0;
+}
+/* Synchronously copied payload, matched to one draw and consumed on upload. */
+int32_t kv_gxm_set_blur_weights(KvGxm *g, float sigma, uint32_t half_taps,
+    const float *weights, uint32_t count) {
+    if (!active(g) || !g->effects) return KV_STATE;
+    KvEffects *e = g->effects;
+    e->blur_weight_count = 0;
+    if (!weights || !isfinite(sigma) || sigma < 0.01f || half_taps > 16
+        || count != 2 * half_taps + 1) return KV_BAD_ARGUMENT;
+    for (uint32_t i = 0; i < count; ++i)
+        if (!isfinite(weights[i]) || weights[i] < 0) return KV_BAD_ARGUMENT;
+    memcpy(e->blur_weights, weights, count * sizeof(*weights));
+    memcpy(&e->blur_sigma_bits, &sigma, sizeof(sigma));
+    e->blur_half_taps = half_taps;
+    e->blur_weight_count = count;
+    return 0;
+}
+static int effect_blur_weights_ready(const KvEffects *e, const float params[8]) {
+    const float sigma = fmaxf(params[2], 0.01f);
+    uint32_t sigma_bits;
+    memcpy(&sigma_bits, &sigma, sizeof(sigma));
+    return isfinite(params[2]) && packed_integer(params[3], 0, 16)
+        && e->blur_sigma_bits == sigma_bits && e->blur_half_taps == (uint32_t)params[3]
+        && e->blur_weight_count == 2 * (uint32_t)params[3] + 1;
+}
+static int effect_blur_weights_upload(KvGxm *g, void *uniforms, uint32_t blend, uint32_t mode) {
+    KvEffects *e = g->effects;
+    if (!e || !e->blur_weight_count || !e->blur_uniform[blend][mode]) return KV_STATE;
+    const uint32_t count = e->blur_weight_count;
+    e->blur_weight_count = 0;
+    CHECK(g, sceGxmSetUniformDataF(uniforms, e->blur_uniform[blend][mode], 0, count, e->blur_weights));
     return 0;
 }
 static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint32_t count,
@@ -785,10 +1129,18 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
     const int inputs = effect_inputs(vertices,count,shader,blend,params);
     kv_perf_end(KV_PERF_DRAW_VALIDATE, phase, (uint64_t)count * sizeof(*vertices), inputs < 0);
     if (inputs < 0) return KV_BAD_ARGUMENT;
+    /* Optional r5 entries must fail before reserving vertex storage when the
+       startup capability was not admitted.  Rust normally selects the
+       generic fallback first, but this native guard keeps the public C entry
+       safe for direct callers and for a compiler/cache rejection. */
+    if (!effect_candidate_enabled(shader, kv_render_options())) return KV_STATE;
+    if (((shader >= 48 && shader <= 52) || shader == 30 || shader == 31 || effect_full_material_shader(shader) || effect_all_operation_shader(shader))
+        && (!g->effects || !shader_capability_ready(g, shader))) return KV_STATE;
     if (shader == 27) {
         const int pair = chain_pair_index((uint32_t)params[0], (uint32_t)params[1]);
-        if (!g->effects || pair < 0 || !(g->effects->chain_admitted & (1U << pair))) return KV_STATE;
-        shader = 32U + (uint32_t)pair;
+        if (!g->effects || pair < 0 || !(g->effects->chain_admitted & (UINT32_C(1) << pair))) return KV_STATE;
+        shader = chain_shader_id((uint32_t)pair);
+        if (!effect_candidate_enabled(shader, kv_render_options())) return KV_STATE;
     }
     const KvGxmTexture *textures[4];
     for (uint32_t i = 0; i < 4; ++i) {
@@ -798,6 +1150,10 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
     for (uint32_t i = 0; i < 4; ++i) CHECK(g, require_scene_read(g, textures[i]));
     CHECK(g, effects_ensure(g));
     KvEffects *e = g->effects;
+    if (shader == 53) {
+        if (!(kv_render_options() & (UINT64_C(1) << 34))
+            || !effect_blur_weights_ready(e, params)) return KV_STATE;
+    }
     if (!(kv_render_options() & KV_OPT_BATCH_ARENA) && count > EFFECT_VERTICES - e->used)
         return fail(g, "effects scene vertex budget", KV_BUDGET);
     const uint32_t layout = effect_draw_stream_layout(vertices,count,shader,kv_render_options(),
@@ -833,6 +1189,9 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
     for (uint32_t u = 0; u < 7; ++u)
         if (slot[u]) CHECK(g, sceGxmSetUniformDataF(uniforms, slot[u], 0,
             effect_uniform_counts[u], values[u]));
+    if (shader == 53) {
+        CHECK(g, effect_blur_weights_upload(g, uniforms, blend, output_mode(g)));
+    }
     kv_perf_end(KV_PERF_DRAW_UNIFORM, phase, 0, 0);
     KvEffectVertex *destination = stream_vertices;
     if (!(kv_render_options() & KV_OPT_BATCH_ARENA))
@@ -884,16 +1243,19 @@ int32_t kv_gxm_draw_effect(KvGxm *g, const KvEffectVertex *vertices, uint32_t co
     if (blend == 8) kv_perf_end_at(KV_PERF_DRAW_MASK_ALPHA, started, finished, 0, result < 0);
     if (shader == 15 || shader == 16) kv_perf_end_at(KV_PERF_DRAW_GROUP, started, finished, 0, result < 0);
     if (shader == 11) kv_perf_end_at(KV_PERF_DRAW_ALTER, started, finished, 0, result < 0);
-    if (shader == 10) kv_perf_end_at(KV_PERF_DRAW_BLUR, started, finished, 0, result < 0);
+    if (shader == 10 || shader == 53) kv_perf_end_at(KV_PERF_DRAW_BLUR, started, finished, 0, result < 0);
     return result;
 }
 int32_t kv_gxm_copy_texture(KvGxm *g, const KvGxmTexture *source, KvGxmTexture *destination) {
     if (!active(g) || g->scene_open || source == destination
         || !texture_owned(g,source) || !texture_owned(g,destination)
-        || source->storage != KV_TEXTURE_LINEAR || destination->storage != KV_TEXTURE_LINEAR
+        || (source->storage != KV_TEXTURE_LINEAR && source->storage != KV_TEXTURE_TILED)
+        || (destination->storage != KV_TEXTURE_LINEAR && destination->storage != KV_TEXTURE_TILED)
         || source->width != destination->width || source->height != destination->height
         || (source->bpp != 1 && source->bpp != 4)
-        || source->bpp != destination->bpp || source->srgb != destination->srgb) return KV_BAD_ARGUMENT;
+        || source->bpp != destination->bpp || source->srgb != destination->srgb
+        || ((source->storage == KV_TEXTURE_TILED || destination->storage == KV_TEXTURE_TILED)
+            && source->bpp != 4)) return KV_BAD_ARGUMENT;
     const uint64_t copy_started = kv_perf_begin();
     CHECK(g, ensure_batch(g));
     /* A rendered copy stays on the same ordered GXM context. A transfer uses a
@@ -903,7 +1265,8 @@ int32_t kv_gxm_copy_texture(KvGxm *g, const KvGxmTexture *source, KvGxmTexture *
         else perf_finish(g->context, KV_PERF_FINISH_COPY);
         CHECK(g, perf_transfer_finish(KV_PERF_TRANSFER_COPY_PRE));
     }
-    if (source->target || source->rendered) {
+    if (source->target || source->rendered || source->storage == KV_TEXTURE_TILED
+        || destination->storage == KV_TEXTURE_TILED) {
         /* Keep rendered pixels on the GPU. Some runtimes leave the CPU backing
            stale after Finish; a transfer from that backing loses the backdrop.
            quad_f samples raw RGBA, including alpha, with no premultiplication;
@@ -956,8 +1319,23 @@ int32_t kv_gxm_present_canvas(KvGxm *g, const KvGxmTexture *canvas) {
 }
 int32_t kv_gxm_texture_read(KvGxm *g, const KvGxmTexture *texture, uint8_t *data, uint32_t capacity) {
     if (!active(g) || g->scene_open || !texture_owned(g,texture) || !data
-        || texture->storage != KV_TEXTURE_LINEAR || (texture->bpp != 1 && texture->bpp != 4)
+        || (texture->storage != KV_TEXTURE_LINEAR && texture->storage != KV_TEXTURE_TILED)
+        || (texture->bpp != 1 && texture->bpp != 4)
+        || (texture->storage == KV_TEXTURE_TILED && texture->bpp != 4)
         || capacity < texture->width * texture->height * texture->bpp) return KV_BAD_ARGUMENT;
+    if(texture->storage==KV_TEXTURE_TILED) {
+        /* GPU sampling converts the tiled descriptor to a private linear
+           surface; never interpret GPU-written tiled bytes on the CPU. */
+        KvGxmTexture *staging=NULL;
+        int status=texture_create_ex(g,NULL,texture->width,texture->height,0,0,0,0,1,0,&staging);
+        if(status>=0) status=kv_gxm_copy_texture(g,texture,staging);
+        if(status>=0) status=kv_gxm_texture_read(g,staging,data,capacity);
+        if(staging && !g->closing && !g->scene_open) {
+            const int cleanup=kv_gxm_texture_destroy(g,staging);
+            if(cleanup<0) status=cleanup;
+        }
+        return status;
+    }
     if (async_submission(g)) CHECK(g, wait_submitted(g, KV_PERF_FINISH_READBACK));
     else perf_finish(g->context, KV_PERF_FINISH_READBACK);
     CHECK(g, perf_transfer_finish(KV_PERF_TRANSFER_READBACK));

@@ -7,6 +7,8 @@ pub const CANVAS_H: u32 = 1080;
 pub const RENDER_W: u32 = 960;
 pub const RENDER_H: u32 = 540;
 
+pub mod experiments;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct Vertex {

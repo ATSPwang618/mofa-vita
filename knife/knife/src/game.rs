@@ -935,6 +935,8 @@ pub struct Game {
     group_cache: group_cache::Cache,
     #[cfg(target_os = "vita")]
     stage_prefix: stage_prefix::Cache,
+    #[cfg(target_os = "vita")]
+    vita_gpu_replay: crate::vita_gpu_replay::CaptureState,
     #[cfg(not(target_os = "vita"))]
     group_composite_rt: Option<RenderTarget>,
     /// FCLN focus lines / falling notes, the stage byte that restarts them on load (6569) and their
@@ -1235,6 +1237,8 @@ impl Game {
             group_cache: group_cache::Cache::default(),
             #[cfg(target_os = "vita")]
             stage_prefix: stage_prefix::Cache::default(),
+            #[cfg(target_os = "vita")]
+            vita_gpu_replay: crate::vita_gpu_replay::CaptureState::default(),
             #[cfg(not(target_os = "vita"))]
             group_composite_rt: None,
             focus: focus::Focus::default(),
@@ -6418,6 +6422,12 @@ impl Game {
         self.group_cache.begin_frame();
         let draws = self.stage.draws(&r.white, &self.border);
         #[cfg(target_os = "vita")]
+        {
+            let origin = self.vita_gpu_replay_origin();
+            self.vita_gpu_replay.capture(&draws, &r.white, origin,
+                self.stage.backdrop_drawn, self.stage_rt.tex.physical_size());
+        }
+        #[cfg(target_os = "vita")]
         if self.group_rt.is_none() && draws.iter().any(|d| !matches!(d, Draw::Stage(_))) {
             // First-use mandatory group targets precede optional ring admission.
             // A retained snapshot was already recorded before render_stage().
@@ -6537,6 +6547,67 @@ impl Game {
         #[cfg(target_os = "vita")]
         self.stage_producer.finish(&self.stage_rt);
         Ok(())
+    }
+
+    /// Arm before an ordinary render, then take the captured production list
+    /// only after that frame was submitted successfully. No extra Stage::draws
+    /// or update/save step is run by the capture itself.
+    #[cfg(target_os = "vita")]
+    pub fn vita_gpu_replay_arm(&mut self) -> anyhow::Result<()> {
+        anyhow::ensure!(self.story_movie.is_none() && self.movie.is_none() && !self.gallery_movie,
+            "GPU replay is unavailable while a movie is active");
+        self.vita_gpu_replay.arm()
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_gpu_replay_take_capture(&mut self)
+        -> Option<anyhow::Result<crate::vita_gpu_replay::FrozenStage>>
+    {
+        self.vita_gpu_replay.take()
+    }
+
+    #[cfg(target_os = "vita")]
+    pub(crate) fn vita_gpu_replay_origin(&self) -> crate::vita_gpu_replay::Origin {
+        crate::vita_gpu_replay::Origin { scene: self.scene_index, pc: self.pc,
+            update_frame: self.frame_no, frame_ms_bits: self.frame_ms.to_bits(), time_bits: self.time.to_bits() }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub(crate) fn vita_gpu_replay_production_targets(&self) -> [(usize,u64); 4] {
+        let pair = self.group_rt.as_ref();
+        [self.stage_rt.tex.render_identity(), self.scene_rt.tex.render_identity(),
+            pair.map_or((0,0),|p| p[0].tex.render_identity()),
+            pair.map_or((0,0),|p| p[1].tex.render_identity())]
+    }
+
+    #[cfg(target_os = "vita")]
+    pub(crate) fn vita_gpu_replay_record(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
+        frozen: &crate::vita_gpu_replay::FrozenStage, targets: &mut crate::vita_gpu_replay::ReplayTargets)
+    {
+        // Every fallible submission happens after these fields have already
+        // been restored. Replays use fresh local memoization, preserving all
+        // production cache owners, signatures and persistent group pixels.
+        std::mem::swap(&mut self.stage_rt,&mut targets.stage);
+        if let Some(scratch) = &mut targets.scratch { std::mem::swap(&mut self.scene_rt,scratch); }
+        std::mem::swap(&mut self.group_rt,&mut targets.groups);
+        let production_groups = std::mem::take(&mut self.group_cache);
+        let production_prefix = std::mem::take(&mut self.stage_prefix);
+        let backdrop = std::mem::replace(&mut self.stage.backdrop_drawn,frozen.backdrop);
+        // `render_stage_draws` contains a few production `expect` guards for
+        // impossible cache/target states. Replay must not leave these swapped
+        // owners behind if a diagnostic allocation or native admission turns
+        // one of those guards into a panic, so catch and resume only after the
+        // complete restoration below.
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.render_stage_draws(r,enc,frozen.draws.clone());
+        })).err();
+        self.stage.backdrop_drawn = backdrop;
+        self.stage_prefix = production_prefix;
+        self.group_cache = production_groups;
+        std::mem::swap(&mut self.group_rt,&mut targets.groups);
+        if let Some(scratch) = &mut targets.scratch { std::mem::swap(&mut self.scene_rt,scratch); }
+        std::mem::swap(&mut self.stage_rt,&mut targets.stage);
+        if let Some(payload) = panic { std::panic::resume_unwind(payload); }
     }
 
     fn render_stage_draws(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,

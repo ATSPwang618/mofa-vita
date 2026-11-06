@@ -77,6 +77,9 @@ int32_t kv_gxm_texture_seal(KvGxm *g, KvGxmTexture *texture);
 /* Triangle-list vertices follow the selected shader ABI: ordinary uniforms are
    equal across the draw; RimText28 has per-triangle hx/xyz and shared RGB24. IDs match
    Rust EffectShader / EffectBlend; params is two complete float4 uniforms. */
+/* Copies one <=33-element F32 group; the next BlurWeights draw validates and consumes it. */
+int32_t kv_gxm_set_blur_weights(KvGxm *g, float sigma, uint32_t half_taps,
+    const float *weights, uint32_t count);
 int32_t kv_gxm_draw_effect(KvGxm *g, const KvEffectVertex *vertices, uint32_t count,
     uint32_t shader, uint32_t blend, const KvGxmTexture *const textures[4], const float params[8]);
 int32_t kv_gxm_copy_texture(KvGxm *g, const KvGxmTexture *source, KvGxmTexture *destination);

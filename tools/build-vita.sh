@@ -99,8 +99,14 @@ export KNIFE_VITA_ATTRIBUTE2="${KNIFE_VITA_ATTRIBUTE2:-12}"
 export KNIFE_VITA_TITLE_ID="${KNIFE_VITA_TITLE_ID:-$TITLE_ID}"
 # Baked into the perf log header so a hardware log always names its package.
 export KNIFE_BUILD_TAG="${KNIFE_BUILD_TAG:-native540}"
+# This hardware test build enables the latest GPU candidates with two scenes
+# per render target. Only exact previous stock data-root profiles are expanded
+# at startup; custom profiles and explicit removals remain complete overrides.
+# GPU equivalence and performance acceptance still require the hardware run.
+export KNIFE_VITA_OPTIMIZATIONS="${KNIFE_VITA_OPTIMIZATIONS:-hardware-test}"
 # Validate the checked-in packaging input before compiling anything.
 if [[ "$MODE" = game ]]; then
+    python3 "$ROOT/tools/offline_vita_shaders.py" --check
     export KNIFE_VITA_SHADER_COMPILER="$ROOT/knife/vita/vendor/shacccg/libshacccg.suprx"
     python3 - "$KNIFE_VITA_SHADER_COMPILER" <<'CHECK_COMPILER'
 import hashlib, sys

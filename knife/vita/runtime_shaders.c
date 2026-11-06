@@ -25,7 +25,7 @@ enum { CACHE_ABI = 5, MAX_PROGRAM = 1024 * 1024, MIN_PROGRAM = 156 };
 #include "diagnostic_log.h"
 static struct {
     int attempted;
-    SceGxmProgram *programs[48];
+    SceGxmProgram *programs[128];
 } runtime;
 #ifndef KV_SHADER_CACHE_HOST_TEST
 static SceShaccCgSourceFile source;
@@ -44,17 +44,41 @@ _Static_assert(sizeof(CacheHeader) == 168, "shader cache header ABI");
 #endif
 static const char *const cache_root = KV_SHADER_CACHE_ROOT;
 static const char *validation_reason;
-static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 29 || (shader >= 32 && shader < 48); }
+static int full_material_shader(uint32_t shader) { return shader >= 54 && shader <= 56; }
+static int all_operation_shader(uint32_t shader) { return shader >= 64 && shader <= 87; }
+static int fetch_shader(uint32_t shader) { return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 29 || shader == 30 || shader == 31 || shader == 57 || (shader >= 32 && shader <= 52) || full_material_shader(shader) || all_operation_shader(shader); }
+/* Option bits are independent of the native program IDs. Disabled experiments
+   neither read cached binaries nor invoke the runtime compiler. */
+static int runtime_shader_enabled(uint32_t shader, uint64_t options) {
+    if (shader == 48) return (options & (UINT64_C(1) << 39)) != 0;
+    if (shader == 57) return (options & (UINT64_C(3) << 39)) == (UINT64_C(3) << 39);
+    /* IDs 30/31 are the r5 plain-material candidates.  Keep their source
+       cache and compiler path closed when the corresponding experiment is
+       disabled, just like the later Half/Blur candidates below. */
+    if (shader == 30 || shader == 31) return (options & (UINT64_C(1) << 30)) != 0;
+    if (shader >= 49 && shader <= 52) return (options & (UINT64_C(1) << 32)) != 0;
+    if (shader == 53) return (options & (UINT64_C(1) << 34)) != 0;
+    if (full_material_shader(shader)) return (options & (UINT64_C(1) << 37)) != 0;
+    if (all_operation_shader(shader)) return (options & (UINT64_C(1) << 38)) != 0;
+    return 1;
+}
 /* ID24 is a checked text-cache capability, never a shader entry. Source SHA
    changes invalidate prior Cg binaries without changing their metadata ABI. */
-static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 29, 15, 19, 20, 21, 18, 17,
-    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47 };
+static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 29, 54, 55, 56, 30, 31, 15, 19, 20, 21, 18, 17,
+    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+    48, 49, 50, 51, 52, 53, 57,
+    64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
+    76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87 };
 static int runtime_shader_id(uint32_t shader) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
         if (runtime_shader_ids[i] == shader) return 1;
     return 0;
 }
 static uint32_t runtime_entry_abi(uint32_t shader) {
+    if (shader == 57) return KNIFE_RUNTIME_ENTRY_ABI | 7U << 8 | 7U << 16;
+    /* Bind the shared entry to its compile-time operation, independently of
+       both the program ID and existing two-operation chain macro identity. */
+    if (all_operation_shader(shader)) return KNIFE_RUNTIME_ENTRY_ABI | (shader - 63) << 24;
     if (shader >= 32 && shader < 48) {
         const uint32_t ops[4] = {2, 11, 13, 19};
         // Cache identity includes the exact compile-time material macros.
@@ -63,6 +87,7 @@ static uint32_t runtime_entry_abi(uint32_t shader) {
     return KNIFE_RUNTIME_ENTRY_ABI;
 }
 static const char *entry_for(uint32_t shader) {
+    if (all_operation_shader(shader)) return "fs_ps_operation_fetch";
     switch (shader) {
         case 11: return "fs_alter"; /* Current source: encoded RGBA passthrough. */
         case 15: return "fs_group_composite";
@@ -77,8 +102,44 @@ static const char *entry_for(uint32_t shader) {
         case 25: return "fs_ps2_fetch";
         case 28: return "fs_rim_text_batched";
         case 29: return "fs_ps7_fetch";
+        case 30: return "fs_ps1_plain_fetch";
+        case 31: return "fs_ps6_plain_fetch";
+        case 48: return "fs_ps7_plain_fetch";
+        case 49: return "fs_ps1_plain_half_fetch";
+        case 50: return "fs_ps6_plain_half_fetch";
+        case 51: return "fs_ps7_plain_half_fetch";
+        case 52: return "fs_ps13_plain_half_fetch";
+        case 53: return "fs_blur_weights";
+        case 54: return "fs_ps1_full_fetch";
+        case 55: return "fs_ps6_full_fetch";
+        case 56: return "fs_ps13_full_fetch";
+        case 57: return "fs_ps_chain2_fetch";
         default: return shader >= 32 && shader < 48 ? "fs_ps_chain2_fetch" : NULL;
     }
+}
+/* Build the same exact macro vector for cache identity tests and the runtime
+   compiler. Shared all-OP source receives a literal operation at compile time. */
+static uint32_t runtime_macro_definitions(uint32_t shader, const char *defines[4], char values[2][32]) {
+    defines[0] = "KNIFE_RUNTIME_NATIVE_FETCH=1";
+    defines[1] = "KNIFE_RUNTIME_PS_SPECIALIZED=1";
+    defines[2] = defines[3] = NULL;
+    uint32_t count = fetch_shader(shader) ? (shader >= 19 ? 2 : 1) : 0;
+    if (all_operation_shader(shader)) {
+        snprintf(values[0], sizeof(values[0]), "KNIFE_PS_FULL_OP=%u", (unsigned)(shader - 63));
+        defines[2] = values[0]; count = 3;
+    } else if (shader >= 49 && shader <= 52) {
+        defines[2] = "KNIFE_RUNTIME_HALF_COLOR=1"; count = 3;
+    } else if (shader == 53) {
+        defines[0] = "KNIFE_RUNTIME_BLUR_WEIGHTS=1"; count = 1;
+    } else if (shader == 57) {
+        defines[2] = "KNIFE_CHAIN_OP_A=7"; defines[3] = "KNIFE_CHAIN_OP_B=7"; count = 4;
+    } else if (shader >= 32 && shader < 48) {
+        const uint32_t ops[4] = {2, 11, 13, 19};
+        snprintf(values[0], sizeof(values[0]), "KNIFE_CHAIN_OP_A=%u", (unsigned)ops[(shader-32)/4]);
+        snprintf(values[1], sizeof(values[1]), "KNIFE_CHAIN_OP_B=%u", (unsigned)ops[(shader-32)%4]);
+        defines[2] = values[0]; defines[3] = values[1]; count = 4;
+    }
+    return count;
 }
 static int runtime_any(void) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
@@ -114,7 +175,8 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     for (uint32_t i = size; i < bytes; ++i) if (data[i]) REJECT("nonzero_padding");
     /* Fragment colour is a distinct program flag, not an interpolated COLOR
        attribute. Require it in addition to the native output register flag. */
-    if (fetch_shader(shader) && (flags & UINT32_C(0xc0)) != UINT32_C(0xc0)) REJECT("native_color_read_flags");
+    if (fetch_shader(shader) && (flags & (shader == 81 ? UINT32_C(0x40) : UINT32_C(0xc0)))
+        != (shader == 81 ? UINT32_C(0x40) : UINT32_C(0xc0))) REJECT("native_color_read_flags");
     if (!fetch_shader(shader) && (flags & UINT32_C(0xc0))) REJECT("unexpected_native_color");
     uint32_t table, varyings, instructions;
     const uint32_t count = word(data + 36), instruction_count = word(data + 60);
@@ -126,7 +188,7 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     if (data[varyings + 10] != (fetch_shader(shader) ? 7 : 1) || data[varyings + 11] != 4)
         REJECT(fetch_shader(shader) ? "expected_native_uchar4_output" : "expected_float_color_output");
     const uint32_t uniform_words = word(data + 100);
-    unsigned sampler_bits = 0;
+    unsigned sampler_bits = 0, blur_weights = 0;
     for (uint32_t i = 0; i < count; ++i) {
         const uint32_t at = table + i * 16;
         uint32_t name;
@@ -136,7 +198,10 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
         const unsigned category = data[at + 4] & 15, type = data[at + 4] >> 4;
         const unsigned components = data[at + 5] & 15, container = data[at + 5] >> 4;
         const uint32_t index = word(data + at + 12);
-        if (word(data + at + 8) != 1 || category > 2) REJECT("parameter_array_or_category");
+        const uint32_t array_size = word(data + at + 8);
+        const int weights = shader == 53 && category == 1
+            && !strcmp((const char *)data + name, "uBlurWeights");
+        if (category > 2 || (array_size != 1 && !weights)) REJECT("parameter_array_or_category");
         if (category == 0) { if (components < 1 || components > 4 || index > 128) REJECT("attribute_shape"); continue; }
         if (type != 0) REJECT("uniform_or_sampler_not_f32");
         if (category == 2) {
@@ -145,6 +210,12 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
             if (fetch_shader(shader) && index == 1) REJECT("fetch_must_not_sample_backdrop");
             sampler_bits |= 1u << index;
         } else {
+            if (weights) {
+                if (blur_weights++ || components != 1 || array_size != 33 || container != 14
+                    || index > uniform_words || 33 > uniform_words - index)
+                    REJECT("blur_weight_array_shape_or_bounds");
+                continue;
+            }
             const char *const names[] = { "uTex0Size", "uTex1Size", "uSoftLutSize", "uQuadHx", "uQuadHy", "tu.params", "tu.params2" };
             const unsigned counts[] = { 2, 2, 2, 4, 4, 4, 4 };
             unsigned n = 0;
@@ -152,17 +223,35 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
             if (n == 7 || components != counts[n] || container != 14 || index > uniform_words || components > uniform_words - index) REJECT("uniform_name_shape_or_bounds");
         }
     }
+    if (shader == 53 && blur_weights != 1) REJECT("blur_weight_array_missing");
     if (!(sampler_bits & 1) || (shader == 15 && !(sampler_bits & 2))
         || (shader == 19 && !(sampler_bits & 4))) REJECT("required_sampler_missing");
     if (shader == 29 && sampler_bits != 13u) REJECT("ps7_requires_full_source_samplers");
-    if (shader >= 32 && shader < 48 && sampler_bits != 5u) REJECT("chain2_requires_two_sources");
+    if ((full_material_shader(shader) || all_operation_shader(shader)) && sampler_bits != (shader == 81 ? 9u : 13u)) REJECT("full_ps_requires_full_source_samplers");
+    if (((shader >= 32 && shader < 48) || shader == 57) && sampler_bits != 5u) REJECT("chain2_requires_two_sources");
     if (shader == 19 && (sampler_bits & ~5u)) REJECT("group19_unexpected_sampler");
-    if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25 || shader == 26 || shader == 28)
+    if ((shader == 11 || shader == 20 || shader == 21 || shader == 22 || shader == 23 || shader == 25 || shader == 26 || shader == 28 || shader == 30 || shader == 31 || (shader >= 48 && shader <= 53))
         && (sampler_bits & ~1u)) REJECT("plain_ps_unexpected_sampler");
     if (sceGxmProgramCheck((const SceGxmProgram *)program) < 0) REJECT("sceGxmProgramCheck");
     return 1;
 #undef REJECT
 }
+/* PC-compiled authored programs are immutable build inputs. Reject stale source
+ * identity before using them; readback/GPU equivalence is still a separate test. */
+#if !defined(KV_SHADER_CACHE_HOST_TEST) || defined(KV_OFFLINE_REAL_TEST)
+#include "shaders/generated/offline_programs.h"
+static SceGxmProgram *read_offline(uint32_t shader) {
+    if (strcmp(KNIFE_OFFLINE_SOURCE_SHA256,KNIFE_RUNTIME_SOURCE_SHA256)) return NULL;
+    unsigned bytes=0;
+    const unsigned char *blob=knife_offline_program(shader,&bytes);
+    if (!blob || !validate(blob,bytes,shader)) return NULL;
+    void *copy=malloc(bytes);
+    if (copy) memcpy(copy,blob,bytes);
+    return copy;
+}
+#else
+static SceGxmProgram *read_offline(uint32_t shader) { (void)shader; return NULL; }
+#endif
 static void path_for(char *path, size_t bytes, uint32_t shader) {
     snprintf(path, bytes, "%s/effects-%.64s-c%.64s-x%u-a%u-s%u.bin", cache_root,
         KNIFE_RUNTIME_SOURCE_SHA256, KNIFE_RUNTIME_COMPILER_SHA256,
@@ -284,16 +373,10 @@ static SceGxmProgram *compile_shader(uint32_t shader) {
     options.warningLevel = 3;
     options.warningsAsErrors = 1;
     options.performanceWarnings = 0;
-    const char *defines[4] = { "KNIFE_RUNTIME_NATIVE_FETCH=1", "KNIFE_RUNTIME_PS_SPECIALIZED=1", NULL, NULL };
-    char chain_a[32], chain_b[32];
+    const char *defines[4];
+    char macro_values[2][32];
     // Non-fetch entries never parse native declarations. Each failure is local.
-    options.macroDefinitionCount = fetch_shader(shader) ? (shader >= 19 ? 2 : 1) : 0;
-    if (shader >= 32 && shader < 48) {
-        const uint32_t ops[4] = {2, 11, 13, 19};
-        snprintf(chain_a,sizeof(chain_a),"KNIFE_CHAIN_OP_A=%u",(unsigned)ops[(shader-32)/4]);
-        snprintf(chain_b,sizeof(chain_b),"KNIFE_CHAIN_OP_B=%u",(unsigned)ops[(shader-32)%4]);
-        defines[2]=chain_a; defines[3]=chain_b; options.macroDefinitionCount=4;
-    }
+    options.macroDefinitionCount = runtime_macro_definitions(shader, defines, macro_values);
     options.macroDefinitions = defines;
     SceShaccCgCallbackList callbacks;
     compiler.initialize_callbacks(&callbacks, SCE_SHACCCG_TRIVIAL);
@@ -356,13 +439,21 @@ int kv_runtime_shader_initialize(void) {
     KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=initialize color=encoded-unorm8 output=uchar4 cache_abi=%u entry_abi=%u compiler_policy=%u source=%.16s compiler=%.16s extension=%.16s\n",
         CACHE_ABI, KNIFE_RUNTIME_ENTRY_ABI, KV_SHADER_COMPILER_POLICY,
         KNIFE_RUNTIME_SOURCE_SHA256, KNIFE_RUNTIME_COMPILER_SHA256, KV_SHADER_EXTENSION_ARCHIVE_SHA256);
-    unsigned cached = 0;
+    extern uint64_t kv_render_options(void);
+    const uint64_t options = kv_render_options();
+    unsigned cached = 0, enabled = 0, offline = 0;
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i) {
         const uint32_t shader = runtime_shader_ids[i];
-        runtime.programs[shader] = read_cache(shader);
+        if (!runtime_shader_enabled(shader, options)) continue;
+        ++enabled;
+        runtime.programs[shader] = read_offline(shader);
+        if (runtime.programs[shader]) ++offline;
+        else runtime.programs[shader] = read_cache(shader);
         cached += runtime.programs[shader] != NULL;
     }
-    if (cached == sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0])) return 1;
+    KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=offline embedded_ready=%u enabled=%u fallback_cache=%u source=%.16s\n",
+        offline,enabled,cached-offline,KNIFE_RUNTIME_SOURCE_SHA256);
+    if (cached == enabled) return 1;
     const char *const locations[] = { "app0:/sce_module/libshacccg.suprx", "ur0:/data/libshacccg.suprx",
         "ur0:/data/external/libshacccg.suprx", "ux0:/data/ArtemisVita/libshacccg.suprx" };
     int module = -1, first_error = 0, last_error = 0;
@@ -417,6 +508,7 @@ int kv_runtime_shader_initialize(void) {
                the old entries available; Rust selects only patched capabilities. */
             for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i) {
                 const uint32_t shader = runtime_shader_ids[i];
+                if (!runtime_shader_enabled(shader, options)) continue;
                 if (!runtime.programs[shader]) runtime.programs[shader] = compile_shader(shader);
             }
         } else KV_DIAGNOSTIC_PRINTF("[knife-shader] stage=compile result=skipped reason=extensions rc=%08x\n", (unsigned)extensions);

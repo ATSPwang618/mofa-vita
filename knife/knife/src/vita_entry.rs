@@ -38,6 +38,12 @@ fn build_identity() -> String {
         knife_perf::memory_budget::CPU_SOUND_BYTES)
 }
 
+fn quoted(value: &str) -> String {
+    let mut out = String::new();
+    knife_perf::json_string(&mut out, value);
+    out
+}
+
 const TITLE_ID: &str = match option_env!("KNIFE_VITA_TITLE_ID") {
     Some(id) => id,
     None => "KNIF00540",
@@ -156,6 +162,7 @@ impl PerfLog {
         let codec = knife_platform_vita::image::decode_stats();
         let audio = knife_platform_vita::audio_output::metrics::snapshot();
         let gpu = renderer.vita_performance_stats().ok();
+        let gpu_work = renderer.vita_work_stats_json();
         let gpu_timing = renderer.vita_gpu_timing().unwrap_or_default();
         let io = knife_core::io_metrics::snapshot();
         let (deferred_items, deferred_item_us, deferred_upload_us, deferred_bake_us) =
@@ -178,6 +185,7 @@ impl PerfLog {
             "\"peak_pending\":{},\"peak_ready\":{},\"worker_read_decode_us\":{},",
             "\"worker_max_read_decode_us\":{},\"gxm_stats_available\":{},",
             "\"gxm_draws\":{},\"gxm_frames\":{},",
+            "\"gpu_work\":{},",
             "\"gxm_main_mapped_bytes\":{},\"gxm_cdram_mapped_bytes\":{},\"gxm_parameter_reserved_bytes\":{},",
             "\"card_read_us\":{},\"card_read_calls\":{},\"card_read_bytes\":{},\"max_card_read_us\":{},",
             "\"nx_inflate_us\":{},\"nx_inflate_calls\":{},",
@@ -212,6 +220,7 @@ impl PerfLog {
             worker.pending, worker.ready, worker.active, worker.peak_pending, worker.peak_ready,
             worker.decode_us, worker.max_decode_us, gpu.is_some(),
             gpu.map(|g| g.draws).unwrap_or(0), gpu.map(|g| g.frames).unwrap_or(0),
+            gpu_work,
             main, cdram, parameter,
             io.card_read_us, io.card_read_calls, io.card_read_bytes, io.max_card_read_us,
             io.inflate_us, io.inflate_calls,
@@ -355,13 +364,21 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     // Runtime configuration no longer changes scene or composite dimensions.
 
     let optimization_file = format!("{PERF_ROOT}/optimization-profile.txt");
-    let selected = match std::fs::read_to_string(&optimization_file) {
-        Ok(text) => knife_perf::optimizations::parse(&text).map_err(anyhow::Error::msg)?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => knife_perf::optimizations::IMPLEMENTED,
+    let file_profile = match std::fs::read_to_string(&optimization_file) {
+        Ok(text) => Some(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error).context("reading optimization profile"),
     };
-    knife_perf::optimizations::set(selected);
-    knife_platform_vita::audit::set_options(selected);
+    let compiled_profile = option_env!("KNIFE_VITA_OPTIMIZATIONS")
+        .unwrap_or(knife_perf::optimizations::HARDWARE_TEST_PROFILE);
+    let selected = knife_perf::optimizations::resolve_startup(compiled_profile, file_profile.as_deref())
+        .map_err(anyhow::Error::msg)?;
+    knife_perf::optimizations::set(selected.mask);
+    knife_platform_vita::audit::set_options(selected.mask);
+    let profile_source = if selected.legacy_expanded { "legacy-stock-expanded" }
+        else if file_profile.is_some() { "file" } else { "compiled-default" };
+    log.event(&format!("OPTIMIZATIONS source={profile_source} legacy-expanded={} mask={} effective={}",
+        selected.legacy_expanded, selected.mask, knife_perf::optimizations::names()));
 
     log.event("SCENE fixed=960x540 composite=960x540 source=code");
     // Emit the selected dimensions before archive, font and renderer startup.
@@ -370,6 +387,15 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         Err(error) => { tracing::warn!("Optional Vita console metrics disabled: {error}"); None },
     };
     if perf.is_some() {
+        let record = format!(concat!("{{\"kind\":\"optimization_profile\",\"build_tag\":{},",
+            "\"compiled_profile\":{},\"source\":{},\"legacy_expanded\":{},\"legacy_profile\":{},",
+            "\"optimization_mask\":{},\"optimizations\":{}}}\n"),
+            quoted(BUILD_TAG), quoted(compiled_profile), quoted(profile_source), selected.legacy_expanded,
+            quoted(if selected.legacy_expanded { file_profile.as_deref().unwrap_or("").trim() } else { "" }),
+            selected.mask, quoted(&knife_perf::optimizations::names()));
+        if let Err(error) = knife_platform_vita::audit::console(&record) {
+            tracing::warn!("Optimization profile console record unavailable: {error}");
+        }
         if let Err(error) = watchdog::start() {
             tracing::warn!("Runtime watchdog unavailable: {error}");
         }
@@ -431,6 +457,17 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     }
     let mut last = Instant::now();
     let mut last_logged_buttons = 0;
+    // Read once, never poll the storage card while playing. An explicit request
+    // captures one normal production Stage without advancing its clock in replay.
+    let mut gpu_replay = match std::fs::read_to_string(format!("{PERF_ROOT}/gpu-replay.txt")) {
+        Ok(text) => match text.trim().split_whitespace().collect::<Vec<_>>().as_slice() {
+            ["current"] => Some((None, 0usize)),
+            [scene, pc] => scene.parse::<usize>().ok().zip(pc.parse::<usize>().ok())
+                .map(|(scene, pc)| (Some(scene), pc)),
+            _ => None,
+        },
+        Err(_) => None,
+    };
     loop {
         watchdog::frame(frame + 1);
         watchdog::game(&game);
@@ -473,14 +510,49 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         let render_started = perf.as_ref().map(|_| Instant::now());
         watchdog::game(&game);
         watchdog::phase(watchdog::RENDER);
+        if gpu_replay.is_some_and(|(scene, pc)| scene.is_none_or(|s| game.scene_index == s)
+            && game.current_pc() >= pc && !ui.game_paused()) {
+            if let Err(error) = game.vita_gpu_replay_arm() {
+                let _ = knife_platform_vita::audit::console(&format!("{{\"kind\":\"gpu_replay_error\",\"error\":{}}}\n", quoted(&error.to_string())));
+            }
+            gpu_replay = None;
+        }
         game.render(&mut renderer, &mut |game, renderer, quads| {
             ui.draw(game, renderer, quads)
         });
+        let replay_capture = game.vita_gpu_replay_take_capture();
+        let replayed = replay_capture.is_some();
+        if let Some(capture) = replay_capture {
+            let report = capture.and_then(|frozen| crate::vita_gpu_replay::run(
+                &mut game, &mut renderer, frozen, |_, _| {
+                    watchdog::frame(frame + 1);
+                    watchdog::phase(watchdog::RENDER);
+                }));
+            match report {
+                Ok(report) => for line in report.json_lines() {
+                    let _ = knife_platform_vita::audit::console(&(line + "\n"));
+                },
+                Err(error) => {
+                    let _ = knife_platform_vita::audit::console(&format!("{{\"kind\":\"gpu_replay_error\",\"error\":{}}}\n", quoted(&format!("{error:#}"))));
+                },
+            }
+            // The diagnostic's wall time must not advance the story clock or be
+            // classified as a production redraw frame in the next window.
+            last = Instant::now();
+            if let Some(perf_log) = &mut perf {
+                perf_log.pending_class = None;
+                perf_log.window = Instant::now();
+                perf_log.frames = Default::default();
+                perf_log.classes = Default::default();
+                perf_log.worst = None;
+                perf_log.begin_frame();
+            }
+        }
         frame += 1;
         watchdog::phase(watchdog::CACHE_MAINTENANCE);
         game.vita_cache_maintenance(&renderer, frame);
         watchdog::phase(watchdog::PERF_LOG);
-        if let (Some(perf_log), Some(render_started)) = (&mut perf, render_started) {
+        if let (false, Some(perf_log), Some(render_started)) = (replayed, &mut perf, render_started) {
             let render_us = render_started.elapsed().as_micros() as u64;
             let work_us = now.elapsed().as_micros() as u64;
             match perf_log.record(frame, work_us, update_us, render_us, wall_us, &game, &renderer, &ui) {

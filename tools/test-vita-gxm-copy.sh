@@ -36,6 +36,32 @@ project, build = map(Path, sys.argv[1:3])
 status = int(sys.argv[3])
 match = re.search(r'^RESULT (PASS|FAIL): (\d+) cases, (\d+) checks, (\d+) failures$', (build/'output.log').read_text(), re.M)
 if not match: raise SystemExit('Test did not reach its result marker')
+# Parse the real emitted JSON: enabled bits alone must never be called ready,
+# and every bounded summary must remain under the console's admission limit.
+records=[json.loads(line) for line in (build/'output.log').read_text().splitlines() if line.startswith('{')]
+capabilities=[r for r in records if r.get('kind')=='shader_capabilities']
+ready_keys=('full1_ready','full6_ready','full13_ready')
+if not capabilities or any(any(key not in r for key in ready_keys) for r in capabilities):
+    raise SystemExit('Missing actual full-material readiness in a startup capability summary')
+states=[tuple(r[key] for key in ready_keys) for r in capabilities]
+if (0,0,0) not in states or (1,0,1) not in states or (1,1,1) not in states:
+    raise SystemExit(f'Missing absent/rejected/independently-patched readiness states: {states}')
+if states[-2:]!=[(0,0,0),(0,0,0)]:
+    raise SystemExit('Enabled-but-uncompiled or registration-rejected candidates reported ready')
+routes=[r for r in records if r.get('kind')=='shader_fallback_routes']
+if len(routes)!=len(capabilities): raise SystemExit('Startup fallback routes missing from a capability summary')
+for route in routes:
+    if not all(value in route.get('quad_fallback_routes','') for value in
+            ('op1:30/64/54/17/14','op6:31/69/55/17/14','op13:21/76/56/17/14')):
+        raise SystemExit('Quad fallback order does not preserve plain/full/generic/snapshot priority')
+    if not all(value in route.get('group_fallback_routes','') for value in
+            ('op1:64/54/17/14','op6:69/55/17/14','op13:76/56/17/14')):
+        raise SystemExit('Group fallback order does not preserve full/generic/snapshot priority')
+    if route.get('selection')!='first_ready_and_source_compatible;14=destination_snapshot':
+        raise SystemExit('Fallback route log must describe readiness/source compatibility and snapshot route')
+for line in (build/'output.log').read_text().splitlines():
+    if line.startswith('{') and len((line+'\n').encode())>900:
+        raise SystemExit('JSON log exceeds the native console admission limit')
 def artifact(path):
     data=path.read_bytes()
     return dict(path=str(path),bytes=len(data),sha256=hashlib.sha256(data).hexdigest())

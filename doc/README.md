@@ -1,6 +1,6 @@
 # 技术文档索引
 
-文档对应 `perf/render` 基线 `7a65c2c` 加本地调整，最后整理于 **2026-11-05**。当前版本是 `stage-effect-r4-sparse-20261105`，IMG0436 的单 Draw 透明覆盖实现及验证边界见 [24](24-scene38-透明覆盖优化.md)。上一版 `stage-effect-r3-heavy-ps7-20261105`，针对最重场景增加完整材质 op7 专用程序；用户实机日志的PC1246全重绘窗口从约6.076改善到7.034 FPS，仍未达到流畅，比较边界见[22](22-op7专用shader实机复核.md)。r2 前缀扩展、空 draw 早退及显示冗余 clear 删除继续保持撤回。默认开启 VitaDeck 日志；Vita 继续关闭手动快进、保留 L 自动播放。继承 Extra 图集按成员直接读取、BGM 一秒 PCM 预读及读档/转场目标恢复。素材清单身份以 [08](08-素材与安装.md) 和源码内嵌 profile 为准。
+文档对应 `perf/render` 基线 `24b0467` 加本地调整，最后整理于 **2026-11-06**。当前实机候选是 `stage-effect-r9-op7-work-20261106`，新增全游戏材质条件下的FP32精简OP7与相邻双OP7有界融合，65个离线GXP；默认开启两项新开关并继承r8实验配置，详见 [35](35-op7-work.md)。r9已通过host/native/ARM/VPK检查，尚无实机FPS或GPU像素差分结果。r8默认策略见 [34](34-hardware-test-defaults.md)，全24OP路径见 [33](33-global-offline-shaders.md)，r5计划见 [31](31-stage-effect-r5-gpu-work.md)。历史约6.076→7.034 FPS结果见 [22](22-op7专用shader实机复核.md)，不能代替本版性能。VitaDeck默认开启；分辨率、素材、按键、音频和存档未附带调整。
 
 代码是实现事实来源。旧文档内的行号只辅助定位，以当前文件、常量和函数名为准。历史捕获、构建验证与实机验证分开表述：r2/r3/r4 使用旧的 480×270/720×404，后续 540p 优化记录也不能替代本次新素材包的实机回归。
 
@@ -32,12 +32,13 @@
 | [22-op7专用shader实机复核](22-op7专用shader实机复核.md) | 专用29已执行，最重窗口约6.08→7.03 FPS，剩余GPU等待与数据边界 |
 | [23-scene38-PC1246-脚本素材与融合可行性分析](23-scene38-PC1246-脚本素材与融合可行性分析.md) | 原始MZX逐条核验、27层/26图、屏幕透明覆盖、局部融合与mask边界；仅分析未改运行版本 |
 | [24-scene38-透明覆盖优化](24-scene38-透明覆盖优化.md) | r4 精确源身份、DXT5 alpha 支持域、单 Draw 稀疏顶点、验证与默认日志；实机收益待验 |
+| [31-stage-effect-r5-gpu-work](31-stage-effect-r5-gpu-work.md) | r5 全游戏 GPU 工作量优化、执行覆盖统计、Group owner 证明、有限专用 shader、固定回放和验证边界 |
 
 工具分类见 [tools/README.md](../tools/README.md)；感谢页维护见 [credit-intro](../tools/credit-intro/README.md)；全剧情图库处理见 [quality540](../tools/quality540/README.md)。
 
 ## 证据
 
-[`evidence/`](evidence/) 保留二十份机器可读摘要：
+[`evidence/`](evidence/) 保留以下机器可读摘要：
 
 - `09-render-audit-evidence.json`：历史渲染审计。
 - `10-asset-copy-evidence.json`：历史资源复制链。
@@ -58,6 +59,7 @@
 - `26-stage-effect-r3-ps7.json`：op7 完整材质专用程序、host 验证、带日志 ARM/VPK 身份；不代表实机收益。
 - `27-stage-effect-r3-hardware.json`：后续用户实机日志、shader29实际启用和PC1246目标窗口收益；不代表全程20 FPS或像素等价。
 - `28-scene38-fusion-feasibility.json`：原始MZX/生产解析器一致性、运行素材alpha与屏幕覆盖、具体融合候选和当前成品未变的身份；不是新shader性能验收。
+- `34-hardware-test-defaults.json`：r8默认组合、真实Half/Tiled路径、回归收据、EBOOT/VPK交付身份及尚未实机验收的边界。
 - `29-stage-effect-r4-sparse.json`：IMG0436 精确 DXT5 支持域和单 Draw 覆盖优化、host/ARM 验证、默认日志及新交付身份；未实机验证 FPS。
 
 旧 `doc/archive/` 可从提交 `a670193` 查询。旧探针 JSON、失效的 Windows 打包/交付记录及临时日志不再散放于当前工作树。证据内的旧工件路径是当时的身份记录，不保证相应临时副本仍保留。
@@ -69,3 +71,7 @@
 修改渲染更新 02/05，修改资源与预算更新 04，修改构建更新 03，修改日志更新 06，修改素材和安装身份更新根 README 与 08。目录保留政策更新 09。
 
 生成日志放 `.work/` 或已忽略的 `doc/logs/`，验证结束后清理；游戏资源只在 `dist/` 的两个指定目录保留，不恢复多套旧素材或整份回滚资源。
+
+- [32-r6完整材质Shader](32-stage-effect-r6-full-material.md)：三个完整材质入口的历史扩展。
+- [33-r7全游戏离线专用Shader](33-global-offline-shaders.md)：24种PS运算与63个PC预编译GXP的来源；默认配置以r8为准。
+- [34-r8默认开启实机测试路径](34-hardware-test-defaults.md)：最新hardware-test默认、Group/Half/Tiled/Blur/Scene实际选路、旧标准配置展开及日志核对。

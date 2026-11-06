@@ -176,7 +176,7 @@ mod menu_draw_diagnostic {
                 Command::Begin { target, .. } => add(target),
                 Command::Copy { src, dst, .. } => { add(src); add(dst); }
                 Command::Draw { textures, .. } => textures.iter().flatten().for_each(&mut add),
-                Command::End => {}
+                Command::End | Command::GroupCut(_) => {}
             }
         }
     }
@@ -409,6 +409,7 @@ struct NativeTexture {
     deferred: Option<DeferredSource>,
     last_used: Cell<u64>,
     content_version: Cell<u64>,
+    coverage: Cell<coverage::Stamp>,
     rebuild_us: Cell<u64>,
 }
 
@@ -564,7 +565,21 @@ enum DeferredKind {
 }
 
 impl NativeTexture {
-    fn changed(&self) { self.content_version.set(self.content_version.get().wrapping_add(1)); }
+    fn changed(&self) {
+        let version = self.content_version.get().wrapping_add(1);
+        self.content_version.set(version);
+        self.coverage.set(coverage::Stamp::unknown(version));
+    }
+    fn coverage_for(&self, encoder: u64) -> CoverageBound {
+        let stamp = self.coverage.get();
+        if stamp.version == self.content_version.get() && (stamp.pending == 0 || stamp.pending == encoder) {
+            stamp.bound
+        } else { CoverageBound::Unknown }
+    }
+    fn predict_coverage(&self, encoder: u64, bound: CoverageBound) {
+        self.changed();
+        self.coverage.set(coverage::Stamp { version: self.content_version.get(), pending: encoder, bound });
+    }
     fn resident_id(&self) -> Result<TextureId> {
         self.id.borrow().clone().context("texture is not resident in GXM")
     }
@@ -699,6 +714,26 @@ pub struct RenderTarget {
     pub tex: TexRef,
 }
 
+/// Conservative physical-pixel coverage supplied by a group producer.
+///
+/// A bound is used only for the final group composite draw. Producer clears,
+/// producer draws, and backdrop copies retain their full-canvas behavior. A
+/// rectangle is interpreted as `[x, y, width, height]` in the target's
+/// physical pixel space, with `(0, 0)` at the top-left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoverageBound {
+    Empty,
+    Rect { x: u32, y: u32, width: u32, height: u32 },
+    Full,
+    Unknown,
+}
+
+impl CoverageBound {
+    pub const fn rect(x: u32, y: u32, width: u32, height: u32) -> Self {
+        Self::Rect { x, y, width, height }
+    }
+}
+
 // The owner and its encoders share CPU-only scratch storage. Native submit
 // copies these vertices before returning; this never aliases a GXM arena.
 #[derive(Default)]
@@ -730,6 +765,12 @@ pub struct CommandEncoder {
     /// Target whose render pass is still open at the end of `commands`. Consecutive
     /// draws into the same target append to it instead of opening another pass.
     open: Option<Rc<NativeTexture>>,
+    coverage_id: u64,
+    coverage_open: Option<Rc<NativeTexture>>,
+}
+
+impl Drop for CommandEncoder {
+    fn drop(&mut self) { coverage::finish(&self.commands, self.coverage_id, false); }
 }
 
 /// Simulates a minimal barrier scheme: a pass needs a Finish only when it samples a
@@ -797,6 +838,7 @@ impl CommandEncoder {
     fn close_pass(&mut self) {
         if self.open.take().is_some() {
             self.commands.push(Command::End);
+            self.coverage_open = None;
         }
     }
 }
@@ -818,13 +860,24 @@ fn draw_uniforms_match(shader: EffectShader, a: &[Vertex], b: &[Vertex]) -> bool
     }
 }
 
+#[path = "vita_executed_work.rs"]
+mod executed_work;
+#[path = "vita_coverage.rs"]
+mod coverage;
+
+/// Successful native draw totals, sampled at the same boundary as FrameProbe.
+pub fn executed_work_snapshot() -> (u64,u64) { executed_work::snapshot() }
+
 enum Command {
     Begin {
         target: Rc<NativeTexture>,
         clear: Option<[f32; 4]>,
     },
     End,
+    /// CPU-only dependency proof; prevents cropped composites from coalescing.
+    GroupCut(coverage::GroupCut),
     Draw {
+        work: executed_work::DrawWork,
         vertices: Vec<Vertex>,
         shader: EffectShader,
         blend: EffectBlend,
@@ -842,6 +895,7 @@ impl CommandEncoder {
     fn append<C>(&mut self, commands: C) -> Result<()>
     where C: AsRef<[Command]> + IntoIterator<Item = Command> {
         let _record = Scope::new(Metric::CommandAppend);
+        let validation = (|| -> Result<usize> {
         let command_count = self
             .commands
             .len()
@@ -871,21 +925,37 @@ impl CommandEncoder {
         self.commands
             .try_reserve(commands.as_ref().len())
             .context("reserving frame command memory")?;
-        for command in commands.as_ref() {
-            match command {
-                Command::Begin { target, .. } => target.changed(),
-                Command::Copy { dst, .. } => dst.changed(),
-                _ => {},
+        Ok(vertex_bytes)
+        })();
+        let vertex_bytes = match validation {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                coverage::finish(&self.commands, self.coverage_id, false);
+                coverage::invalidate(commands.as_ref());
+                if let Some(target) = &self.coverage_open { target.changed(); }
+                return Err(error);
             }
-        }
+        };
+        let mut work_target = self.coverage_open.clone();
+        self.coverage_open = coverage::record(commands.as_ref(), self.coverage_id, self.coverage_open.take());
         // Coalesce a run of draws that share every bound state into one submission, the
         // way the reference Vita renderer batches quads: the driver cost is per draw, and
         // a heavy frame issues 60-95 of them.
         for mut command in commands {
+            match &mut command {
+                Command::Begin { target, .. } => work_target = Some(target.clone()),
+                Command::End => work_target = None,
+                Command::Draw { work, vertices, shader, blend, params, .. } => {
+                    let size = work_target.as_ref().map_or([0;2], |target|target.size);
+                    let role = work_target.as_ref().map_or(0, |target|scene_kind(target));
+                    *work = executed_work::DrawWork::prepare(*shader,*blend,*params,vertices,size,role);
+                }
+                _ => {},
+            }
             if knife_perf::enabled() {
-                if let Command::Draw { vertices, shader, blend, textures, params } = &command {
+                if let Command::Draw { vertices, shader, blend, textures, params, .. } = &command {
                     let reason = match self.commands.last() {
-                        Some(Command::Draw { vertices: last, shader: a, blend: b, textures: t, params: p }) => {
+                        Some(Command::Draw { vertices: last, shader: a, blend: b, textures: t, params: p, .. }) => {
                             if a != shader { Some(Metric::MergeShader) }
                             else if b != blend { Some(Metric::MergeBlend) }
                             else if p != params { Some(Metric::MergeParams) }
@@ -900,13 +970,14 @@ impl CommandEncoder {
                     if let Some(reason) = reason { knife_perf::add(reason,0,0); }
                 }
             }
-            if let Command::Draw { vertices, shader, blend, textures, params } = &mut command
+            if let Command::Draw { work, vertices, shader, blend, textures, params } = &mut command
                 && let Some(Command::Draw {
                     vertices: last_vertices,
                     shader: last_shader,
                     blend: last_blend,
                     textures: last_textures,
                     params: last_params,
+                    work: last_work,
                 }) = self.commands.last_mut()
                 && *last_shader == *shader
                 && *last_blend == *blend
@@ -924,6 +995,7 @@ impl CommandEncoder {
                 let copy = Scope::new(Metric::CommandMerge);
                 if *shader == EffectShader::RimTextBatched { knife_perf::add(Metric::RimBatchMerge,0,1); }
                 last_vertices.extend_from_slice(vertices);
+                last_work.merge(*work);
                 copy.finish((vertices.len() * std::mem::size_of::<Vertex>()) as u64, 0);
                 if knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM) {
                     self.vertex_reuse.borrow_mut().push(std::mem::take(vertices));
@@ -1082,6 +1154,11 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// Bounded executed-draw summary. The counters are updated only after a
+    /// successful native draw and are intentionally cumulative between log
+    /// windows, matching the existing audit-bank policy.
+    pub fn vita_work_stats_json(&self) -> String { executed_work::json() }
+
     /// Read current native mappings without flushing commands or retiring textures.
     /// These counters do not include Rust/newlib heap usage or total process RAM.
     #[cfg(target_os = "vita")]
@@ -1147,8 +1224,10 @@ impl Renderer {
             .with_uv_rect(uv[0], uv[1], uv[2], uv[3]);
         let reuse = self.vertex_reuse.borrow_mut().pop().unwrap_or_default();
         let vertices = quad_vertices_reusing(&quad, [960.0, 540.0], [1.0; 2], reuse)?;
+        let work = executed_work::DrawWork::prepare(EffectShader::Sprite,EffectBlend::Opaque,
+            [0.0;8],&vertices,target.tex.native.size,scene_kind(&target.tex.native));
         let mut commands = [Command::Begin { target: target.tex.native.clone(), clear: None },
-            Command::Draw { vertices, shader: EffectShader::Sprite, blend: EffectBlend::Opaque,
+            Command::Draw { work, vertices, shader: EffectShader::Sprite, blend: EffectBlend::Opaque,
                 textures: [Some(source.native.clone()), Some(self.white.native.clone()), None, Some(self.soft_lut.clone())],
                 params: [0.0; 8] }, Command::End];
         let submitted = execute(&self.device, &commands);
@@ -1174,7 +1253,8 @@ impl Renderer {
             native: Rc::new(NativeTexture {
                 device: self.device.clone(), id: RefCell::new(Some(id)),
                 size: [width, height], bpp: 0, srgb: false, render_target: false,
-                deferred: None, last_used: Cell::new(0), content_version: Cell::new(0), rebuild_us: Cell::new(0),
+                deferred: None, last_used: Cell::new(0), content_version: Cell::new(0),
+                coverage: Cell::new(coverage::Stamp::unknown(0)), rebuild_us: Cell::new(0),
             }),
             width, height, sparse_coverage: None,
         }))
@@ -1593,7 +1673,8 @@ impl Renderer {
             bpp: if matches!(&kind, DeferredKind::GxtAltered { .. }) { 0 } else { 4 },
             srgb: false, render_target: false,
             deferred: Some(DeferredSource { bytes, label: label.into(), kind }),
-            last_used: Cell::new(0), content_version: Cell::new(0), rebuild_us: Cell::new(0),
+            last_used: Cell::new(0), content_version: Cell::new(0),
+            coverage: Cell::new(coverage::Stamp::unknown(0)), rebuild_us: Cell::new(0),
         });
         self.device.encoded_bytes.set(total);
         knife_perf::gauge_set(Gauge::EncodedBytes, total as u64);
@@ -1710,7 +1791,7 @@ impl Renderer {
                 Command::Copy { src, dst, .. } => {
                     pinned.insert(Rc::as_ptr(src)); pinned.insert(Rc::as_ptr(dst));
                 }
-                Command::End => {}
+                Command::End | Command::GroupCut(_) => {}
             }
         }
         for q in upcoming {
@@ -2003,7 +2084,7 @@ impl Renderer {
         let same_target = encoder.open.as_ref().is_some_and(|open|
             Rc::ptr_eq(open, &target.tex.native));
         if !same_target { encoder.close_pass(); }
-        let draw = Command::Draw { vertices, shader: EffectShader::Alter,
+        let draw = Command::Draw { work: executed_work::DrawWork::pending(), vertices, shader: EffectShader::Alter,
             blend: EffectBlend::Alpha,
             textures: [Some(source.tex.native.clone()), Some(self.white.native.clone()),
                 Some(self.white.native.clone()), Some(self.soft_lut.clone())],
@@ -2011,7 +2092,6 @@ impl Renderer {
         if same_target { encoder.append([draw])?; }
         else { encoder.append([Command::Begin { target: target.tex.native.clone(), clear: None }, draw])?; }
         encoder.open = Some(target.tex.native.clone());
-        target.tex.native.changed();
         Ok(())
     }
 
@@ -2025,7 +2105,6 @@ impl Renderer {
         let _record = Scope::new(Metric::DrawRecord);
         self.check_encoder(encoder)?;
         self.check_target(target)?;
-        target.tex.native.changed();
         if let Some(clear) = clear {
             ensure!(clear.iter().all(|v| v.is_finite()), "nonfinite clear color");
         }
@@ -2045,7 +2124,40 @@ impl Renderer {
         let fetch_dodge_alpha = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_OP7)
             && self.device.call(|g| g.shader_available(29))?;
+        let plain_material_enabled = fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_PLAIN_MATERIAL);
+        let fetch_plain_add = plain_material_enabled && self.device.call(|g| g.shader_available(30))?;
+        let fetch_plain_dodge = plain_material_enabled && self.device.call(|g| g.shader_available(31))?;
+        let fetch_plain_op7 = fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_PLAIN_OP7)
+            && self.device.call(|g| g.shader_available(48))?;
+        let full_material_enabled = fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FULL_MATERIAL);
+        let fetch_full_add = full_material_enabled && self.device.call(|g| g.shader_available(54))?;
+        let fetch_full_dodge = full_material_enabled && self.device.call(|g| g.shader_available(55))?;
+        let fetch_full_overlay = full_material_enabled && self.device.call(|g| g.shader_available(56))?;
         let fetch_plain_normal = fetch_enabled && self.device.call(|g| g.shader_available(23))?;
+        let operation_shaders = if fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_ALL_OPERATIONS) {
+            self.device.call(|g| {
+                let mut shaders = [None; 24];
+                for (index, shader) in ALL_PS_SHADERS.into_iter().enumerate() {
+                    if g.shader_available(shader as u32)? { shaders[index] = Some(shader); }
+                }
+                Ok(shaders)
+            })?
+        } else { [None; 24] };
+        let half_shaders = if fetch_enabled
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::HALF_COLOR) {
+            self.device.call(|g| {
+                let mut shaders = [None; 4];
+                for (index, shader) in [EffectShader::PsHalf1, EffectShader::PsHalf6,
+                    EffectShader::PsHalf7, EffectShader::PsHalf13].into_iter().enumerate() {
+                    if g.shader_available(shader as u32)? { shaders[index] = Some(shader); }
+                }
+                Ok(shaders)
+            })?
+        } else { [None; 4] };
         let blend_chain = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::BLEND_CHAIN)
             && !target.tex.native.srgb && self.device.call(|g| g.shader_available(27))?;
@@ -2054,15 +2166,49 @@ impl Renderer {
         let plain_forcealpha = knife_perf::optimizations::enabled(knife_perf::optimizations::PLAIN_FORCEALPHA)
             && self.device.call(|g| g.shader_available(26))?;
         let ps_shader = |q: &Quad, op| {
+            // The independently selected FP32 plain OP7 preserves the generic
+            // operation exactly and wins over Half only for this material.
+            if op == PsOp::DodgeAlpha && fetch_plain_op7 && plain_material_ps_source(q) {
+                return Some(EffectShader::PsPlain7);
+            }
+            // Explicit hardware-test selection. Complex source processing and
+            // group composites retain the complete FP32 source path.
+            let half_index = match op { PsOp::Add => Some(0), PsOp::Dodge => Some(1),
+                PsOp::DodgeAlpha => Some(2), PsOp::Overlay => Some(3), _ => None };
+            if plain_material_ps_source(q)
+                && let Some(shader) = half_index.and_then(|index| half_shaders[index]) {
+                return Some(shader);
+            }
             // ID29 keeps the complete PS source contract, including all material
             // inputs. Unlike the plain specializations it needs no source gate.
-            if op == PsOp::DodgeAlpha && fetch_dodge_alpha {
-                Some(EffectShader::PsFetch7)
-            } else if op == PsOp::Normal && fetch_plain_normal && plain_ps19_source(q) {
+            if op == PsOp::Add && fetch_plain_add && plain_material_ps_source(q) {
+                Some(EffectShader::PsFetch1)
+            } else if op == PsOp::Dodge && fetch_plain_dodge && plain_material_ps_source(q) {
+                Some(EffectShader::PsFetch6)
+            } else if op == PsOp::Overlay && fetch_overlay && (plain_ps_source(q)
+                || (plain_material_enabled && plain_material_ps_source(q))) {
+                Some(EffectShader::PsFetch13)
+            } else if op==PsOp::HardLight && fetch_hard_light && plain_ps_source(q) {
+                Some(EffectShader::PsFetch11)
+            } else if op==PsOp::Darken && fetch_darken && plain_ps_source(q) {
+                Some(EffectShader::PsFetch2)
+            } else if op==PsOp::Normal && fetch_plain_normal && plain_ps19_source(q) {
                 Some(EffectShader::PsPlain19)
+            } else if let Some(shader)=operation_shaders[op as usize-1] {
+                Some(shader)
+            } else if op == PsOp::DodgeAlpha && fetch_dodge_alpha {
+                Some(EffectShader::PsFetch7)
+            } else if op == PsOp::Add && fetch_full_add {
+                Some(EffectShader::PsFull1)
+            } else if op == PsOp::Dodge && fetch_full_dodge {
+                Some(EffectShader::PsFull6)
+            } else if op == PsOp::Overlay && fetch_full_overlay {
+                Some(EffectShader::PsFull13)
             } else {
                 select_ps_fetch(op, fetch_general, fetch_normal,
-                    fetch_hard_light && plain_ps_source(q), fetch_overlay && plain_ps_source(q),
+                    fetch_hard_light && plain_ps_source(q),
+                    fetch_overlay && (plain_ps_source(q)
+                        || (plain_material_enabled && plain_material_ps_source(q))),
                     fetch_darken && plain_ps_source(q))
             }
         };
@@ -2199,6 +2345,7 @@ impl Renderer {
                     None => (self.white.native.clone(), -1.0, 0.0),
                 };
                 commands.push(Command::Draw {
+                    work: executed_work::DrawWork::pending(),
                     vertices,
                     shader: fetch_shader.unwrap_or(EffectShader::Ps),
                     blend: EffectBlend::Opaque,
@@ -2263,6 +2410,7 @@ impl Renderer {
                     None => (source_shader(q), None, [0.0; 8]),
                 } };
                 commands.push(Command::Draw {
+                    work: executed_work::DrawWork::pending(),
                     vertices,
                     shader,
                     blend: if direct_ps { EffectBlend::Opaque } else { effect_blend(q.blend) },
@@ -2291,15 +2439,29 @@ impl Renderer {
         target: &RenderTarget, pixel: &RenderTarget, mask: &RenderTarget,
         scratch: &RenderTarget, blend: Blend, alpha: f32) -> Result<()>
     {
+        self.try_group_composite_via_scratch_region(
+            encoder, target, pixel, mask, scratch, blend, alpha, CoverageBound::Full,
+        )
+    }
+
+    /// Scratch fallback variant with the same conservative final-composite
+    /// bound as the fused path. Pixel/mask producer work and the scratch copy
+    /// remain full size; only the final target write may be narrowed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_group_composite_via_scratch_region(&mut self, encoder: &mut CommandEncoder,
+        target: &RenderTarget, pixel: &RenderTarget, mask: &RenderTarget,
+        scratch: &RenderTarget, blend: Blend, alpha: f32, requested: CoverageBound) -> Result<()>
+    {
         self.check_encoder(encoder)?;
         ensure!(alpha.is_finite(), "nonfinite group opacity");
+        let requested = group_owner_coverage(encoder, pixel, mask, requested);
         let fused_layout = !target.tex.native.srgb && !pixel.tex.native.srgb && !mask.tex.native.srgb;
         let fused_program = if let Blend::Ps(op) = blend {
             self.ps_fetch_for_target(target, op)?.is_some()
         } else { self.device.call(|g| g.shader_available(15))? };
         if knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_FUSED)
             && fused_layout && fused_program {
-            return self.try_group_composite(encoder, target, pixel, mask, blend, alpha);
+            return self.try_group_composite_region(encoder, target, pixel, mask, blend, alpha, requested);
         }
         encoder.close_pass();
         let surfaces = [target, pixel, mask, scratch];
@@ -2321,9 +2483,15 @@ impl Renderer {
         self.try_draw(encoder, scratch, None, &[
             Quad { blend: Blend::MaskAlpha, ..Quad::rect(mask.tex.clone(), full, [1.0; 4]) },
         ])?;
-        self.try_draw(encoder, target, None, &[
-            Quad { blend, ..Quad::rect(scratch.tex.clone(), full, [1.0, 1.0, 1.0, alpha]) },
-        ])
+        let requested = group_composite_coverage(group_owner_coverage(encoder, pixel, mask, requested), blend);
+        if matches!(requested, CoverageBound::Rect { .. }) {
+            encoder.close_pass();
+            encoder.append([Command::GroupCut(coverage::GroupCut::new(
+                [pixel.tex.native.clone(), mask.tex.native.clone()], [1.0, 1.0, 1.0, alpha]))])?;
+        }
+        let composite = group_composite_quad(scratch.tex.clone(), target.tex.width,
+            target.tex.height, target.tex.physical_size(), requested, blend, alpha);
+        self.try_draw(encoder, target, None, &[composite])
     }
 
     /// Runtime-compiled corrected program, selected only after native capability
@@ -2342,10 +2510,26 @@ impl Renderer {
         if target.tex.native.srgb || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FETCH) {
             return Ok(None);
         }
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::PS_ALL_OPERATIONS) {
+            let shader=ALL_PS_SHADERS[op as usize-1];
+            if self.device.call(|g|g.shader_available(shader as u32))? {return Ok(Some(shader));}
+        }
         if op == PsOp::DodgeAlpha
             && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_OP7)
             && self.device.call(|g| g.shader_available(29))? {
             return Ok(Some(EffectShader::PsFetch7));
+        }
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FULL_MATERIAL) {
+            let dedicated = match op {
+                PsOp::Add => Some(EffectShader::PsFull1),
+                PsOp::Dodge => Some(EffectShader::PsFull6),
+                PsOp::Overlay => Some(EffectShader::PsFull13),
+                _ => None,
+            };
+            if let Some(shader) = dedicated
+                && self.device.call(|g| g.shader_available(shader as u32))? {
+                return Ok(Some(shader));
+            }
         }
         // This method is used only by full-layout group composites. Their
         // fixed vertices/params satisfy the independent group19 ABI.
@@ -2357,6 +2541,19 @@ impl Renderer {
 
     pub fn try_group_composite(&mut self, encoder: &mut CommandEncoder, target: &RenderTarget,
         pixel: &RenderTarget, mask: &RenderTarget, blend: Blend, alpha: f32) -> Result<()>
+    {
+        self.try_group_composite_region(encoder, target, pixel, mask, blend, alpha, CoverageBound::Full)
+    }
+
+    /// Record the final group composite into a conservative physical-pixel
+    /// region. Producer draws, clears and PS backdrop copies stay full-canvas;
+    /// only the final composite geometry is narrowed. The optional path is
+    /// gated by GROUP_BOUNDS and requires transparent source pixels to leave
+    /// both destination colour and alpha unchanged for the selected blend.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_group_composite_region(&mut self, encoder: &mut CommandEncoder,
+        target: &RenderTarget, pixel: &RenderTarget, mask: &RenderTarget,
+        blend: Blend, alpha: f32, requested: CoverageBound) -> Result<()>
     {
         self.check_encoder(encoder)?;
         self.check_target(target)?;
@@ -2370,6 +2567,10 @@ impl Renderer {
             ensure!(!Rc::ptr_eq(&target.tex.native, &source.tex.native),
                 "group composite cannot sample its active target");
         }
+        let requested = group_composite_coverage(group_owner_coverage(encoder, pixel, mask, requested), blend);
+        let Some(vertices) = group_composite_vertices(requested, physical, [1., 1., 1., alpha]) else {
+            return Ok(());
+        };
         let same_target = encoder.open.as_ref().is_some_and(|open|
             Rc::ptr_eq(open, &target.tex.native));
         if !same_target { encoder.close_pass(); }
@@ -2394,8 +2595,13 @@ impl Renderer {
                 self.white.native.clone(), [0.; 8])
         };
         if !open { commands.push(Command::Begin { target: target.tex.native.clone(), clear: None }); }
+        if matches!(requested, CoverageBound::Rect { .. }) {
+            commands.push(Command::GroupCut(coverage::GroupCut::new(
+                [pixel.tex.native.clone(), mask.tex.native.clone()], [1.0, 1.0, 1.0, alpha])));
+        }
         commands.push(Command::Draw {
-            vertices: fullscreen_verts([1., 1., 1., alpha]).to_vec(), shader, blend: native_blend,
+            work: executed_work::DrawWork::pending(),
+            vertices, shader, blend: native_blend,
             textures: [Some(pixel.tex.native.clone()), Some(second), Some(third), Some(self.soft_lut.clone())],
             params,
         });
@@ -2453,6 +2659,7 @@ impl Renderer {
                 clear: None,
             },
             Command::Draw {
+                work: executed_work::DrawWork::pending(),
                 vertices: fullscreen_verts([1.0; 4]).to_vec(),
                 shader: EffectShader::Transition,
                 blend: EffectBlend::Opaque,
@@ -2526,14 +2733,19 @@ impl Renderer {
             params.iter().all(|v| v.is_finite()) && params[3] < 2_147_483_648.0,
             "blur parameters overflow their native representation"
         );
+        let shader = if knife_perf::optimizations::enabled(knife_perf::optimizations::BLUR_WEIGHTS)
+            && params[3] <= 16.0 && self.device.call(|g| g.shader_available(53))? {
+            EffectShader::BlurWeights
+        } else { EffectShader::Blur };
         encoder.append(vec![
             Command::Begin {
                 target: dst.tex.native.clone(),
                 clear: None,
             },
             Command::Draw {
+                work: executed_work::DrawWork::pending(),
                 vertices: fullscreen_verts([1.0; 4]).to_vec(),
-                shader: EffectShader::Blur,
+                shader,
                 blend: EffectBlend::Opaque,
                 textures: [
                     Some(src.native.clone()),
@@ -2589,7 +2801,6 @@ impl Renderer {
             "target copy source and destination alias"
         );
         encoder.close_pass();
-        dst.tex.native.changed();
         encoder.append(vec![Command::Copy {
             metric: Metric::CopyTarget,
             src: src.tex.native.clone(),
@@ -2606,6 +2817,8 @@ impl Renderer {
             } else { Vec::new() },
             vertex_bytes: 0,
             open: None,
+            coverage_id: coverage::encoder_id(),
+            coverage_open: None,
         }
     }
 
@@ -2642,11 +2855,13 @@ impl Renderer {
         }
         #[cfg(target_os = "vita")]
         let exec_start = std::time::Instant::now();
+        coverage::before_submit(&mut encoder.commands, encoder.coverage_id);
         if let Err(error) = execute_with_admission(&self.device, &encoder.commands, &mut admit) {
             #[cfg(target_os = "vita")]
             menu_draw_diagnostic::frame_pressure(&encoder.commands);
             return Err(error);
         }
+        coverage::finish(&encoder.commands, encoder.coverage_id, true);
         #[cfg(target_os = "vita")]
         frame_metrics::add(&frame_metrics::EXEC_US, exec_start);
         if !self.hidden {
@@ -2749,7 +2964,8 @@ fn make_texture_inner(
             srgb,
             render_target,
             deferred: None,
-            last_used: Cell::new(0), content_version: Cell::new(0), rebuild_us: Cell::new(0),
+            last_used: Cell::new(0), content_version: Cell::new(0),
+            coverage: Cell::new(coverage::Stamp::unknown(0)), rebuild_us: Cell::new(0),
         });
     #[cfg(target_os = "vita")]
     menu_draw_diagnostic::texture("CREATE", &native, "");
@@ -2772,6 +2988,8 @@ fn select_ps_fetch(op: PsOp, general: bool, normal: bool,
     else if general { Some(EffectShader::PsFetch) } else { None }
 }
 
+const ALL_PS_SHADERS:[EffectShader;24]=[EffectShader::PsAll1,EffectShader::PsAll2,EffectShader::PsAll3,EffectShader::PsAll4,EffectShader::PsAll5,EffectShader::PsAll6,EffectShader::PsAll7,EffectShader::PsAll8,EffectShader::PsAll9,EffectShader::PsAll10,EffectShader::PsAll11,EffectShader::PsAll12,EffectShader::PsAll13,EffectShader::PsAll14,EffectShader::PsAll15,EffectShader::PsAll16,EffectShader::PsAll17,EffectShader::PsAll18,EffectShader::PsAll19,EffectShader::PsAll20,EffectShader::PsAll21,EffectShader::PsAll22,EffectShader::PsAll23,EffectShader::PsAll24];
+
 fn select_group_ps_fetch(op: PsOp, general: bool, normal: bool, group_normal: bool) -> Option<EffectShader> {
     if op == PsOp::Normal && group_normal { Some(EffectShader::PsGroup19) }
     else { select_ps_fetch(op, general, normal, false, false, false) }
@@ -2779,6 +2997,10 @@ fn select_group_ps_fetch(op: PsOp, general: bool, normal: bool, group_normal: bo
 
 fn plain_ps_source(q: &Quad) -> bool {
     q.shade == Shade::Sprite && plain_material(q)
+}
+
+fn plain_material_ps_source(q: &Quad) -> bool {
+    matches!(q.shade, Shade::Sprite | Shade::Fill | Shade::NoAlpha) && plain_material(q)
 }
 
 fn plain_material(q: &Quad) -> bool {
@@ -2962,7 +3184,7 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
                 for texture in textures.iter().flatten() { add(texture); }
             }
             Command::Copy { src, dst, .. } => { add(src); add(dst); }
-            Command::End => {},
+            Command::End | Command::GroupCut(_) => {},
         }
     }
     let mut required = required.into_iter().map(|texture| {
@@ -3220,6 +3442,7 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
         let mut last_pass_label: Option<String> = None;
         for (_command_index, command) in commands.iter().enumerate() {
             let outcome = (|| match command {
+                Command::GroupCut(_) => Ok(()),
                 Command::Begin { target, clear } => {
                     if open {
                         return Err("encoder attempted nested GXM render passes".into());
@@ -3231,6 +3454,7 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     for next in &commands[_command_index + 1..] {
                         match next {
                             Command::End | Command::Begin { .. } | Command::Copy { .. } => break,
+                            Command::GroupCut(_) => {},
                             Command::Draw { textures, shader, blend, .. } => {
                                 if *shader == EffectShader::Alter { kind = 9; }
                                 else if *blend == EffectBlend::MaskAlpha { kind = 4; }
@@ -3286,6 +3510,7 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     ended
                 }
                 Command::Draw {
+                    work,
                     vertices,
                     shader,
                     blend,
@@ -3309,8 +3534,6 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     #[cfg(target_os = "vita")]
                     let diagnostic_draw = menu_draw_diagnostic::draw_begin(device, _command_index,
                         vertices, *shader, *blend, textures, &ids, *params, diagnostic_target);
-                    if matches!(*shader, EffectShader::Ps | EffectShader::PsFetch | EffectShader::PsFetch19 | EffectShader::PsGroup19 | EffectShader::PsFetch11 | EffectShader::PsFetch13 | EffectShader::PsPlain19 | EffectShader::PsFetch2 | EffectShader::PsFetch7) || params[7] == -18.0 { knife_perf::record_ps(params[0] as u32); }
-                    if *shader == EffectShader::PsChain2 { knife_perf::record_ps(params[0] as u32); knife_perf::record_ps(params[1] as u32); }
                     let result = g.draw_effect(
                         vertices,
                         *shader,
@@ -3318,6 +3541,9 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                         std::array::from_fn(|i| ids[i].as_ref()),
                         *params,
                     );
+                    if result.is_ok() {
+                        executed_work::record_success(*work);
+                    }
                     #[cfg(target_os = "vita")]
                     menu_draw_diagnostic::draw_end(diagnostic_draw, &result);
                     result
@@ -3537,6 +3763,124 @@ fn scene_size(width: u32, height: u32) -> [u32; 2] {
     [width.div_ceil(divisor).max(1), height.div_ceil(divisor).max(1)]
 }
 
+fn group_owner_coverage(encoder: &CommandEncoder, pixel: &RenderTarget, mask: &RenderTarget,
+    requested: CoverageBound) -> CoverageBound
+{
+    if !knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_BOUNDS) { return CoverageBound::Full; }
+    let owner_bound = coverage::intersection(pixel.tex.native.coverage_for(encoder.coverage_id),
+        mask.tex.native.coverage_for(encoder.coverage_id));
+    // Full is the legacy caller's request, so it automatically gets the known
+    // producer coverage. Explicit Unknown always retains its full fallback.
+    match requested {
+        CoverageBound::Full => owner_bound,
+        CoverageBound::Unknown => CoverageBound::Unknown,
+        _ if matches!(owner_bound, CoverageBound::Unknown) => CoverageBound::Unknown,
+        _ => coverage::intersection(requested, owner_bound),
+    }
+}
+
+fn group_composite_coverage(requested: CoverageBound, blend: Blend) -> CoverageBound {
+    // Bounds describe the producer's nonzero source footprint. Opaque writes
+    // transparent black outside it; MaskAlpha clears destination alpha there.
+    // PS modes have their own opacity/alpha semantics, so keep their complete
+    // original write. This applies to Empty as well as Rect.
+    let neutral_transparent_source = matches!(blend,
+        Blend::Alpha | Blend::Add | Blend::Sub | Blend::Multiply | Blend::Screen
+        | Blend::Over | Blend::Footprint);
+    if knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_BOUNDS)
+        && neutral_transparent_source && !matches!(requested, CoverageBound::Empty) {
+        requested
+    } else {
+        // An elided draw has no retained fallback command to restore if a source
+        // is mutated after recording. Keep Empty's complete final write for now.
+        CoverageBound::Full
+    }
+}
+
+/// Build the final composite geometry with the original canvas-to-source UV
+/// mapping. Invalid or degenerate rectangles deliberately use the full geometry
+/// so a bad optional bound cannot erase a group's output.
+fn group_composite_vertices(
+    coverage: CoverageBound,
+    physical: [u32; 2],
+    color: [f32; 4],
+) -> Option<Vec<Vertex>> {
+    let CoverageBound::Rect { x, y, width, height } = coverage else {
+        return (!matches!(coverage, CoverageBound::Empty))
+            .then(|| fullscreen_verts(color).to_vec());
+    };
+    let [canvas_w, canvas_h] = physical;
+    let Some(x_end) = x.checked_add(width) else {
+        return Some(fullscreen_verts(color).to_vec());
+    };
+    let Some(y_end) = y.checked_add(height) else {
+        return Some(fullscreen_verts(color).to_vec());
+    };
+    if canvas_w == 0 || canvas_h == 0 || x >= canvas_w || y >= canvas_h {
+        return Some(fullscreen_verts(color).to_vec());
+    }
+    let x_end = x_end.min(canvas_w);
+    let y_end = y_end.min(canvas_h);
+    if x >= x_end || y >= y_end {
+        return Some(fullscreen_verts(color).to_vec());
+    }
+    let x0 = (x as f32 / canvas_w as f32) * 2.0 - 1.0;
+    let x1 = (x_end as f32 / canvas_w as f32) * 2.0 - 1.0;
+    let y0 = 1.0 - (y as f32 / canvas_h as f32) * 2.0;
+    let y1 = 1.0 - (y_end as f32 / canvas_h as f32) * 2.0;
+    let u0 = x as f32 / canvas_w as f32;
+    let u1 = x_end as f32 / canvas_w as f32;
+    let v0 = y as f32 / canvas_h as f32;
+    let v1 = y_end as f32 / canvas_h as f32;
+    let mut vertices = fullscreen_verts(color).to_vec();
+    for vertex in &mut vertices {
+        let left = vertex.pos[0] < 0.0;
+        let top = vertex.pos[1] > 0.0;
+        vertex.pos[0] = if left { x0 } else { x1 };
+        vertex.pos[1] = if top { y0 } else { y1 };
+        // Preserve the source's full-canvas mapping: this destination region
+        // samples its corresponding source rectangle instead of stretching
+        // the entire source into the clipped write area.
+        vertex.uv = [if left { u0 } else { u1 }, if top { v0 } else { v1 }];
+    }
+    Some(vertices)
+}
+
+fn group_composite_quad(
+    tex: TexRef,
+    logical_w: u32,
+    logical_h: u32,
+    physical: [u32; 2],
+    coverage: CoverageBound,
+    blend: Blend,
+    alpha: f32,
+) -> Quad {
+    let [pw, ph] = physical;
+    let (x, y, w, h, u0, v0, u1, v1) = match coverage {
+        CoverageBound::Rect { x, y, width, height }
+            if pw != 0 && ph != 0 && width > 0 && height > 0 && x < pw && y < ph
+                && x.checked_add(width).is_some() && y.checked_add(height).is_some() => {
+                let x1 = x.checked_add(width).unwrap().min(pw);
+                let y1 = y.checked_add(height).unwrap().min(ph);
+                if x1 <= x || y1 <= y {
+                    (0.0, 0.0, logical_w as f32, logical_h as f32, 0.0, 0.0, 1.0, 1.0)
+                } else {
+                    (x as f32 * logical_w as f32 / pw as f32,
+                     y as f32 * logical_h as f32 / ph as f32,
+                     (x1 - x) as f32 * logical_w as f32 / pw as f32,
+                     (y1 - y) as f32 * logical_h as f32 / ph as f32,
+                     x as f32 / pw as f32, y as f32 / ph as f32,
+                     x1 as f32 / pw as f32, y1 as f32 / ph as f32)
+                }
+            }
+        _ => (0.0, 0.0, logical_w as f32, logical_h as f32, 0.0, 0.0, 1.0, 1.0),
+    };
+    let mut quad = Quad::rect(tex, [x, y, w, h], [1.0, 1.0, 1.0, alpha])
+        .with_uv_rect(u0, v0, u1, v1);
+    quad.blend = blend;
+    quad
+}
+
 fn fullscreen_verts(color: [f32; 4]) -> [Vertex; 6] {
     let v = |x, y, u, w| Vertex {
         pos: [x, y],
@@ -3562,9 +3906,26 @@ mod test_backend;
 #[cfg(all(test, not(target_os = "vita")))]
 #[path = "vita_tests.rs"]
 mod tests;
+#[cfg(all(test, not(target_os = "vita")))]
+#[path = "vita_group_bounds_tests.rs"]
+mod group_bounds_tests;
+#[cfg(all(test, not(target_os = "vita")))]
+#[path = "vita_blur_weights_tests.rs"]
+mod blur_weights_tests;
+#[cfg(all(test, not(target_os = "vita")))]
+#[path = "vita_work_tests.rs"]
+mod work_tests;
 
 /// Actual fixed physical scene and composite dimensions used by the renderer.
 #[cfg(any(target_os = "vita", test))]
 pub fn performance_dimensions() -> ([u32; 2], [u32; 2]) {
     (scene_size(CANVAS_W, CANVAS_H), composite_physical(CANVAS_W, CANVAS_H))
 }
+
+#[cfg(all(test, not(target_os = "vita")))]
+#[path = "vita_full_ps_tests.rs"]
+mod full_ps_tests;
+
+#[cfg(all(test,not(target_os="vita")))]
+#[path="vita_all_ps_tests.rs"]
+mod all_ps_tests;

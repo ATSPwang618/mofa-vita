@@ -1,0 +1,157 @@
+{
+  "schema": "knife-vita-r9-op7-work-v1",
+  "build_tag": "stage-effect-r9-op7-work-20261106",
+  "branch": "perf/render",
+  "base_commit": "24b046713ac3d029e97d98b6c4f1633dbccfbcb2",
+  "implementation": [
+    "FP32 plain OP7 program48",
+    "ordered OP7/7 pair program57",
+    "independent switches and executed counters",
+    "single-toggle ABBA replay"
+  ],
+  "hardware_verified": false,
+  "rgba8_gpu_equivalence_verified": false,
+  "performance_verified": false,
+  "fps_target": 10,
+  "default_mask_hex": "0x1cfdfffffff",
+  "default_features": [
+    "shared-atlas",
+    "gxt-ready",
+    "batch-arena",
+    "group-fused",
+    "ps-fetch",
+    "async-submit",
+    "compact-stream",
+    "direct-stage",
+    "texture-pool",
+    "decode-owner",
+    "gray-r8",
+    "animation-window",
+    "dependency-graph",
+    "source-rename",
+    "grade-cache",
+    "stream-index",
+    "coalesce-bake",
+    "resource-io-cache",
+    "stage-prefix",
+    "group-batch",
+    "ui-pass-cache",
+    "plain-forcealpha",
+    "ui-source-prefetch",
+    "archive-glow-bounds",
+    "blend-chain",
+    "producer-reuse",
+    "async-rebake",
+    "target-ring",
+    "ps-op7",
+    "ps-plain-material",
+    "group-bounds",
+    "half-color",
+    "tiled-targets",
+    "blur-weights",
+    "rt-scenes-2",
+    "ps-all-operations",
+    "ps-plain-op7",
+    "ps-chain-op7"
+  ],
+  "program_costs": {
+    "full_op7_29": 233,
+    "plain_half_op7_51": 32,
+    "plain_fp32_op7_48": 36,
+    "pair_op7_57": 51
+  },
+  "offline_programs": 65,
+  "offline_bytes": 112516,
+  "shader_source_sha256": "ee34d012e4d9466566e62a85b682ff4ae0b5690f69ef4ad240122ed41a65b4c6",
+  "startup_profile_bytes": [
+    754,
+    779
+  ],
+  "standalone_eboot_matches_vpk": true,
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 10122695,
+      "sha256": "7529faa5656f6238a544b1753b4bcb28d5041336c1bd384c52f920993f1f1d2a"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7256454,
+      "sha256": "7cb01db07e4cd0680852295c4d96c4bdbcd95371b5cda080e3ff79f6c3e4640b"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/build-receipt-r9.json",
+      "bytes": 83141,
+      "sha256": "2514badf8d23a50cde5fae39664d50e6c2df9b8944d4502fa2417a26c8433602"
+    }
+  ],
+  "tests": [
+    {
+      "path": ".work/vita/r9-host.log",
+      "bytes": 19617,
+      "sha256": "2011d1419aa00b5e703a85429a57b406e85ad82ca0cce94e5ce6e7685c503df6"
+    },
+    {
+      "path": ".work/vita/r9-game.log",
+      "bytes": 26088,
+      "sha256": "a65aed5858c36f4dd2580a3397b5b2cdc5a5b367e21784429e948302e072effd"
+    },
+    {
+      "path": ".work/vita/r9-gxm.log",
+      "bytes": 90165,
+      "sha256": "63628e4858b71b34b5d92056ee981106dc869f77314d51b8af3f455549ee93ae"
+    },
+    {
+      "path": ".work/vita/r9-cache.log",
+      "bytes": 2533,
+      "sha256": "b1920999583718dfbb4fb074cedfbab2abe8b912ebb85a859726b815ae5fb8d5"
+    },
+    {
+      "path": ".work/vita/r9-effects.log",
+      "bytes": 6600,
+      "sha256": "48b6e36ac2da9e171f38b8539642cccd80f3f9f663b5db34ab069b59632aa862"
+    },
+    {
+      "path": ".work/vita/r9-inputs.log",
+      "bytes": 473,
+      "sha256": "cb8121968390e470a239273012956cfdce4378a577593550b31f9481ff550f8d"
+    },
+    {
+      "path": ".work/vita/r9-profile.log",
+      "bytes": 103,
+      "sha256": "53e238d4a741628a8e0ca69395676073b9e4de432e7fac92ff71f4bd35380162"
+    },
+    {
+      "path": ".work/vita/r9-replay.log",
+      "bytes": 114,
+      "sha256": "a2054728f55d9d7a8f6f9a26c838f4dc5bb111ad051a57b57e29140421c495f7"
+    },
+    {
+      "path": ".work/vita/r9-plain-math.log",
+      "bytes": 592,
+      "sha256": "3e688c7b9bf45e49e24bbebd448a20fa1a5cb9730cefc6debb6d019b7799dd35"
+    },
+    {
+      "path": ".work/vita/r9-chain-math.log",
+      "bytes": 257,
+      "sha256": "c84238b928e1b3a081e9242fb7820d9b8687b745c762e8c207c42e61d4c9d235"
+    },
+    {
+      "path": ".work/vita/r9-offline-validation.log",
+      "bytes": 113,
+      "sha256": "01e8e32d7bf608d604bd11b6ac67a0637be387ce10db773c85de677278faa48f"
+    },
+    {
+      "path": ".work/vita/r9-build.log",
+      "bytes": 11550,
+      "sha256": "75c1722451a50252d1cb64cf2f4c11f97411e9ae60772d8e09749bd30e6290b3"
+    }
+  ],
+  "rollback": ".work/vita/rollback/stage-effect-r8-hardware-test-20261106",
+  "limitations": [
+    "Instruction counts are not GPU times. Partial overlaps may increase draw count while reducing overlap work.",
+    "The prior r8 half OP7 path costs 32 primary instructions; the FP32 single is not claimed faster.",
+    "No physical Vita execution in this turn; new features require same-phase performance and visual verification.",
+    "No new render target, texture or asset conversion. Existing resource lifetime and synchronization are retained."
+  ]
+}

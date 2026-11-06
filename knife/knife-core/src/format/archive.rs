@@ -509,7 +509,7 @@ mod range_tests {
     }
     #[test]
     fn tiny_io_reuse_keeps_validation_caps_and_never_reuses_another_archive() {
-        struct Flags(u32);
+        struct Flags(u64);
         impl Drop for Flags { fn drop(&mut self) { knife_perf::optimizations::set(self.0); } }
         let _flags = Flags(knife_perf::optimizations::mask());
         knife_perf::optimizations::set(knife_perf::optimizations::RESOURCE_IO_CACHE);

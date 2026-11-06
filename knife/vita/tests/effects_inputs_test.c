@@ -9,7 +9,7 @@
 #include <float.h>
 
 enum { TEST_VERTEX_FLOATS = 28, TEST_VERTEX_LIMIT = 32760,
-    TEST_SHADER_COUNT = 30, TEST_BLEND_COUNT = 10 };
+    TEST_SHADER_COUNT = 32, TEST_BLEND_COUNT = 10 };
 typedef struct Input { KvEffectVertex v[3]; float p[8]; } Input;
 static unsigned cases, checks, failures, accepted_cases, rejected_cases;
 
@@ -77,7 +77,7 @@ static void preconditions(void) {
         snprintf(name, sizeof(name), "precondition.vertex-count.%u", bad_counts[i]);
         check(name, in.v, sizeof(in.v), in.p, bad_counts[i], 0, 0, KV_BAD_ARGUMENT, 0);
     }
-    const uint32_t bad_shader[] = {TEST_SHADER_COUNT, UINT32_MAX};
+    const uint32_t bad_shader[] = {88, UINT32_MAX};
     const uint32_t bad_blend[] = {TEST_BLEND_COUNT, UINT32_MAX};
     check("precondition.reserved-text-capability.24", in.v, sizeof(in.v), in.p,
         3, 24, 5, KV_BAD_ARGUMENT, 0);
@@ -98,11 +98,12 @@ static void preconditions(void) {
             if (shader == 24) continue; /* checked capability, never a shader */
             if ((effect_fetch_shader(shader) || shader == 29) && blend != 5) continue;
             in = fresh();
-            in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : shader == 29 ? 7.0f : 1.0f;
+            in.p[0] = shader == 18 || shader == 19 || shader == 23 ? 19.0f : shader == 20 ? 11.0f : shader == 21 ? 13.0f : shader == 25 ? 2.0f : shader == 29 ? 7.0f : shader == 30 ? 1.0f : shader == 31 ? 6.0f : 1.0f;
             if (shader == 22 || shader == 26 || shader == 28) { memset(in.p, 0, sizeof(in.p)); }
             else if (shader >= 19 && shader != 29) {
                 in.p[1] = 0; in.p[4] = -1; in.p[7] = shader == 19 ? 1 : 0;
-                if (shader == 23) in.p[5] = 0;
+                if (shader == 21 || shader == 23) in.p[5] = 0;
+                if (shader == 30 || shader == 31) { in.p[5] = 0; in.p[7] = 0; }
             }
             if (shader == 27) { in.p[0] = 11; in.p[1] = 13; in.p[5] = 0; }
             snprintf(name, sizeof(name), "valid.shader.%u.blend.%u", shader, blend);
@@ -120,12 +121,16 @@ static void preconditions(void) {
         Input base = fresh();
         base.p[0] = shader == 19 || shader == 23 ? 19 : shader == 20 ? 11 : shader == 25 ? 2 : 13;
         base.p[1] = 0; base.p[4] = -1; base.p[7] = shader == 19 ? 1 : 0;
-        if (shader == 23) base.p[5] = 0;
+        if (shader == 21 || shader == 23) base.p[5] = 0;
         snprintf(name, sizeof(name), "valid.specialised.%u", shader);
         check(name, base.v, sizeof(base.v), base.p, 3, shader, 5, 0, 0);
         for (unsigned field = 0; field < 5; ++field) {
             Input bad = base;
             const unsigned parameter[5] = {0, 1, 4, 6, 7};
+            /* ID21's expanded plain-material contract admits Fill and
+             * NoAlpha source flags; those two values are valid when the
+             * PS_PLAIN_MATERIAL option selects the entry. */
+            if (shader == 21 && (parameter[field] == 1 || parameter[field] == 6)) continue;
             bad.p[parameter[field]] = field == 0 ? 1 : field == 2 ? 0 : field == 4 ? 1-base.p[7] : shader == 23 ? 2 : 1;
             snprintf(name, sizeof(name), "invalid.specialised.%u.param.%u", shader, parameter[field]);
             check(name, bad.v, sizeof(bad.v), bad.p, 3, shader, 5, KV_BAD_ARGUMENT, 0);

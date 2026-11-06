@@ -140,7 +140,7 @@ fn vertices(polys: &[Polygon], q: &Quad, second: Option<&Quad>, canvas: [f32; 2]
 }
 fn op(q: &Quad) -> Option<PsOp> {
     match q.blend {
-        Blend::Ps(op @ (PsOp::Darken | PsOp::HardLight | PsOp::Overlay | PsOp::Normal))
+        Blend::Ps(op @ (PsOp::Darken | PsOp::HardLight | PsOp::Overlay | PsOp::Normal | PsOp::DodgeAlpha))
             if plain_ps_source(q) && !q.tex.native.srgb =>
         {
             Some(op)
@@ -177,9 +177,25 @@ pub(super) fn pair(
     white: &Rc<NativeTexture>,
     lut: &Rc<NativeTexture>,
 ) -> Option<Vec<Command>> {
+    // Chain intersections use FP32. Retaining Half outside the intersection
+    // would give one source two precision contracts and a moving seam. Keep
+    // each Half draw intact until a chain with matching arithmetic exists.
+    if shaders.iter().any(|shader| matches!(shader,
+        EffectShader::PsHalf1 | EffectShader::PsHalf6
+        | EffectShader::PsHalf7 | EffectShader::PsHalf13)) {
+        return None;
+    }
     let (Some(oa), Some(ob)) = (op(a), op(b)) else {
         return None;
     };
+    // New pair keeps one FP32 contract both inside and outside the overlap.
+    // Mixed OP7 pairs and full/half source paths remain independent draws.
+    if (oa == PsOp::DodgeAlpha || ob == PsOp::DodgeAlpha)
+        && (oa != ob || shaders != [EffectShader::PsPlain7; 2]
+            || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_CHAIN_OP7)
+            || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_PLAIN_OP7)) {
+        return None;
+    }
     let Some(pa) = footprint(a, canvas) else {
         knife_perf::add(Metric::BlendChainFallback, 0, 1);
         return None;
@@ -204,6 +220,7 @@ pub(super) fn pair(
         return None;
     }
     let single = |q: &Quad, shader, operation: PsOp, polys: &[Polygon]| Command::Draw {
+        work: super::executed_work::DrawWork::pending(),
         vertices: vertices(polys, q, None, canvas),
         shader,
         blend: EffectBlend::Opaque,
@@ -229,6 +246,7 @@ pub(super) fn pair(
         commands.push(single(a, shaders[0], oa, &outside_a));
     }
     commands.push(Command::Draw {
+        work: super::executed_work::DrawWork::pending(),
         vertices: vertices(&[intersection], a, Some(b), canvas),
         shader: EffectShader::PsChain2,
         blend: EffectBlend::Opaque,

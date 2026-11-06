@@ -10,6 +10,16 @@
 
 仓库提供引擎源码、构建工具、离线Shader和资源元数据；游戏本体、字体、图像、音视频及汉化数据须自行准备，不随源码分发。**编译引擎不需要整套游戏素材。**
 
+## 实机截图
+
+| 标题 | 语音设置 |
+|---|---|
+| ![标题画面](doc/screenshots/01-title.jpg) | ![语音设置](doc/screenshots/02-voices.jpg) |
+| **书库** | **剧情** |
+| ![书库界面](doc/screenshots/03-archive.jpg) | ![剧情画面](doc/screenshots/04-story.jpg) |
+
+历史实机截图，不作为最新版本的性能验收证明。
+
 ## 当前状态
 
 | 项目 | 当前值 |
@@ -52,15 +62,7 @@ Windows可使用`py -3`；指定本机发行版可加`--wsl pocket-ubuntu`。每
 
 日志/配置文件位于`ux0:data/WitchontheHolyNight/`：`perf-enable.txt`显式1开启、0关闭；`optimization-profile.txt`可写`hardware-test`。启动核对`build_tag`。r12新增`save_focus`状态变化记录；字段与固定GPU回放见[日志文档](doc/06-性能采集与分析.md)。
 
-## 实机截图
 
-| 标题 | 语音设置 |
-|---|---|
-| ![标题画面](doc/screenshots/01-title.jpg) | ![语音设置](doc/screenshots/02-voices.jpg) |
-| **书库** | **剧情** |
-| ![书库界面](doc/screenshots/03-archive.jpg) | ![剧情画面](doc/screenshots/04-story.jpg) |
-
-历史实机截图，不作为最新版本的性能验收证明。
 
 ## 仓库结构
 

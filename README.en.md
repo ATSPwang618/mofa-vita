@@ -10,6 +10,15 @@ This project ports the [knife](https://github.com/AuroraWright/knife) 0.9.4 Rust
 
 The repository contains engine sources, build tools, offline shaders and resource metadata. Game assets, fonts, audio, video and translation data must be supplied separately. **Building the engine does not require the full game asset pack.**
 
+## Screenshots
+
+| Title | Voice settings |
+|---|---|
+| ![Title](doc/screenshots/01-title.jpg) | ![Voice settings](doc/screenshots/02-voices.jpg) |
+| **Archive** | **Story** |
+| ![Archive](doc/screenshots/03-archive.jpg) | ![Story](doc/screenshots/04-story.jpg) |
+
+Historical device screenshots; not performance acceptance evidence for the latest build.
 ## Current release and scope
 
 The local package is **`stage-effect-r12-save-focus-20261106`**, title ID **`KNIF00540`**. It uses the native540 memory-limited asset contract with r11 raw UI member access. The Vita UI is fixed to Chengkong Chinese, original language ID2; the asset pack retains English and Chinese. The default test profile is `hardware-test`, mask `0x7cfdfffffff`, with VitaDeck logging enabled.
@@ -43,15 +52,7 @@ Install the local `dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-5
 
 Place `perf-enable.txt` and `optimization-profile.txt` in `ux0:data/WitchontheHolyNight/`, outside `assets/`. An explicit `0` disables logging; use `1` to enable it. Verify `build_tag` at startup. r12 emits `save_focus` only when selection state changes. See [logging and GPU replay](doc/06-性能采集与分析.md).
 
-## Screenshots
 
-| Title | Voice settings |
-|---|---|
-| ![Title](doc/screenshots/01-title.jpg) | ![Voice settings](doc/screenshots/02-voices.jpg) |
-| **Archive** | **Story** |
-| ![Archive](doc/screenshots/03-archive.jpg) | ![Story](doc/screenshots/04-story.jpg) |
-
-Historical device screenshots; not performance acceptance evidence for the latest build.
 
 ## Repository
 

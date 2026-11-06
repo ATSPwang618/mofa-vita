@@ -6,7 +6,9 @@
 
 本仓库只包含**引擎源码、构建工具与生成元数据**。游戏本体、字体、音视频和汉化数据由使用者自备，不入库；**编译 VPK 不需要游戏素材**。
 
-2026-11-06 当前本地实机候选 **`stage-effect-r10-material-coverage-20261106`** 在r9基础上增加17个通用材质精简程序：Fill/NoAlpha、仅Haze、plain OP3/4/5/11/14，覆盖各章节符合条件的绘制。82个PC离线GXP内嵌，`hardware-test`默认开启`ps-material-variants`，mask=`0x3cfdfffffff`；VitaDeck默认日志开启。已通过host/native/ARM/VPK检查，**r10实机帧率收益与GPU像素一致性待验证**。实现、单项A/B、日志和回退见 [r10材质覆盖](doc/36-material-coverage.md)。原OP7精简与双层融合继续保留，见[r9](doc/35-op7-work.md)。
+2026-11-06 当前本地实机候选 **`stage-effect-r12-save-focus-20261106`** 修复存读档高亮框的格子/页码焦点不同步、旧命中残留与重新打开后的选择状态。增加按变化输出的 `save_focus` VitaDeck日志。游戏侧130项host测试（含6组新焦点回归）、ARM构建与VPK检查通过，实机界面验收待进行。**已安装r11资源时，本轮只需更新EBOOT/VPK。** 详见[r12修复与交付](doc/39-r12-save-focus.md)。
+
+此前 **`stage-effect-r11-ui-group-20261106`** 修复公共UI大图集整块解压失败和失败缓存，扩展全游戏 OP6/8/14 组混合精简程序105–107。85个PC离线GXP内嵌，`hardware-test`默认开启`ps-group-material`，mask=`0x7cfdfffffff`；VitaDeck日志默认开启。**本轮必须同时更新`allui.hed`、`allui.mrg`、素材清单和EBOOT/VPK**，其他资源不需重传。已通过自动检查及ARM构建，r11实机收益待验证。安装、对照与回退见[r11说明](doc/38-r11-ui-group.md)；此前r10实机情况见[长时间日志分析](doc/37-r10-long-hardware.md)。
 
 上一候选 **`stage-effect-r7-all-ops-offline-20261106`** 将全部 **24 种 PS 混合运算**专用化：程序64–87使用完整材质源处理，普通Stage、Group Pixel/Mask与最终Composite按实际OP通用选路，不按章节、PC或图片名匹配。PC已编译63个GXP（含全部24个新程序），共111,076字节，嵌入EBOOT，启动优先验证并加载；运行时编译保留为逐项失败回退。r8继续使用该离线程序集，保持960×540和原资源。详见 [全游戏离线专用Shader](doc/33-global-offline-shaders.md)。
 
@@ -43,7 +45,7 @@ r5的有限材质、覆盖观测和独立实验见 [r5 GPU工作优化](doc/31-s
 - **完整剧情引擎**：演出指令、motion/effects、group pixel-mask 合成、电影播放（MP4）、BGM/语音/SE（Opus）、存档/读档（带缩略图）、回想、正常速度自动播放、文本窗口控制；Vita 关闭玩家手动快进。
 - **全部菜单**：标题、环境设置（含逐角色语音音量）、书库 Archive、CG 鉴赏、乐曲鉴赏、系统菜单；固定中文 ID2。
 - **开机感谢页**：TYPE-MOON 影像与原版注意画面之间播放两页感谢图（每页约 5 秒，任意键跳过），向参与和支持本项目的朋友致谢；源图与打包脚本见 [tools/credit-intro](tools/credit-intro/README.md)。
-- **PC离线Shader与逐项回退**：EBOOT内嵌63个已编译GXP，含OP1–24完整源处理专用程序；启动元数据校验通过后直接注册、patch。单项不可用才读取设备缓存或运行时编译，绘制仍按已就绪能力选路。源码SHA变化会阻止陈旧离线程序和缓存被误用。
+- **PC离线Shader与逐项回退**：EBOOT内嵌85个已编译GXP，含OP1–24完整源处理专用程序；启动元数据校验通过后直接注册、patch。单项不可用才读取设备缓存或运行时编译，绘制仍按已就绪能力选路。源码SHA变化会阻止陈旧离线程序和缓存被误用。
 - **跨平台构建**：Windows（自动调用 WSL）/ Linux 上用 `tools/build-vita.py` 一条命令出 VPK；同一套引擎另有桌面 WGPU 后端用于调试。
 - **单一 540p 构建档**：`TITLE_ID = KNIF00540`（SFO `ATTRIBUTE2=12`，扩大主内存）。旧的 270p 变体与相关死代码已彻底移除。
 
@@ -84,10 +86,10 @@ python3 tools/build-vita.py game release # 构建正式版 VPK
 
 ## 素材兼容性
 
-当前引擎匹配 **native540 codec9 离线限额 + Extra 图集直接读取包（2026-11-04）**，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
+当前引擎匹配 **native540 codec9 离线限额 + 故事/菜单/Extra UI成员直接读取包（2026-11-06）**，清单 `assets/vita-540p-assets.json` 的 SHA-256 为：
 
 ```text
-0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3
+c317f7da0d07d01af0c13d92720013f0e33b214f5d1356c6a39b8dced168e832
 ```
 
 - 素材需由使用者自备的 Switch 游戏数据（及相应汉化资源）转换得到；原始 NSP、未经转换的 romfs、旧 codec8 包和其他分辨率版本不能直接替代。

@@ -975,9 +975,16 @@ PsSample ps_material_source(FragmentInput i) {
 #else
     float4 t = tex2D(tex0, i.uv);
 #endif
+#if KNIFE_MATERIAL_VARIANT >= 105
+    t.rgb = group_rgb(t.rgb);
+    t.a = group_alpha(t.a, tex2D(tex2, i.uv).a);
+#else
     if (tu.params2.z > 0.5) { t.a = 1.0; }
+#endif
     float3 s = t.rgb * i.color.rgb;
+#if KNIFE_MATERIAL_VARIANT < 105
     s = lerp(s, i.color.rgb, 1.0 - step(float3(tu.params.y, tu.params.y, tu.params.y), float3(0.5, 0.5, 0.5)));
+#endif
     PsSample result;
     result.texel = t;
     result.source = s;
@@ -1227,6 +1234,50 @@ __nativecolor __regformat unsigned char4 fs_material_103(FragmentInput i,
 #endif
 #if KNIFE_MATERIAL_VARIANT == 104
 __nativecolor __regformat unsigned char4 fs_material_104(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    if (min(a, 0.0) == a) { return destination; }
+    float3 high = pow(d, one / (2.0 * s));
+    float3 low = pow(d, 2.0 - 2.0 * s);
+    float3 r = (s < float3(0.5, 0.5, 0.5)) ? low : high;
+    return native_pack(float4(ps_mix(d, r, a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 105
+__nativecolor __regformat unsigned char4 fs_material_105(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    const float3 one = float3(1.0, 1.0, 1.0);
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    if (min(a, 0.0) == a) { return destination; }
+    float3 k = max(one - s, zero);
+    float3 raw = min(d / k, one);
+    float3 r = float3(k.r > 0.0 ? raw.r : 1.0,
+                      k.g > 0.0 ? raw.g : 1.0,
+                      k.b > 0.0 ? raw.b : 1.0);
+    return native_pack(float4(ps_mix(d, r, a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 106
+__nativecolor __regformat unsigned char4 fs_material_106(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    PsSample source = ps_material_source(i);
+    float3 s = source.source;
+    float a = source.alpha;
+    float3 d = native_unpack(destination).rgb;
+    if (min(a, 0.0) == a) { return destination; }
+    return native_pack(float4(ps_mix(d, abs(d - s), a), 1.0));
+}
+#endif
+#if KNIFE_MATERIAL_VARIANT == 107
+__nativecolor __regformat unsigned char4 fs_material_107(FragmentInput i,
     __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
     PsSample source = ps_material_source(i);
     float3 s = source.source;

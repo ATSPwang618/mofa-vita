@@ -77,7 +77,7 @@ static void preconditions(void) {
         snprintf(name, sizeof(name), "precondition.vertex-count.%u", bad_counts[i]);
         check(name, in.v, sizeof(in.v), in.p, bad_counts[i], 0, 0, KV_BAD_ARGUMENT, 0);
     }
-    const uint32_t bad_shader[] = {105, UINT32_MAX};
+    const uint32_t bad_shader[] = {108, UINT32_MAX};
     const uint32_t bad_blend[] = {TEST_BLEND_COUNT, UINT32_MAX};
     check("precondition.reserved-text-capability.24", in.v, sizeof(in.v), in.p,
         3, 24, 5, KV_BAD_ARGUMENT, 0);

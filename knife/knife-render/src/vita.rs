@@ -2525,6 +2525,14 @@ impl Renderer {
         if target.tex.native.srgb || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FETCH) {
             return Ok(None);
         }
+        if knife_perf::optimizations::enabled(knife_perf::optimizations::PS_GROUP_MATERIAL) {
+            let group = match op as u32 {
+                6 => Some(EffectShader::PsGroup6), 8 => Some(EffectShader::PsGroup8),
+                14 => Some(EffectShader::PsGroup14), _ => None,
+            };
+            if let Some(shader) = group
+                && self.device.call(|g|g.shader_available(shader as u32))? { return Ok(Some(shader)); }
+        }
         if knife_perf::optimizations::enabled(knife_perf::optimizations::PS_ALL_OPERATIONS) {
             let shader=ALL_PS_SHADERS[op as usize-1];
             if self.device.call(|g|g.shader_available(shader as u32))? {return Ok(Some(shader));}

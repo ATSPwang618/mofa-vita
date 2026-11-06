@@ -21,13 +21,13 @@ ENTRIES = {11:'fs_alter',15:'fs_group_composite',17:'fs_ps_fetch',18:'fs_ps19_fe
     55:'fs_ps6_full_fetch',56:'fs_ps13_full_fetch',57:'fs_ps_chain2_fetch',
     **{i:'fs_ps_chain2_fetch' for i in range(32,48)},
     **{i:'fs_ps_operation_fetch' for i in range(64,88)},
-    **{i:f'fs_material_{i}' for i in range(88,105)}}
+    **{i:f'fs_material_{i}' for i in range(88,108)}}
 
 def digest(data): return hashlib.sha256(data).hexdigest()
 def macros(shader):
-    fetch=17<=shader<=21 or shader in (23,25,29,30,31,57) or 32<=shader<=52 or 54<=shader<=56 or 64<=shader<=104
+    fetch=17<=shader<=21 or shader in (23,25,29,30,31,57) or 32<=shader<=52 or 54<=shader<=56 or 64<=shader<=107
     out=['KNIFE_RUNTIME_NATIVE_FETCH=1','KNIFE_RUNTIME_PS_SPECIALIZED=1'][:(2 if shader>=19 else 1) if fetch else 0]
-    if 88<=shader<=104:
+    if 88<=shader<=107:
         out+=['KNIFE_MATERIAL_VARIANT='+str(shader)]
         if shader in (88,89,90,91,94,95):out+=['KNIFE_RUNTIME_HALF_COLOR=1']
     elif 64<=shader<=87:out+=['KNIFE_PS_FULL_OP='+str(shader-63)]

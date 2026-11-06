@@ -19,6 +19,8 @@ for index,op in enumerate([1,6,7,13]):
     VARIANTS[96+index]=dict(op=op,base=63+op,kind='haze',half=False)
 for index,op in enumerate([3,4,5,11,14]):
     VARIANTS[100+index]=dict(op=op,base=63+op,kind='plain',half=False)
+for index,op in enumerate([6,8,14]):
+    VARIANTS[105+index]=dict(op=op,base=63+op,kind='group',half=False)
 BEGIN='// BEGIN GENERATED MATERIAL VARIANTS\n'
 END='// END GENERATED MATERIAL VARIANTS\n'
 def generated(text):
@@ -32,10 +34,14 @@ def generated(text):
       '    float4 t = tex2D(tex0, haze_uv(i));',
       '    if (i.hx.w > 0.5) { t.rgb = t.rgb * t.a; }',
       '#else','    float4 t = tex2D(tex0, i.uv);','#endif',
-      '    if (tu.params2.z > 0.5) { t.a = 1.0; }',
+      '#if KNIFE_MATERIAL_VARIANT >= 105',
+      '    t.rgb = group_rgb(t.rgb);',
+      '    t.a = group_alpha(t.a, tex2D(tex2, i.uv).a);',
+      '#else', '    if (tu.params2.z > 0.5) { t.a = 1.0; }', '#endif',
       '    float3 s = t.rgb * i.color.rgb;',
+      '#if KNIFE_MATERIAL_VARIANT < 105',
       '    s = lerp(s, i.color.rgb, 1.0 - step(float3(tu.params.y, tu.params.y, tu.params.y), float3(0.5, 0.5, 0.5)));',
-      '    PsSample result;', '    result.texel = t;', '    result.source = s;',
+      '#endif', '    PsSample result;', '    result.texel = t;', '    result.source = s;',
       '    result.opacity = i.color.a;', '    result.alpha = t.a * i.color.a;', '    return result;', '}']
     for shader,v in VARIANTS.items():
         output += [f'#if KNIFE_MATERIAL_VARIANT == {shader}',
@@ -62,5 +68,5 @@ def main():
     if a.check:
         if result!=text:raise SystemExit('stale material variants; regenerate')
     else:SOURCE.write_text(result,newline='\n')
-    print('material variants: 17 source entries verified; no GPU equivalence claim')
+    print('material variants: 20 source entries verified; no GPU equivalence claim')
 if __name__=='__main__':main()

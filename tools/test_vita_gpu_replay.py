@@ -64,9 +64,9 @@ def full_fixture():
 
 class ReplayAnalysis(unittest.TestCase):
     def test_op7_replays_require_actual_matching_program_execution(self):
-        for name,bit,program in [("ps-plain-op7",39,48),("ps-chain-op7",40,57),("ps-material-variants",41,88)]:
+        for name,bit,program in [("ps-plain-op7",39,48),("ps-chain-op7",40,57),("ps-material-variants",41,88),("ps-group-material",42,105)]:
             rows=full_fixture();baseline=(1<<4)|(1<<38)|(1<<39) if bit==40 else (1<<4)|(1<<38)
-            candidates=[0]*24;candidates[6]=2
+            candidates=[0]*24;candidates[5 if bit==42 else 6]=2
             rows[1].update(toggle=name,toggle_mask=1<<bit,baseline_mask=baseline,all_input_candidates=candidates)
             count=0
             for block in rows[2:]:
@@ -82,7 +82,7 @@ class ReplayAnalysis(unittest.TestCase):
             result=replay.analyze(encoded(missing),"hardware")
             self.assertEqual(result["status"],"inconclusive")
             self.assertIn("no_full_material_program_executed",result["runs"][0]["failure_reasons"])
-            unknown=copy.deepcopy(rows);unknown[1]["all_input_candidates"][6]=0
+            unknown=copy.deepcopy(rows);unknown[1]["all_input_candidates"][5 if bit==42 else 6]=0
             unknown[1]["all_input_candidates"][0]=2
             self.assertEqual(replay.analyze(encoded(unknown),"hardware")["status"],"pass" if bit==41 else "inconclusive")
     def analyze(self, rows, environment="hardware"):

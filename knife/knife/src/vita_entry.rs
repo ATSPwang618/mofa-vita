@@ -457,6 +457,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     }
     let mut last = Instant::now();
     let mut last_logged_buttons = 0;
+    let mut last_save_focus = None;
     // Read once, never poll the storage card while playing. An explicit request
     // captures one normal production Stage without advancing its clock in replay.
     let mut gpu_replay = match std::fs::read_to_string(format!("{PERF_ROOT}/gpu-replay.txt")) {
@@ -567,6 +568,18 @@ fn run_game(log: &mut DevLog) -> Result<()> {
             }
         }
         if frame == 1 { log.event("FRAME 1 submitted"); }
+        if perf.is_some() {
+            let focus = ui.vita_save_focus();
+            if focus != last_save_focus {
+                let state = focus.map_or_else(|| "null".to_owned(), |v| format!(concat!(
+                    "{{\"state\":{},\"saving\":{},\"page\":{},\"slot\":{},",
+                    "\"col\":{},\"row\":{},\"tabrow\":{},\"focus\":{},\"hit\":{},\"frame_texture_ready\":{}}}"
+                ), v[0], v[1] != 0, v[2], v[3], v[4], v[5], v[6] != 0, v[7], v[8], v[9] != 0));
+                let _ = knife_platform_vita::audit::console(&format!(
+                    "{{\"kind\":\"save_focus\",\"frame\":{frame},\"selection\":{state}}}\n"));
+                last_save_focus = focus;
+            }
+        }
         if frame % 120 == 0 { log.event(&format!("FRAME {frame} submitted")); }
         if log.0 {
             let buttons = input.diagnostic_buttons();

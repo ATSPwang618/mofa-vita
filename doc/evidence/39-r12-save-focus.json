@@ -1,0 +1,76 @@
+{
+  "schema": "knife-vita-r12-save-focus-v1",
+  "build_tag": "stage-effect-r12-save-focus-20261106",
+  "base_commit": "ac5863b106e0aa93038878670f135331ad0ec4e1",
+  "branch": "perf/render",
+  "hardware_verified": false,
+  "source_changes": [
+    "knife/knife/src/ui/witch/save.rs",
+    "knife/knife/src/vita_entry.rs"
+  ],
+  "tests": {
+    "focus_tests": 6,
+    "game_tests_total": 130,
+    "arm_build": true,
+    "vpk_check": true,
+    "vpk_eboot_matches": true,
+    "resource_hashes_match_r11": true
+  },
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 10163135,
+      "sha256": "a5b77356977cbe9ae3290672fbf13d70accf419fbc34f258aa99696242d17dfb"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7271033,
+      "sha256": "15a9f527028ab7c4eaa11d090316da306044bec9bff363276c38c636ed616a75"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/build-receipt-r12.json",
+      "bytes": 86551,
+      "sha256": "eb44f73f98aaed07e26191a908f88edea6674a023fd02c317db309518d14f631"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife.elf",
+      "bytes": 9048532,
+      "sha256": "7e61d9592740be6a8925a452b67c1c0fce3820265eb1a4a84156636ca33f466e"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife.map",
+      "bytes": 9534987,
+      "sha256": "ca739cbc6e1c9705c2d9b661670e9f77ed52573c5e35388d639d1b823439e655"
+    }
+  ],
+  "test_logs": [
+    {
+      "path": ".work/vita/r12-focus-tests.log",
+      "bytes": 8780,
+      "sha256": "1ccc3ce47e76b9816ccaf4fd5c8b9d66cffe624c94714857e2fd46fab9a356e9"
+    },
+    {
+      "path": ".work/vita/r12-game-tests.log",
+      "bytes": 19060,
+      "sha256": "bfa16706fa778b069c1d712502e8cff0b601d332a6ffd71d1b70239e52512202"
+    },
+    {
+      "path": ".work/vita/r12-build.log",
+      "bytes": 11146,
+      "sha256": "d6c821fcd81f28bec8060aecd9e27b0d3b328d75263378eefa6359fcd7bfeb2f"
+    }
+  ],
+  "default_mask": "0x7cfdfffffff",
+  "offline_program_count": 85,
+  "performance_console_default": true,
+  "remote_observed": {
+    "main": "86c1fd8a108f5daf32e5fa5d923b8ec672a95260",
+    "perf_render": "ac5863b106e0aa93038878670f135331ad0ec4e1"
+  },
+  "pushed": false,
+  "rollback": ".work/vita/rollback/stage-effect-r11-ui-group-20261106",
+  "limits": [
+    "Host focus/input regressions are not full save write/read tests or hardware rendering validation",
+    "User log did not capture the exact missing-highlight focus state"
+  ]
+}

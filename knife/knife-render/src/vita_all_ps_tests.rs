@@ -6,6 +6,34 @@ struct Options(u64);
 impl Options {fn set(mask:u64)->Self{let old=knife_perf::optimizations::mask();knife_perf::optimizations::set(mask);Self(old)}}
 impl Drop for Options{fn drop(&mut self){knife_perf::optimizations::set(self.0);}}
 const OPS:[PsOp;24]=[PsOp::Add,PsOp::Darken,PsOp::Lighten,PsOp::LinearBurn,PsOp::Burn,PsOp::Dodge,PsOp::DodgeAlpha,PsOp::Difference,PsOp::DifferenceAlpha,PsOp::Exclusion,PsOp::HardLight,PsOp::HardLightEx,PsOp::Overlay,PsOp::SoftLight,PsOp::Sub,PsOp::AddNoAlpha,PsOp::SubNoAlpha,PsOp::NoAlpha,PsOp::Normal,PsOp::DarkenColorAlpha,PsOp::LightenColorAlpha,PsOp::ScreenColorAlpha,PsOp::MultiplyDst,PsOp::Copy];
+#[test]
+fn group_material_routes_and_falls_back_without_changing_mask_contract() {
+    let profile=knife_perf::optimizations::HARDWARE_TEST;
+    let _scope=Options::set(profile);
+    let (mut r,c)=setup();
+    let target=r.create_target(960,540,"group destination");
+    let pixel=r.create_target(960,540,"group pixel");
+    let mask=r.create_target(960,540,"group mask");
+    for (op,id) in [(6,105),(8,106),(14,107)] {
+        for case in 0..5 {
+            knife_perf::optimizations::set(if case==1 {profile & !knife_perf::optimizations::PS_GROUP_MATERIAL} else {profile});
+            c.borrow_mut().shader_capabilities=if case==4 {0} else {1u64<<17};
+            c.borrow_mut().shader_capabilities_high=if case>=3 {0} else {
+                (1u64<<(op-1)) | if case==2 {0} else {1u64<<(id-64)}
+            };
+            c.borrow_mut().events.clear();
+            let mut e=r.encoder();
+            r.try_group_composite(&mut e,&target,&pixel,&mask,Blend::Ps(OPS[op-1]),0.37).unwrap();
+            r.try_present(e,&target).unwrap();
+            let trace=c.borrow();
+            let actual=trace.events.iter().find_map(|event|match event {
+                Event::Draw {shader,params,..} => Some((*shader as usize,*params)), _=>None,
+            }).unwrap();
+            assert_eq!(actual.0,match case {0=>id,1|2=>63+op,3=>17,_=>14});
+            assert_eq!(actual.1,[op as f32,0.,960.,540.,-1.,0.,0.,1.]);
+        }
+    }
+}
 fn setup()->(Renderer,super::test_backend::Control){let g=Gxm::new().unwrap();let c=g.control.clone();let r=Renderer::new_with_gxm(g).unwrap();c.borrow_mut().events.clear();(r,c)}
 #[test]
 fn op7_pair_is_global_bounded_and_independently_disabled() {

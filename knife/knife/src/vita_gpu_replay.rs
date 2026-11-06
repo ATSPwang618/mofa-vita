@@ -6,8 +6,9 @@ const MEASURE_FRAMES: usize = 120;
 const ABBA: [bool; 4] = [false, true, true, false];
 
 fn replay_toggle(profile: u64) -> (&'static str, u64) {
-    use knife_perf::optimizations::{PS_ALL_OPERATIONS, PS_FULL_MATERIAL, PS_PLAIN_MATERIAL, PS_PLAIN_OP7, PS_CHAIN_OP7, PS_MATERIAL_VARIANTS};
-    if profile & PS_MATERIAL_VARIANTS != 0 { ("ps-material-variants",PS_MATERIAL_VARIANTS) }
+    use knife_perf::optimizations::{PS_ALL_OPERATIONS, PS_FULL_MATERIAL, PS_PLAIN_MATERIAL, PS_PLAIN_OP7, PS_CHAIN_OP7, PS_MATERIAL_VARIANTS, PS_GROUP_MATERIAL};
+    if profile & PS_GROUP_MATERIAL != 0 { ("ps-group-material",PS_GROUP_MATERIAL) }
+    else if profile & PS_MATERIAL_VARIANTS != 0 { ("ps-material-variants",PS_MATERIAL_VARIANTS) }
     else if profile & (PS_PLAIN_OP7 | PS_CHAIN_OP7) == (PS_PLAIN_OP7 | PS_CHAIN_OP7) { ("ps-chain-op7",PS_CHAIN_OP7) }
     else if profile & PS_PLAIN_OP7 != 0 { ("ps-plain-op7",PS_PLAIN_OP7) }
     else if profile & PS_ALL_OPERATIONS != 0 { ("ps-all-operations",PS_ALL_OPERATIONS) }
@@ -461,9 +462,10 @@ mod tests {
     }
     #[test]
     fn op7_replay_changes_only_one_new_bit() {
-        use knife_perf::optimizations::{HARDWARE_TEST,PS_PLAIN_OP7,PS_CHAIN_OP7,PS_MATERIAL_VARIANTS};
-        assert_eq!(replay_toggle(HARDWARE_TEST),("ps-material-variants",PS_MATERIAL_VARIANTS));
-        let profile=HARDWARE_TEST & !PS_MATERIAL_VARIANTS;
+        use knife_perf::optimizations::{HARDWARE_TEST,PS_PLAIN_OP7,PS_CHAIN_OP7,PS_MATERIAL_VARIANTS,PS_GROUP_MATERIAL};
+        assert_eq!(replay_toggle(HARDWARE_TEST),("ps-group-material",PS_GROUP_MATERIAL));
+        assert_eq!(replay_toggle(HARDWARE_TEST & !PS_GROUP_MATERIAL),("ps-material-variants",PS_MATERIAL_VARIANTS));
+        let profile=HARDWARE_TEST & !(PS_MATERIAL_VARIANTS|PS_GROUP_MATERIAL);
         assert_eq!(replay_toggle(profile),("ps-chain-op7",PS_CHAIN_OP7));
         assert_eq!(replay_toggle(profile & !PS_CHAIN_OP7),("ps-plain-op7",PS_PLAIN_OP7));
         for profile in [HARDWARE_TEST,HARDWARE_TEST & !PS_CHAIN_OP7] {

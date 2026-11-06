@@ -90,6 +90,9 @@ pub enum EffectShader {
     PsMaterial102 = 102,
     PsMaterial103 = 103,
     PsMaterial104 = 104,
+    PsGroup6 = 105,
+    PsGroup8 = 106,
+    PsGroup14 = 107,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectBlend {
@@ -469,16 +472,17 @@ impl Gxm {
                     && *value != vertices[0].haze[row][column]))) {
             return Err("mock per-quad uniforms differ".into());
         }
-        if (88..=104).contains(&(shader as u32)) {
+        if (88..=107).contains(&(shader as u32)) {
             let id=shader as usize;
-            let op=[1.,1.,6.,6.,7.,7.,13.,13.,1.,6.,7.,13.,3.,4.,5.,11.,14.][id-88];
+            let op=[1.,1.,6.,6.,7.,7.,13.,13.,1.,6.,7.,13.,3.,4.,5.,11.,14.,6.,8.,14.][id-88];
             if control.shader_capabilities_high & (1u64 << (id-64))==0
-                || !knife_perf::optimizations::enabled(knife_perf::optimizations::PS_MATERIAL_VARIANTS)
-                || blend!=EffectBlend::Opaque || params[0]!=op || params[4]>=0. || params[5]!=0. || params[7]!=0.
+                || !knife_perf::optimizations::enabled(if id>=105 {knife_perf::optimizations::PS_GROUP_MATERIAL} else {knife_perf::optimizations::PS_MATERIAL_VARIANTS})
+                || blend!=EffectBlend::Opaque || params[0]!=op || params[4]>=0. || params[5]!=0. || params[7]!=if id>=105 {1.} else {0.}
                 || vertices.iter().any(|v| v.soft.iter().flatten().any(|x|*x!=0.)
                     || (!(96..=99).contains(&id) && v.haze.iter().flatten().any(|x|*x!=0.))) {
                 return Err("mock material variant contract".into());
             }
+            if id>=105 && (params[1]!=0. || params[6]!=0.) {return Err("mock group material contract".into());}
             if id<96 && (params[1]!=if id%2==0 {1.} else {0.}
                 || params[6]!=if id%2==0 {0.} else {1.}) { return Err("mock fixed shade contract".into()); }
         }

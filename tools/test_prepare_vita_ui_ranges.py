@@ -36,7 +36,7 @@ class UiRangePackTests(unittest.TestCase):
         # A duplicate extent must stay shared. A NOFILE row must stay absent.
         rows = [(0, 1, 1), (0, 1, 1), (1, 1, 1), (0, 0, 0)]
         (directory / 'allui.hed').write_bytes(b''.join(struct.pack('<IHH', *r) for r in rows) + b'\xff' * 8)
-        names = ['CG_PARTS.NXZ', 'ARCHIVE_PARTS_ZC.NXZ', 'TITLE_PARTS_ZC.NXZ', 'NOFILE.EXISTS']
+        names = ['CG_PARTS.NXZ', 'ARCHIVE_PARTS_ZC.NXZ', 'UNRELATED.NXZ', 'NOFILE.EXISTS']
         (directory / 'allui.nam').write_bytes(b''.join(n.encode().ljust(32, b'\0') for n in names))
         manifest = {'files': [], 'archives': [{'name': 'allui', 'bytes': 4096}], 'statistics': {'bytes': 4096}}
         for ext in ('hed', 'nam', 'mrg'):
@@ -61,6 +61,12 @@ class UiRangePackTests(unittest.TestCase):
             self.assertEqual(len(report['changed_entries']), 2)
             self.assertTrue(report['image_bytes_unchanged'])
             self.assertEqual(pack.verify(root / 'out')['members_verified'], 4)
+
+    def test_story_and_save_ui_languages_are_selected(self):
+        for base in ('DISP_PARTS', 'SAVE_PARTS', 'MENU_PARTS', 'CONF_PARTS', 'TITLE_PARTS'):
+            for suffix in ('', '_ZC', '_EN'):
+                self.assertTrue(pack.selected(base + suffix + '.NXZ'))
+        self.assertFalse(pack.selected('DISP_PARTSOTHER.NXZ'))
 
     def test_raw_repack_is_idempotent_and_keeps_manifest_identity(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -188,6 +188,9 @@ pub enum EffectShader {
     PsMaterial102 = 102,
     PsMaterial103 = 103,
     PsMaterial104 = 104,
+    PsGroup6 = 105,
+    PsGroup8 = 106,
+    PsGroup14 = 107,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]

@@ -96,7 +96,7 @@ PY
         fi
         cp "$build/$variant.log" "$logs/effects-inputs-$variant.log"
     done
-    grep -qF 'FAIL precondition.shader.105: expected status -1, got 0' "$build/red-enums.log"
+    grep -qF 'FAIL precondition.shader.108: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL precondition.blend.10: expected status -1, got 0' "$build/red-enums.log"
     grep -qF 'FAIL finite.params.0.infinity: expected status -1, got 0' "$build/red-finite.log"
     grep -qF 'FAIL rule.flags.shader.9.value.4: expected status -1, got 0' "$build/red-packed.log"

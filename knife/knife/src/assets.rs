@@ -30,6 +30,9 @@ use knife_render::ByteView;
 #[cfg(target_os = "vita")]
 #[path = "atlas_cache.rs"]
 mod atlas_cache;
+#[cfg(any(target_os = "vita", test))]
+#[path = "source_failure.rs"]
+mod source_failure;
 #[cfg(target_os = "vita")]
 #[path = "vita_atlas_index.rs"]
 mod atlas_index;
@@ -217,7 +220,7 @@ impl Decoded {
 #[cfg(target_os = "vita")]
 #[derive(Default)]
 pub struct ByteStage {
-    entries: std::sync::Mutex<std::collections::VecDeque<(u64, Arc<[u8]>)>>,
+    entries: std::sync::Mutex<std::collections::VecDeque<(u64, ByteView)>>,
     in_flight: std::sync::Mutex<std::collections::HashSet<u64>>,
     bytes: std::sync::atomic::AtomicUsize,
     failures: std::sync::Mutex<std::collections::VecDeque<(u64, String)>>,
@@ -259,9 +262,9 @@ impl ByteStage {
                 Err(anyhow::anyhow!("range output {len} exceeds byte-stage budget"))
             } else if direct { archive.read_direct_range(index, offset, len) }
             else { archive.read_uncompressed_range(index, offset, len) };
-            if let Ok(bytes) = read.as_ref() {
+            match read { Ok(bytes) => {
                 let copy = Scope::new(Metric::StageVecArc);
-                let arc: Arc<[u8]> = Arc::from(bytes.as_slice());
+                let arc = ByteView::owned(bytes);
                 copy.finish(arc.len() as u64, 0);
                 knife_perf::add(Metric::StageComplete, arc.len() as u64, 0);
                 let size = arc.len();
@@ -275,16 +278,17 @@ impl ByteStage {
                     stage.bytes.fetch_sub(old.len(), std::sync::atomic::Ordering::Relaxed);
                 }
                 knife_perf::gauge_set(Gauge::StageReadyBytes, total as u64);
-            } else {
-                let error = format!("{}:{index} offset={offset} len={len} direct={direct}: {:#}",
-                    archive.name, read.unwrap_err());
+                stage.failures.lock().unwrap_or_else(|e| e.into_inner()).retain(|(old, _)| *old != key);
+            }, Err(read_error) => {
+                let error = format!("{}:{index} offset={offset} len={len} direct={direct}: {read_error:#}",
+                    archive.name);
                 tracing::warn!(%error, "bounded range read failed");
                 let mut errors = stage.failures.lock().unwrap_or_else(|e| e.into_inner());
                 errors.retain(|(old, _)| *old != key);
                 while errors.len() >= 64 { errors.pop_front(); }
                 errors.push_back((key, error));
                 knife_perf::add(Metric::StageFailed, len as u64, 0);
-            }
+            }}
             stage.in_flight.lock().unwrap().remove(&key);
             knife_perf::gauge_sub(Gauge::StageInflight, 1);
             knife_perf::gauge_sub(Gauge::StageRequestedBytes, len as u64);
@@ -301,7 +305,7 @@ impl ByteStage {
         if need==0 {return 0;}
         let Ok(mut entries)=self.entries.try_lock()else{return 0};let mut reclaimed=0;let mut i=0;
         while i<entries.len() && reclaimed<need {
-            if Arc::strong_count(&entries[i].1)==1 {
+            if entries[i].1.is_unpinned() {
                 let (_,old)=entries.remove(i).unwrap();reclaimed+=old.len();
                 self.bytes.fetch_sub(old.len(),std::sync::atomic::Ordering::Relaxed);
             }else{i+=1;}
@@ -311,15 +315,15 @@ impl ByteStage {
 
     /// Legacy owned-byte reload: join its one existing background request.
     /// A deadline never clears in_flight or spawns a duplicate card read.
-    pub fn load_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<Arc<[u8]>> {
+    pub fn load_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<ByteView> {
         self.load_kind(key,archive,index,offset,len,false)
     }
 
-    fn load_direct_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<Arc<[u8]>> {
+    fn load_direct_bounded(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize)->Result<ByteView> {
         self.load_kind(key,archive,index,offset,len,true)
     }
 
-    fn load_kind(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize,direct:bool)->Result<Arc<[u8]>> {
+    fn load_kind(self:&Arc<Self>,key:u64,archive:Arc<Archive>,index:usize,offset:usize,len:usize,direct:bool)->Result<ByteView> {
         self.request_kind(key,archive,index,offset,len,direct);
         let started=std::time::Instant::now();
         loop {
@@ -339,7 +343,7 @@ impl ByteStage {
     }
 
     /// Take staged bytes, if the worker finished them.
-    pub fn take(&self, key: u64) -> Option<Arc<[u8]>> {
+    pub fn take(&self, key: u64) -> Option<ByteView> {
         let mut entries = self.entries.lock().ok()?;
         let Some(index) = entries.iter().position(|(k, _)| *k == key) else {
             knife_perf::add(Metric::StageMiss, 0, 0);
@@ -1046,7 +1050,7 @@ impl Assets {
             let Some(index)=self.allui.find_stem(&name) else {continue;};
             let Some(atlas)=atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST,index,
                 &self.allui.entries()[index]) else {continue;};
-            if atlas.decoded_bytes<=available {
+            if !atlas.direct && atlas.decoded_bytes<=available {
                 let queued=self.atlas_cache.prewarm_if_room(self.allui.clone(),index,atlas.decoded_bytes);
                 available=available.saturating_sub(queued);
             }
@@ -1770,7 +1774,7 @@ impl Assets {
                             None => stage.load_direct_bounded(key, archive.clone(), index, offset, len)
                                 .with_context(|| format!("UI range read failed entry={index} offset={offset} len={len}"))?,
                         };
-                        Ok(ByteView::owned(bytes.to_vec()))
+                        Ok(bytes)
                     })
                 } else {
                     Rc::new(move || cache.range(archive.clone(), index, offset, len))
@@ -1807,6 +1811,7 @@ impl Assets {
             let Some(index) = self.allui.find_stem(&name) else { return Ok(()); };
             let Some(atlas) = atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST, index,
                 &self.allui.entries()[index]) else { return Ok(()); };
+            if atlas.direct { continue; }
             need = need.checked_add(atlas.decoded_bytes).context("startup atlas need overflow")?;
             indices.push(index);
         }

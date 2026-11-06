@@ -1,4 +1,4 @@
-"""Remove only the outer NX layer of the Vita gallery/library UI atlases.
+"""Remove only the outer NX layer of the Vita story/menu/gallery/library UI atlases.
 
 KIMG names, order, offsets, PNG/DXT payloads, dimensions and alpha are byte exact.
 The existing archive raw-entry reader can then seek to one member without a
@@ -19,7 +19,9 @@ from vita_image_metadata import CAP, image_info, images_in, require
 SECTOR = 2048
 MANIFEST = 'vita-540p-assets.json'
 FILES = ('allui.hed', 'allui.nam', 'allui.mrg')
-BASES = ('CG_PARTS', 'ARCHIVE_PARTS', 'ARCHTHUMB_PARTS')
+BASES = ('CG_PARTS', 'ARCHIVE_PARTS', 'ARCHTHUMB_PARTS', 'DISP_PARTS',
+         'MENU_PARTS', 'SAVE_PARTS', 'CONF_PARTS', 'TITLE_PARTS', 'MODEPNL_PARTS',
+         'BORDER_PARTS', 'NOISE_PARTS', 'EXTRA_PARTS', 'SOUND_PARTS')
 
 
 def sha(data):

@@ -38,7 +38,7 @@ class HardwareProfileReceiptTests(unittest.TestCase):
     def test_stock_hardware_receipt_records_active_candidates_and_migration(self):
         profile = self.receipt()
         self.assertEqual(profile["default"], "hardware-test")
-        self.assertEqual(profile["default_mask"], 0x3CFDFFFFFFF)
+        self.assertEqual(profile["default_mask"], 0x7CFDFFFFFFF)
         self.assertEqual(profile["default_excludes"], ["sparse-coverage", "rt-scenes-4", "ps-full-material"])
         self.assertTrue({"group-bounds", "half-color", "tiled-targets", "blur-weights", "rt-scenes-2",
                          "ps-all-operations", "ps-plain-op7", "ps-chain-op7"}.issubset(profile["default_features"]))
@@ -49,7 +49,7 @@ class HardwareProfileReceiptTests(unittest.TestCase):
 
     def test_custom_hardware_receipt_reflects_disables_and_capacity_four(self):
         profile = self.receipt("hardware-test -half-color -rt-scenes-2 rt-scenes-4")
-        self.assertEqual(profile["default_mask"], 0x3D6DFFFFFFF)
+        self.assertEqual(profile["default_mask"], 0x7D6DFFFFFFF)
         self.assertEqual(profile["default_excludes"], ["sparse-coverage", "half-color", "rt-scenes-2", "ps-full-material"])
         self.assertFalse(profile["legacy_stock_migration"]["enabled"])
 

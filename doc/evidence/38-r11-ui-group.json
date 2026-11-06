@@ -1,0 +1,467 @@
+{
+  "schema": "knife-vita-r11-ui-group-v1",
+  "build_tag": "stage-effect-r11-ui-group-20261106",
+  "base_commit": "ac5863b106e0aa93038878670f135331ad0ec4e1",
+  "branch": "perf/render",
+  "hardware_verified": false,
+  "gpu_pixel_equivalence": false,
+  "performance_verified": false,
+  "implementation": [
+    "Raw UI KATL exact members; no whole NX output for indexed UI",
+    "ByteView moves owned range Vec without two payload copies",
+    "Typed allocation failures retry once after unpinned source reclamation; corrupt inputs stay failed",
+    "Global OP6/8/14 group-material shaders 105/106/107; independent bit42"
+  ],
+  "default_mask": "0x7cfdfffffff",
+  "offline_program_count": 85,
+  "program_costs": [
+    {
+      "shader": 105,
+      "baseline": 69,
+      "primary": 47,
+      "baseline_primary": 238
+    },
+    {
+      "shader": 106,
+      "baseline": 71,
+      "primary": 35,
+      "baseline_primary": 227
+    },
+    {
+      "shader": 107,
+      "baseline": 77,
+      "primary": 58,
+      "baseline_primary": 246
+    }
+  ],
+  "ui_report": {
+    "entries": [
+      {
+        "index": 1,
+        "entry": "CONF_PARTS_EN.NXZ",
+        "bytes": 6336512,
+        "envelope_bytes": 6334806,
+        "members": 26,
+        "member_digest": "9e7455e9cb2c42cf3b691f0b28cfc471c349c9f69fb6caef60cf1e167ea77671"
+      },
+      {
+        "index": 2,
+        "entry": "CONF_PARTS_ZC.NXZ",
+        "bytes": 5545984,
+        "envelope_bytes": 5544674,
+        "members": 26,
+        "member_digest": "b5132e5ff9c15fd648d8b6deecfb0128cd1c4551df700ce9ef22932c24fbcc86"
+      },
+      {
+        "index": 6,
+        "entry": "DISP_PARTS_EN.NXZ",
+        "bytes": 17565696,
+        "envelope_bytes": 17564702,
+        "members": 50,
+        "member_digest": "5d78adb6f5d4e629e667e4d32afbc678700d921939b945ee7e82d1c4058f82fe"
+      },
+      {
+        "index": 7,
+        "entry": "DISP_PARTS_ZC.NXZ",
+        "bytes": 17563648,
+        "envelope_bytes": 17562705,
+        "members": 50,
+        "member_digest": "610cf278771b6b590ba2fbca97445dfe989e3e741a3e65925cc22db80fafdfe8"
+      },
+      {
+        "index": 11,
+        "entry": "MENU_PARTS_EN.NXZ",
+        "bytes": 1974272,
+        "envelope_bytes": 1973111,
+        "members": 7,
+        "member_digest": "25b38687d768440b6b5a00350a91e7213feda260a4e3f1cef679b7f460e68ea6"
+      },
+      {
+        "index": 12,
+        "entry": "MENU_PARTS_ZC.NXZ",
+        "bytes": 2025472,
+        "envelope_bytes": 2024598,
+        "members": 7,
+        "member_digest": "0cc8267995b713f9f6551ed70ec23ac4fdbfd67b188b3e74dce9e41f13ea66f0"
+      },
+      {
+        "index": 16,
+        "entry": "MODEPNL_PARTS_EN.NXZ",
+        "bytes": 118784,
+        "envelope_bytes": 118702,
+        "members": 2,
+        "member_digest": "909e40cfa067e2781abfca2b9846d33722945cdc00020597e05a11d3189b9786"
+      },
+      {
+        "index": 17,
+        "entry": "MODEPNL_PARTS_ZC.NXZ",
+        "bytes": 124928,
+        "envelope_bytes": 124761,
+        "members": 2,
+        "member_digest": "54afa328ee6e17e037f0a6a53d40ff0de4b40ddf307224d951e653ab7cddbc40"
+      },
+      {
+        "index": 21,
+        "entry": "SAVE_PARTS_EN.NXZ",
+        "bytes": 3084288,
+        "envelope_bytes": 3083360,
+        "members": 14,
+        "member_digest": "a13832cbdffd3633b466e985db46105d8f95d3b9180779ecc2438136e1c26db2"
+      },
+      {
+        "index": 22,
+        "entry": "SAVE_PARTS_ZC.NXZ",
+        "bytes": 3289088,
+        "envelope_bytes": 3288146,
+        "members": 14,
+        "member_digest": "cbe715ff05c18757aa2d2a27779baaef6f87ee6240b2ab4ea8c983b1f33967a4"
+      },
+      {
+        "index": 31,
+        "entry": "TITLE_PARTS_EN.NXZ",
+        "bytes": 2273280,
+        "envelope_bytes": 2272121,
+        "members": 14,
+        "member_digest": "f3ef714944063dafaea0bc3ebc81772f9dd106b68dc8993709138a3ec5e02a00"
+      },
+      {
+        "index": 32,
+        "entry": "TITLE_PARTS_ZC.NXZ",
+        "bytes": 2281472,
+        "envelope_bytes": 2281222,
+        "members": 14,
+        "member_digest": "9d80d39e28038b172495091e07d590b56d8f7e1c890773f40ee4507a0d7e4dda"
+      },
+      {
+        "index": 46,
+        "entry": "BORDER_PARTS.NXZ",
+        "bytes": 102400,
+        "envelope_bytes": 100427,
+        "members": 12,
+        "member_digest": "491245a6a1e7429c1bb749cbae7111dc09b1328cfbed74aaba83bf0a4e839df3"
+      },
+      {
+        "index": 47,
+        "entry": "NOISE_PARTS.NXZ",
+        "bytes": 2881536,
+        "envelope_bytes": 2880518,
+        "members": 4,
+        "member_digest": "f0832aab243b73a5a230f1774236d1c3e501a0d442d8f90ad4c8307f6767e3d9"
+      },
+      {
+        "index": 49,
+        "entry": "CG_PARTS.NXZ",
+        "bytes": 25038848,
+        "envelope_bytes": 25037579,
+        "members": 401,
+        "member_digest": "691fe1eb8556e5918253e1fb7e2e4b79286199ed65fd6a01aebd69d35cab0d1e"
+      },
+      {
+        "index": 51,
+        "entry": "EXTRA_PARTS_EN.NXZ",
+        "bytes": 2865152,
+        "envelope_bytes": 2864544,
+        "members": 14,
+        "member_digest": "0356d73ad8334491aaf91941fbcd6e584a28430c2fb5b58957bad2038b955818"
+      },
+      {
+        "index": 52,
+        "entry": "EXTRA_PARTS_ZC.NXZ",
+        "bytes": 3065856,
+        "envelope_bytes": 3065423,
+        "members": 14,
+        "member_digest": "c12e62aafcf3cb3ed4faf7a78b2cca51d2c12fdc37bda029927d19b568a6861f"
+      },
+      {
+        "index": 56,
+        "entry": "SOUND_PARTS_EN.NXZ",
+        "bytes": 2406400,
+        "envelope_bytes": 2405925,
+        "members": 17,
+        "member_digest": "c379debbb3308632172cd9acdeae1ec1fb9e59182b6ba7d98c2b59b1ccae02c5"
+      },
+      {
+        "index": 57,
+        "entry": "SOUND_PARTS_ZC.NXZ",
+        "bytes": 3590144,
+        "envelope_bytes": 3589035,
+        "members": 17,
+        "member_digest": "df92b1318af51873cf120505b400f73208d323b7aea0c7f46e37780249bfd228"
+      },
+      {
+        "index": 61,
+        "entry": "ARCHIVE_PARTS_EN.NXZ",
+        "bytes": 15190016,
+        "envelope_bytes": 15188504,
+        "members": 69,
+        "member_digest": "586d08276519d999e74e28f54f73b2494fcd42e7ad54e3c3330ab09301431792"
+      },
+      {
+        "index": 62,
+        "entry": "ARCHIVE_PARTS_ZC.NXZ",
+        "bytes": 15190016,
+        "envelope_bytes": 15188157,
+        "members": 69,
+        "member_digest": "f024265ee6631ccceb5bd2d7f28b45054a9e93ed1cfdf38766a29e6a6dd249d2"
+      },
+      {
+        "index": 65,
+        "entry": "ARCHTHUMB_PARTS.NXZ",
+        "bytes": 8753152,
+        "envelope_bytes": 8751171,
+        "members": 136,
+        "member_digest": "267f3edefe99cc0d6cf09a8bc283b21ba24085ae8cce4e505aae17e765bb1139"
+      }
+    ],
+    "members_verified": 979,
+    "largest_member_bytes": 1048672,
+    "direct_reads": true,
+    "image_bytes_unchanged": true,
+    "schema": "knife-ui-direct-ranges-v1",
+    "source_manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+    "manifest_sha256": "c317f7da0d07d01af0c13d92720013f0e33b214f5d1356c6a39b8dced168e832",
+    "changed_entries": [
+      {
+        "index": 1,
+        "entry": "CONF_PARTS_EN.NXZ",
+        "before_bytes": 968704,
+        "after_bytes": 6336512,
+        "members": 26,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 2,
+        "entry": "CONF_PARTS_ZC.NXZ",
+        "before_bytes": 1071104,
+        "after_bytes": 5545984,
+        "members": 26,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 6,
+        "entry": "DISP_PARTS_EN.NXZ",
+        "before_bytes": 1196032,
+        "after_bytes": 17565696,
+        "members": 50,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 7,
+        "entry": "DISP_PARTS_ZC.NXZ",
+        "before_bytes": 1198080,
+        "after_bytes": 17563648,
+        "members": 50,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 11,
+        "entry": "MENU_PARTS_EN.NXZ",
+        "before_bytes": 294912,
+        "after_bytes": 1974272,
+        "members": 7,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 12,
+        "entry": "MENU_PARTS_ZC.NXZ",
+        "before_bytes": 348160,
+        "after_bytes": 2025472,
+        "members": 7,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 16,
+        "entry": "MODEPNL_PARTS_EN.NXZ",
+        "before_bytes": 55296,
+        "after_bytes": 118784,
+        "members": 2,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 17,
+        "entry": "MODEPNL_PARTS_ZC.NXZ",
+        "before_bytes": 61440,
+        "after_bytes": 124928,
+        "members": 2,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 21,
+        "entry": "SAVE_PARTS_EN.NXZ",
+        "before_bytes": 311296,
+        "after_bytes": 3084288,
+        "members": 14,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 22,
+        "entry": "SAVE_PARTS_ZC.NXZ",
+        "before_bytes": 284672,
+        "after_bytes": 3289088,
+        "members": 14,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 31,
+        "entry": "TITLE_PARTS_EN.NXZ",
+        "before_bytes": 1269760,
+        "after_bytes": 2273280,
+        "members": 14,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 32,
+        "entry": "TITLE_PARTS_ZC.NXZ",
+        "before_bytes": 1277952,
+        "after_bytes": 2281472,
+        "members": 14,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 46,
+        "entry": "BORDER_PARTS.NXZ",
+        "before_bytes": 100352,
+        "after_bytes": 102400,
+        "members": 12,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 47,
+        "entry": "NOISE_PARTS.NXZ",
+        "before_bytes": 2338816,
+        "after_bytes": 2881536,
+        "members": 4,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 51,
+        "entry": "EXTRA_PARTS_EN.NXZ",
+        "before_bytes": 266240,
+        "after_bytes": 2865152,
+        "members": 14,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 52,
+        "entry": "EXTRA_PARTS_ZC.NXZ",
+        "before_bytes": 229376,
+        "after_bytes": 3065856,
+        "members": 14,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 56,
+        "entry": "SOUND_PARTS_EN.NXZ",
+        "before_bytes": 2150400,
+        "after_bytes": 2406400,
+        "members": 17,
+        "image_bytes_unchanged": true
+      },
+      {
+        "index": 57,
+        "entry": "SOUND_PARTS_ZC.NXZ",
+        "before_bytes": 1882112,
+        "after_bytes": 3590144,
+        "members": 17,
+        "image_bytes_unchanged": true
+      }
+    ]
+  },
+  "ui_storage_delta_bytes": 61790208,
+  "arm_program_table_growth_bytes": 996,
+  "profile_record_bytes": [
+    794,
+    819
+  ],
+  "artifacts": [
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 10162583,
+      "sha256": "7292b8c2b4ea40542fdfd704659065762013c6e99196f2db1653bcbedd7c423b"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7270288,
+      "sha256": "5c662468ef0f0532578b176862e0ed5f6ad289da80d009fef6529800926595ac"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/build-receipt-r11.json",
+      "bytes": 86549,
+      "sha256": "323097d47c118f0a5af8837425e296bf43cdf90413e37c6a4b979d6fda44085f"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/allui.hed",
+      "bytes": 568,
+      "sha256": "afa333f7afee931f5169b2a9ed916d1aa8bcf5ce6cfc735d4cdbd5a4489e947e"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/allui.mrg",
+      "bytes": 143323136,
+      "sha256": "cacb75d05ca00fcdcc0d580f7fab2d50715daf605bad6fad2720c8841885742b"
+    },
+    {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/vita-540p-assets.json",
+      "bytes": 1605592,
+      "sha256": "c317f7da0d07d01af0c13d92720013f0e33b214f5d1356c6a39b8dced168e832"
+    }
+  ],
+  "tests": [
+    {
+      "path": ".work/vita/r11-rust-tests.log",
+      "bytes": 38287,
+      "sha256": "da62e91c007702849714f23330437dc68a87c615ae5eb292bad3cb43228251c0"
+    },
+    {
+      "path": ".work/vita/r11-material-tests.log",
+      "bytes": 284,
+      "sha256": "870a37c006eb83f49f34179d9f18d83c92d01f8f958e58e49ef323a95ec18234"
+    },
+    {
+      "path": ".work/vita/r11-gxm.log",
+      "bytes": 102438,
+      "sha256": "ed00e6978db0574dcf592ea569b95b7ec1cbc26a4f221991084f9eee95a5b2f9"
+    },
+    {
+      "path": ".work/vita/r11-cache.log",
+      "bytes": 2533,
+      "sha256": "e361c2bd9861371209bfc60509f6d6f42e229940bec91d0060b5f8fb5b286bc9"
+    },
+    {
+      "path": ".work/vita/r11-inputs.log",
+      "bytes": 473,
+      "sha256": "85e550bb308c6c468fd3921111de96a264f3cb8276dc3cc8cc8862b6af30ee62"
+    },
+    {
+      "path": ".work/vita/r11-effects.log",
+      "bytes": 6590,
+      "sha256": "3ff6bf033496d88cad72c91d2538173d4b336dd4e3f4544f1b60512a8c779956"
+    },
+    {
+      "path": ".work/vita/r11-replay.log",
+      "bytes": 114,
+      "sha256": "7751c4f6dde25cf7538240d6b444585fcc54159071d2346f2431a10276d540dc"
+    },
+    {
+      "path": ".work/vita/r11-profile.log",
+      "bytes": 103,
+      "sha256": "02a64b2d9ea514e9ab24e03e03d1c75cb067402bee1cac14e73c90c476bfa4be"
+    },
+    {
+      "path": ".work/vita/r11-offline-validation.log",
+      "bytes": 113,
+      "sha256": "4ab37eb41a11b70d9e405eecab3469a2602b90f973a6ad71794e66ab4454d433"
+    },
+    {
+      "path": ".work/vita/r11-build.log",
+      "bytes": 11550,
+      "sha256": "501b6c8317d77babb7efcd6d4ba3872c123bcac31941fc8724f3ec4e2483ed6f"
+    }
+  ],
+  "rollback": ".work/vita/rollback/stage-effect-r10-material-coverage-20261106",
+  "limits": [
+    "No hardware FPS claim",
+    "Static instruction counts do not measure GPU time",
+    "CPU RGBA8 tests use controlled sampling",
+    "Other memory pressure and GPU allocation failures remain bounded errors, not guaranteed impossible"
+  ]
+}

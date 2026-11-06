@@ -29,6 +29,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../vita/gxm_backend.c");
     println!("cargo:rerun-if-changed=../vita/gxm_backend.h");
     println!("cargo:rerun-if-changed=../vita/effects_backend.inc");
+    println!("cargo:rerun-if-changed=../vita/material_variants.h");
     println!("cargo:rerun-if-changed=../vita/gpu_lifetime.inc");
     for name in ["runtime_shaders.c", "runtime_shaders.h", "shader_sha256.h", "shader_module_exports.h", "shader_extensions.c", "shader_extensions.h", "vendor/shacccg-ext/libSceShaccCgExt.a", "shaders/effects.cg", "shaders/generated/runtime_source.h", "shaders/generated/offline_programs.h"] {
         println!("cargo:rerun-if-changed=../vita/{name}");

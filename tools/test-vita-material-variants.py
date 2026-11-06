@@ -32,13 +32,14 @@ static float value(){const float edge[]={0,1,1.f/255,0.499999f,0.5f,0.500001f,1.
  return random32()%3? float(random32()%65536)/65535.f : edge[random32()%7];}
 int main(){
  unsigned cases=0;
- for(unsigned id=88;id<105;++id) for(unsigned n=0;n<20000;++n){
-  unsigned ops[]={1,1,6,6,7,7,13,13,1,6,7,13,3,4,5,11,14};unsigned op=ops[id-88];
+ for(unsigned id=88;id<108;++id) for(unsigned n=0;n<20000;++n){
+  unsigned ops[]={1,1,6,6,7,7,13,13,1,6,7,13,3,4,5,11,14,6,8,14};unsigned op=ops[id-88];
   sampled={value(),value(),value(),value()};soft_value=1;secondary={0,0,0,0};
   FragmentInput i{{0,0},{{0,0}},{},{},{}};i.uv=hazed_uv;i.color={value(),value(),value(),value()};
   tu.params={float(op),id<96?float(id%2==0):float(random32()%2),960,540};
   tu.params2={-1,0,id<96?float(id%2!=0):float(random32()%2),0};
   if(id>=96&&id<=99){i.hx={.2f,-.7f,.9f,float(random32()%2)};}
+  if(id>=105){tu.params.y=0;tu.params2.z=0;tu.params2.w=1;secondary={0,0,0,(n%3==0)?254.f/255.f:value()};}
   U4 d{(uint8_t)random32(),(uint8_t)random32(),(uint8_t)random32(),(uint8_t)random32()};
   U4 expected{0,0,0,0},actual{0,0,0,0};
   switch(id){REF_CASES default:std::abort();}
@@ -57,6 +58,7 @@ main=main.replace('REF_CASES',''.join(refs)).replace('CAND_CASES',''.join(f'case
 out=ROOT/'.work/vita/material-variants';out.mkdir(parents=True,exist_ok=True)
 results={}
 for name,code in [('green',base+main),('red-fill-alpha',(base+main).replace('U4 candidate88(FragmentInput i,U4 destination){','U4 candidate88(FragmentInput i,U4 destination){ sampled.a=1.0f;')),
+ ('red-group-mask',(base+main).replace('U4 candidate105(FragmentInput i,U4 destination){','U4 candidate105(FragmentInput i,U4 destination){ secondary.a=1.0f;')),
  ('red-haze-premultiply',(base+main).replace('if (i.hx.w > 0.5f) { t.rgb = t.rgb * t.a; }','if (false) { t.rgb = t.rgb * t.a; }'))]:
  src=out/(name+'.cpp');src.write_text(code)
  subprocess.run(['c++','-std=c++17','-O2','-Wall','-Wextra','-Werror','-Wno-unused-function','-fno-fast-math','-ffp-contract=off',str(src),'-o',str(out/name)],check=True)

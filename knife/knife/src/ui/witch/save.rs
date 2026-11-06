@@ -94,7 +94,73 @@ pub struct WSave {
     pub loaded: Option<usize>,
 }
 
+impl WSave {
+    fn focus_slot(&mut self, slot: i32, focus: &mut i32) {
+        self.slot = slot;
+        self.col = slot % 5;
+        self.row = slot / 5;
+        self.tabrow = false;
+        *focus = SLOT_OBJ + slot;
+    }
+
+    fn focus_tab(&mut self, tab: i32, focus: &mut i32) {
+        self.tab = tab;
+        self.tabrow = true;
+        *focus = TAB_OBJ + tab;
+    }
+
+    fn reopen_focus(&mut self, focus: &mut i32) {
+        self.tab = self.page;
+        self.focus_slot(self.slot, focus);
+    }
+
+    // Only an actual pointer event may override pad navigation. WObjs.hit can
+    // retain a synthetic hit from a page slide (lock=1) after the pointer left.
+    fn resolve_focus(&mut self, hit: i32, pointer: bool, focus: &mut i32) -> bool {
+        let old = (self.tabrow, self.tab, self.slot);
+        if pointer && (TAB_OBJ..TAB_OBJ + 6).contains(&hit) {
+            self.focus_tab(hit - TAB_OBJ, focus);
+        } else if pointer && (SLOT_OBJ..SLOT_OBJ + 20).contains(&hit) {
+            self.focus_slot(hit - SLOT_OBJ, focus);
+        } else if self.tabrow {
+            self.focus_tab(self.tab, focus);
+        } else {
+            self.focus_slot(self.slot, focus);
+        }
+        old != (self.tabrow, self.tab, self.slot)
+    }
+
+    fn move_grid(&mut self, pressed: u32, repeat: u32, focus: &mut i32) -> bool {
+        let old = (self.tabrow, self.slot);
+        let row = self.row;
+        if repeat & UP != 0 {
+            if row > 0 { self.focus_slot(self.slot - 5, focus); }
+            else if pressed & UP != 0 { self.focus_tab(self.page, focus); }
+        } else if repeat & DOWN != 0 {
+            if row < 3 { self.focus_slot(self.slot + 5, focus); }
+            else if pressed & DOWN != 0 { self.focus_tab(self.page, focus); }
+        } else if repeat & RIGHT != 0 {
+            if self.slot < 19 { self.focus_slot(self.slot + 1, focus); }
+            else if pressed & RIGHT != 0 { self.focus_slot(0, focus); }
+        } else if repeat & LEFT != 0 {
+            if self.slot > 0 { self.focus_slot(self.slot - 1, focus); }
+            else if pressed & LEFT != 0 { self.focus_slot(19, focus); }
+        }
+        debug_assert_eq!((self.col, self.row), (self.slot % 5, self.slot / 5));
+        old != (self.tabrow, self.slot)
+    }
+}
+
 impl Ui {
+    /// Small change key: no strings/allocations on unchanged frames.
+    #[cfg(target_os = "vita")]
+    pub(crate) fn vita_save_focus(&self) -> Option<[i32; 10]> {
+        let s = &self.w.save;
+        (s.a > 0.0).then(|| [s.st as i32, s.save as i32, s.page, s.slot,
+            s.col, s.row, s.tabrow as i32, self.w.objs.focus, self.w.objs.hit,
+            self.w.tex.get(415).is_some() as i32])
+    }
+
     /// Read-only, typed save UI observation for finite Vita DEV validation.
     #[cfg(target_os = "vita")]
     pub(crate) fn vita_diagnostic_save(&self, game: &Game) -> String {
@@ -155,6 +221,8 @@ impl Ui {
         self.w.save.save = save;
         self.w.save.title = false;
         self.w.save.loaded = None;
+        self.w.save.reopen_focus(&mut self.w.objs.focus);
+        self.w.objs.reset_hit();
         for k in 0..9 {
             self.w.objs.scale(TAB_OBJ + k, SX, SY);
         }
@@ -459,42 +527,28 @@ impl Ui {
             return 0;
         }
         let page_st = if copy { 27 } else { 3 };
-        let hit = self.w.objs.hit;
+        // A release tap is valid even though WIn.active is already false.
+        let pointer = self.w.inp.active || touch & 0x2002 != 0;
+        let hit = if pointer { self.w.objs.hit } else { -2 };
+        if self.w.save.resolve_focus(hit, pointer, &mut self.w.objs.focus) {
+            game.play_sys_sound(2);
+        }
         let t = hit.wrapping_sub(TAB_OBJ);
-        let on_slot = (hit - SLOT_OBJ) as u32 >= 20;
-        if (t as u32) <= 5 || (!on_slot && self.w.save.tabrow) {
-            // the page tabs
+        if self.w.save.tabrow {
             let s = &mut self.w.save;
-            let v192 = if (t as u32) <= 6 {
-                s.tabrow = true;
-                if s.tab != t {
-                    s.tab = t;
-                    game.play_sys_sound(2);
-                }
-                s.tab
-            } else {
-                self.w.objs.focus = TAB_OBJ + s.tab;
-                s.tab
-            };
-            let s = &mut self.w.save;
+            let v192 = s.tab;
             if s.page != v192 && (p & MASK[0] != 0 || (v192 == t && touch & 0x2000 != 0)) {
                 s.prev_page = s.page;
                 self.ws_page(game, page_st);
                 return 0;
             }
             if p & UP != 0 {
-                s.tabrow = false;
-                s.row = 3;
-                s.slot = s.col + 15;
-                self.w.objs.focus = s.col + 23;
+                s.focus_slot(s.col + 15, &mut self.w.objs.focus);
                 game.play_sys_sound(2);
                 return 0;
             }
             if p & DOWN != 0 {
-                s.tabrow = false;
-                s.row = 0;
-                s.slot = s.col;
-                self.w.objs.focus = s.col + SLOT_OBJ;
+                s.focus_slot(s.col, &mut self.w.objs.focus);
                 game.play_sys_sound(2);
                 return 0;
             }
@@ -522,18 +576,6 @@ impl Ui {
                 game.play_sys_sound(2);
             }
             return 0;
-        }
-        let s = &mut self.w.save;
-        if on_slot {
-            self.w.objs.focus = s.slot + SLOT_OBJ;
-        } else {
-            s.tabrow = false;
-            if s.slot != hit - SLOT_OBJ {
-                s.slot = hit - SLOT_OBJ;
-                s.col = s.slot % 5;
-                s.row = s.slot / 5;
-                game.play_sys_sound(2);
-            }
         }
         let s = &mut self.w.save;
         let n = (s.slot + 20 * s.page) as usize;
@@ -581,41 +623,9 @@ impl Ui {
             }
         }
         let s = &mut self.w.save;
-        let (col, row) = (s.col, s.row);
-        let mut moved = None;
-        if rep & UP != 0 {
-            if row >= 1 {
-                moved = Some((col, row - 1));
-            } else if p & UP != 0 {
-                s.tabrow = true;
+        if rep & (UP | DOWN | RIGHT | LEFT) != 0 {
+            if s.move_grid(p, rep, &mut self.w.objs.focus) {
                 game.play_sys_sound(2);
-            }
-        } else if rep & DOWN != 0 {
-            if row <= 2 {
-                moved = Some((col, row + 1));
-            } else if p & DOWN != 0 {
-                s.tabrow = true;
-                game.play_sys_sound(2);
-            }
-        } else if rep & RIGHT != 0 {
-            if 5 * row + col > 18 {
-                if p & RIGHT != 0 {
-                    moved = Some((0, 0));
-                }
-            } else if col >= 4 {
-                moved = Some((0, if row <= 2 { row + 1 } else { 0 }));
-            } else {
-                moved = Some((col + 1, row));
-            }
-        } else if rep & LEFT != 0 {
-            if 5 * row + col < 1 {
-                if p & LEFT != 0 {
-                    moved = Some((4, 3));
-                }
-            } else if col <= 0 {
-                moved = Some((4, if row >= 1 { row - 1 } else { 3 }));
-            } else {
-                moved = Some((col - 1, row));
             }
         } else if p & MASK[9] != 0 || flick & 1 != 0 {
             s.prev_page = s.page;
@@ -670,16 +680,6 @@ impl Ui {
                 self.w.save.st = 22;
                 self.wp_open(game, 169, 480);
                 game.play_sys_sound(1);
-            }
-        }
-        if let Some((c, rw)) = moved {
-            let s = &mut self.w.save;
-            if (c, rw) != (col, row) {
-                s.col = c;
-                s.row = rw;
-                s.slot = c + 5 * rw;
-                self.w.objs.focus = s.slot + SLOT_OBJ;
-                game.play_sys_sound(2);
             }
         }
         // (LABEL_456 also keeps the cursor in word_A3607C / word_A36080, which only sub_2F560 mode 1 writes
@@ -1007,4 +1007,145 @@ fn rec_var(d: &crate::save::SaveData, n: usize) -> i32 {
 /// sub_35530
 fn scene_icon(scene: usize) -> u8 {
     scene.checked_sub(1).and_then(|i| SCENE_ICON.get(i)).copied().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+    use super::super::{WIn, WObjs};
+
+    fn setup(slot: i32, page: i32) -> (WSave, WObjs) {
+        let mut s = WSave { slot, page, ..Default::default() };
+        let mut o = WObjs::default();
+        o.install(objtab::SAVE);
+        for k in 0..20 { o.create(SLOT_OBJ + k, 2, 0, [-3, -2, 86, 62]); }
+        o.group_flags(2, 1, 0);
+        s.reopen_focus(&mut o.focus);
+        (s, o)
+    }
+
+    fn pad_frame(s: &mut WSave, o: &mut WObjs) {
+        o.update(&mut WIn::default());
+        s.resolve_focus(o.hit, false, &mut o.focus);
+    }
+
+    #[test]
+    fn grid_edges_transfer_visible_focus_to_page_tabs() {
+        for page in 0..6 {
+            for col in 0..5 {
+                for (slot, key) in [(col, UP), (col + 15, DOWN)] {
+                    let (mut s, mut o) = setup(slot, page);
+                    assert!(s.move_grid(key, key, &mut o.focus));
+                    for _ in 0..3 { pad_frame(&mut s, &mut o); }
+                    assert!(s.tabrow);
+                    assert_eq!((s.tab, o.focus), (page, TAB_OBJ + page));
+                    assert_eq!(o.o[o.focus as usize].as_ref().unwrap().state & 1, 1);
+                    // Returning from tabs restores the same column in either row.
+                    for row in [0, 3] {
+                        s.focus_slot(col + 5 * row, &mut o.focus);
+                        pad_frame(&mut s, &mut o);
+                        assert!(!s.tabrow);
+                        assert_eq!((s.slot, s.col, s.row, o.focus),
+                            (col + 5 * row, col, row, SLOT_OBJ + col + 5 * row));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_grid_directions_and_repeat_edges_preserve_selection() {
+        for slot in 0..20 {
+            for (key, expected) in [(LEFT, (slot + 19) % 20), (RIGHT, (slot + 1) % 20),
+                (UP, slot - 5), (DOWN, slot + 5)] {
+                let (mut s, mut o) = setup(slot, 2);
+                s.move_grid(key, key, &mut o.focus);
+                pad_frame(&mut s, &mut o);
+                if (0..20).contains(&expected) {
+                    assert!(!s.tabrow);
+                    assert_eq!((s.slot, o.focus), (expected, SLOT_OBJ + expected));
+                } else { assert!(s.tabrow); assert_eq!(o.focus, TAB_OBJ + 2); }
+            }
+        }
+        for (slot, key) in [(0, UP), (19, DOWN), (0, LEFT), (19, RIGHT)] {
+            let (mut s, mut o) = setup(slot, 0);
+            assert!(!s.move_grid(0, key, &mut o.focus));
+            assert!(!s.tabrow);
+            assert_eq!(s.slot, slot);
+        }
+    }
+
+    #[test]
+    fn synthetic_page_slide_hit_does_not_pull_pad_back() {
+        let (mut s, mut o) = setup(17, 3);
+        o.lock = 1;
+        o.update(&mut WIn::default());
+        o.lock = 0;
+        assert_eq!(o.hit, SLOT_OBJ + 17);
+        s.move_grid(DOWN, DOWN, &mut o.focus);
+        pad_frame(&mut s, &mut o);
+        assert!(s.tabrow);
+        assert_eq!(o.focus, TAB_OBJ + 3);
+        s.focus_slot(2, &mut o.focus);
+        s.resolve_focus(TAB_OBJ + 3, false, &mut o.focus);
+        assert!(!s.tabrow);
+        assert_eq!(o.focus, SLOT_OBJ + 2);
+    }
+
+    #[test]
+    fn real_pointer_overrides_tabs_and_slots_but_invalid_hit_preserves_focus() {
+        let (mut s, mut o) = setup(0, 1);
+        for tab in 0..6 {
+            s.resolve_focus(TAB_OBJ + tab, true, &mut o.focus);
+            assert!(s.tabrow);
+            assert_eq!(o.focus, TAB_OBJ + tab);
+            s.resolve_focus(-1, true, &mut o.focus);
+            assert!(s.tabrow);
+            for slot in 0..20 {
+                s.resolve_focus(SLOT_OBJ + slot, true, &mut o.focus);
+                assert!(!s.tabrow);
+                assert_eq!((s.slot, o.focus), (slot, SLOT_OBJ + slot));
+            }
+        }
+    }
+
+    #[test]
+    fn touch_release_keeps_its_hit_for_confirmation() {
+        let (mut s, mut o) = setup(7, 1);
+        let mut inp = WIn::default();
+        // Simulate a hit established while the finger was down. Release has
+        // active=false but still carries the valid tap and retained hit.
+        o.hit = SLOT_OBJ + 7;
+        inp.touch_down(0.0, 0.0);
+        for _ in 0..8 { inp.begin(); }
+        inp.touch_up();
+        inp.begin();
+        assert!(!inp.active);
+        assert_ne!(inp.touch & 0x2002, 0);
+        o.update(&mut inp);
+        s.resolve_focus(o.hit, inp.active || inp.touch & 0x2002 != 0, &mut o.focus);
+        assert_eq!((s.slot, o.hit, o.focus), (7, SLOT_OBJ + 7, SLOT_OBJ + 7));
+        assert!(!s.tabrow);
+    }
+
+    #[test]
+    fn reopen_save_load_and_copy_keep_slot_and_source_without_hidden_grid() {
+        for saving in [false, true] {
+            for st in [2, 26] {
+                let (mut s, mut o) = setup(17, 4);
+                s.save = saving;
+                s.st = st;
+                s.src = (1, 3);
+                s.focus_tab(2, &mut o.focus);
+                // A dialog/title/menu may own the shared focus before reopening.
+                o.focus = 170;
+                s.reopen_focus(&mut o.focus);
+                pad_frame(&mut s, &mut o);
+                assert!(!s.tabrow);
+                assert_eq!((s.page, s.tab, s.slot, o.focus), (4, 4, 17, 25));
+                assert_eq!(s.src, (1, 3));
+                assert_eq!(s.st, st);
+            }
+        }
+    }
 }

@@ -55,7 +55,7 @@ for route in routes:
             ('op1:30/64/54/17/14','op6:31/69/55/17/14','op13:21/76/56/17/14')):
         raise SystemExit('Quad fallback order does not preserve plain/full/generic/snapshot priority')
     if not all(value in route.get('group_fallback_routes','') for value in
-            ('op1:64/54/17/14','op6:69/55/17/14','op13:76/56/17/14')):
+            ('op1:64/54/17/14','op6:105/69/55/17/14','op13:76/56/17/14')):
         raise SystemExit('Group fallback order does not preserve full/generic/snapshot priority')
     if route.get('selection')!='first_ready_and_source_compatible;14=destination_snapshot':
         raise SystemExit('Fallback route log must describe readiness/source compatibility and snapshot route')

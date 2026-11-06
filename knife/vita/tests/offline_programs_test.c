@@ -17,7 +17,7 @@ int main(void) {
         if(!loaded || memcmp(loaded,blob,bytes)){free(loaded);return 2;}
         free(loaded);++count;
     }
-    if(count!=82 || read_offline(63)!=NULL || read_offline(UINT32_MAX)!=NULL)return 3;
+    if(count!=85 || read_offline(63)!=NULL || read_offline(UINT32_MAX)!=NULL)return 3;
     printf("PASS: %u real PC GXP programs, embedded identities and production validator; ProgramCheck mocked, GPU unverified\n",count);
     return 0;
 }

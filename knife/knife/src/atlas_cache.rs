@@ -13,6 +13,7 @@ const MAX_ENTRIES: usize = 512;
 // A soft preference inside CAP, never another allocation or a borrowed pin.
 // MRU language pages win when both languages would exceed this allowance.
 const UI_PREFERRED_BYTES: usize = 24 * 1024 * 1024;
+use super::source_failure::{Failure, SourceBudget};
 type Key = (u64, usize);
 struct Entry { key: Key, bytes: ByteView, ui_hot: bool }
 struct Job { key: Key, archive: Arc<Archive>, index: usize, generation:u64, demand:bool, no_evict:bool }
@@ -21,7 +22,7 @@ const WAIT_LIMIT:Duration=Duration::from_secs(10);
 #[derive(Default)]
 struct State {
     entries: VecDeque<Entry>, jobs: VecDeque<Job>, active: Option<Key>,
-    failed: VecDeque<(Key,String)>, next_generation:u64, bytes: usize, reserved: usize, stopped: bool,
+    failed: VecDeque<(Key,Failure)>, next_generation:u64, bytes: usize, reserved: usize, stopped: bool,
 }
 #[derive(Default)]
 struct Shared { state: Mutex<State>, wake: Condvar }
@@ -59,8 +60,9 @@ impl Default for AtlasCache {
                                 return Ok(None);
                             }
                         } else { Self::reclaim(&mut state, plan.decoded_bytes); }
-                        ensure!(state.bytes.saturating_add(plan.decoded_bytes) <= CAP && state.entries.len() < MAX_ENTRIES,
-                            "shared atlas pins leave insufficient output budget");
+                        if state.bytes.saturating_add(plan.decoded_bytes) > CAP || state.entries.len() >= MAX_ENTRIES {
+                            return Err(SourceBudget.into());
+                        }
                         state.reserved = plan.decoded_bytes;
                         Self::gauges(&state);
                         knife_perf::gauge_set(Gauge::StageRequestedBytes, plan.decoded_bytes as u64);
@@ -82,15 +84,16 @@ impl Default for AtlasCache {
                     Ok(Ok(Some(bytes))) => {
                         if !job.no_evict { Self::reclaim(&mut state, bytes.allocation_len()); }
                         if state.bytes.saturating_add(bytes.allocation_len()) <= CAP && state.entries.len() < MAX_ENTRIES {
+                            state.failed.retain(|(key,_)| *key != job.key);
                             state.bytes += bytes.allocation_len();
                             knife_perf::add(Metric::StageComplete, bytes.len() as u64, 0);
                             load.finish_hot(&label, bytes.allocation_len() as u64, bytes.len() as u64);
                             state.entries.push_back(Entry { key: job.key, bytes, ui_hot: Self::ui_hot(&job.archive, job.index) });
-                        } else if !job.no_evict { Self::fail(&mut state,job.key,"shared source pins leave insufficient output budget".into()); }
+                        } else if !job.no_evict { Self::fail(&mut state,job.key,SourceBudget.into()); }
                     },
                     Ok(Ok(None)) => {},
-                    Ok(Err(error)) => Self::fail(&mut state,job.key,format!("{error:#}")),
-                    Err(_) => Self::fail(&mut state,job.key,"source worker panicked".into()),
+                    Ok(Err(error)) => Self::fail(&mut state,job.key,error),
+                    Err(_) => Self::fail(&mut state,job.key,anyhow::anyhow!("source worker panicked")),
                 }
                 knife_perf::gauge_set(Gauge::StageRequestedBytes, 0);
                 knife_perf::gauge_set(Gauge::StageInflight, 0);
@@ -171,10 +174,11 @@ impl AtlasCache {
         self.shared.wake.notify_all();
         true
     }
-    fn fail(state:&mut State,key:Key,error:String) {
+    fn fail(state:&mut State,key:Key,error:anyhow::Error) {
+        let failure = Failure::record(&error,state.failed.iter().find(|(old,_)|*old==key).map(|(_,f)|f));
         state.failed.retain(|(old,_)|*old!=key);
         while state.failed.len()>=MAX_ENTRIES {state.failed.pop_front();}
-        state.failed.push_back((key,error));knife_perf::add(Metric::StageFailed,0,0);
+        state.failed.push_back((key,failure));knife_perf::add(Metric::StageFailed,0,0);
     }
     /// An explicit new VM generation can retry a completed failure. An active
     /// read/reservation is never canceled, duplicated or freed by this operation.
@@ -194,7 +198,19 @@ impl AtlasCache {
             let entry=state.entries.remove(i).unwrap();let bytes=entry.bytes.clone();state.entries.push_back(entry);
             knife_perf::add(Metric::SourceCacheHit,bytes.len()as u64,0);return Poll::Ready(bytes);
         }
-        if let Some((_,error))=state.failed.iter().find(|(failed,_)|*failed==key) {return Poll::Failed(error.clone());}
+        if let Some((_,failure))=state.failed.iter_mut().find(|(failed,_)|*failed==key) {
+            if failure.begin_retry(demand) {
+                // Real allocation failure, not an estimated headroom threshold.
+                // Drop only unpinned owners; never cancel an active GPU/source use.
+                let before=state.bytes;
+                while let Some(i)=Self::victim(&state,true) {
+                    let old=state.entries.remove(i).unwrap();state.bytes-=old.bytes.allocation_len();
+                    knife_perf::add(Metric::SourceCacheDropped,old.bytes.allocation_len() as u64,3);
+                }
+                Self::gauges(&state);
+                tracing::warn!(entry=index,released=before-state.bytes,"retrying transient source allocation once");
+            } else if !failure.pending { return Poll::Failed(failure.message.clone()); }
+        }
         if state.stopped || self.thread.as_ref().is_none_or(JoinHandle::is_finished) {return Poll::Failed("source worker unavailable".into());}
         if state.active==Some(key) {return Poll::Pending;}
         if let Some(i)=state.jobs.iter().position(|j|j.key==key) {

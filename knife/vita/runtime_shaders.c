@@ -71,7 +71,7 @@ static const uint32_t runtime_shader_ids[] = { 11, 22, 26, 28, 23, 25, 29, 54, 5
     32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
     48, 49, 50, 51, 52, 53, 57,
     64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
-    76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104 };
+    76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107 };
 static int runtime_shader_id(uint32_t shader) {
     for (unsigned i = 0; i < sizeof(runtime_shader_ids) / sizeof(runtime_shader_ids[0]); ++i)
         if (runtime_shader_ids[i] == shader) return 1;
@@ -135,6 +135,9 @@ static const char *entry_for(uint32_t shader) {
         case 102: return "fs_material_102";
         case 103: return "fs_material_103";
         case 104: return "fs_material_104";
+        case 105: return "fs_material_105";
+        case 106: return "fs_material_106";
+        case 107: return "fs_material_107";
         default: return shader >= 32 && shader < 48 ? "fs_ps_chain2_fetch" : NULL;
     }
 }
@@ -251,7 +254,7 @@ static int validate(const void *program, uint32_t bytes, uint32_t shader) {
     if (shader == 53 && blur_weights != 1) REJECT("blur_weight_array_missing");
     if (!(sampler_bits & 1) || (shader == 15 && !(sampler_bits & 2))
         || (shader == 19 && !(sampler_bits & 4))) REJECT("required_sampler_missing");
-    if (material_shader(shader) && sampler_bits != 1u) REJECT("material_requires_one_source_sampler");
+    if (material_shader(shader) && sampler_bits != (material_group(shader) ? 5u : 1u)) REJECT("material_source_sampler_contract");
     if (shader == 29 && sampler_bits != 13u) REJECT("ps7_requires_full_source_samplers");
     if ((full_material_shader(shader) || all_operation_shader(shader)) && sampler_bits != (shader == 81 ? 9u : 13u)) REJECT("full_ps_requires_full_source_samplers");
     if (((shader >= 32 && shader < 48) || shader == 57) && sampler_bits != 5u) REJECT("chain2_requires_two_sources");

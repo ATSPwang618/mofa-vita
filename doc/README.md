@@ -1,6 +1,6 @@
 # 技术文档 / Technical documentation
 
-2026-11-06 整理。当前交付程序为 **r12 save-focus**；资源为 **r11 raw UI + native540 prebudget**。本目录只维护主题文档，历史逐轮记录通过 Git 查询，避免旧安装步骤与当前说明混淆。
+2026-11-07 更新。当前交付程序为 **r13 panel-lock**；资源为 **r11 raw UI + native540 prebudget**。本目录只维护主题文档，历史逐轮记录通过 Git 查询，避免旧安装步骤与当前说明混淆。
 
 | 文档 | 内容 |
 |---|---|

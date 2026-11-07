@@ -14,12 +14,11 @@ use crate::{
 };
 
 mod pad;
+mod story_controls;
 mod touch;
 mod witch;
 
-// Vita exposes normal auto playback, without player-triggered story acceleration.
-// Keep the engine's separate seek/load machinery and desktop controls intact.
-const STORY_FAST_FORWARD_ENABLED: bool = !cfg!(target_os = "vita");
+use story_controls::STORY_CONTROLS;
 
 pub use pad::Pad;
 #[cfg(target_os = "vita")]
@@ -5423,8 +5422,8 @@ impl Ui {
             }
             // sub_40ED0 off_AE0680 5 -> 6 / 2 -> 3 (and off_AE06B0 2 -> 3 after an RDAS hit): 20 frames first
             // (only when sub_53980(-1) / sub_53980(1) allow it: 0x41308 / 0x41428)
-            Confirm::PrevScene if game.prev_scene_allowed() => self.start_scene_countdown(false, 20),
-            Confirm::NextScene if game.next_scene_allowed() => self.start_scene_countdown(true, 20),
+            Confirm::PrevScene if STORY_CONTROLS.scene_jump && game.prev_scene_allowed() => self.start_scene_countdown(false, 20),
+            Confirm::NextScene if STORY_CONTROLS.scene_jump && game.next_scene_allowed() => self.start_scene_countdown(true, 20),
             Confirm::PrevScene | Confirm::NextScene => {}
             Confirm::QuickLoad => {
                 self.quick_load(game, r);
@@ -6281,7 +6280,7 @@ impl Ui {
         self.gal_movie_step(game, r, secs);
         // sub_40ED0 top state 1 after an RDAS hit: the next scene, asked first (dialog 10) when the config's
         // confirmation is on
-        if self.screen == Screen::Game && std::mem::take(&mut game.auto_skip_hit) && !game.ended {
+        if self.screen == Screen::Game && std::mem::take(&mut game.auto_skip_hit) && STORY_CONTROLS.scene_jump && !game.ended {
             game.drop_capture();
             if game.settings.skip_confirm {
                 self.confirm(game, Confirm::NextScene);

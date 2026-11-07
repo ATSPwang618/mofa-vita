@@ -19,12 +19,11 @@ The repository contains engine sources, build tools, offline shaders and resourc
 | ![Archive](doc/screenshots/03-archive.jpg) | ![Story](doc/screenshots/04-story.jpg) |
 
 Historical device screenshots; not performance acceptance evidence for the latest build.
-
 ## Current release and scope
 
-The local package is **`stage-effect-r12-save-focus-20261106`**, title ID **`KNIF00540`**. It uses the native540 memory-limited asset contract with r11 raw UI member access. The Vita UI is fixed to Chengkong Chinese, original language ID2; the asset pack retains English and Chinese. The default test profile is `hardware-test`, mask `0x7cfdfffffff`, with VitaDeck logging enabled.
+The local package is **`stage-effect-r13-panel-lock-20261107`**, title ID **`KNIF00540`**. It uses the native540 memory-limited asset contract with r11 raw UI member access. The Vita UI is fixed to Chengkong Chinese, original language ID2; the asset pack retains English and Chinese. The default test profile is `hardware-test`, mask `0x7cfdfffffff`, with VitaDeck logging enabled.
 
-r12 fixes save/load grid and page-tab focus synchronization, stale pointer hits, and focus restoration when reopening the screen. Its 130 game host tests, ARM build and VPK checks passed; the focus fix still needs device validation. This repository-maintenance update does not replace the existing r12 executable.
+r13 disables story-panel buttons 1, 2, 4 and 5 (previous scene, rewind, fast-forward and next scene), keeps them gray, and skips them during controller navigation. Auto playback, bookmarks, voice replay and internal save restoration remain available. It includes the r12 save/load focus fixes. With the r11 asset pack already installed, only the EBOOT or VPK needs updating. All 317 host tests passed; see the [installation guide](doc/08-素材与安装.md) for build receipts and device-validation limits.
 
 ## Implemented optimizations
 
@@ -52,6 +51,7 @@ Install the local `dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-5
 **With r11 assets already installed, r12 only needs an executable/VPK update.** Older packs also need r11's `allui.hed`, `allui.mrg` and `vita-540p-assets.json`. The VPK does not contain these game assets. See [installation and hashes](doc/08-素材与安装.md).
 
 Place `perf-enable.txt` and `optimization-profile.txt` in `ux0:data/WitchontheHolyNight/`, outside `assets/`. An explicit `0` disables logging; use `1` to enable it. Verify `build_tag` at startup. r12 emits `save_focus` only when selection state changes. See [logging and GPU replay](doc/06-性能采集与分析.md).
+
 
 
 ## Repository

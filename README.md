@@ -24,14 +24,14 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 本地交付版本 | `stage-effect-r12-save-focus-20261106` |
+| 本地交付版本 | `stage-effect-r13-panel-lock-20261107` |
 | 应用ID | `KNIF00540` |
 | 素材合同 | native540离线显存限额 + r11 raw UI成员读取 |
 | 界面语言 | Vita固定澄空中文ID2；资源保留英语/中文 |
 | 优化配置 | `hardware-test`，mask `0x7cfdfffffff` |
 | 日志 | VitaDeck默认开启，启动记录版本、有效配置和素材身份 |
 
-r12修复存读档格子/页码焦点不同步、旧触屏命中残留和重新打开后高亮状态异常。**已装r11配套资源时，只需更新EBOOT或VPK。** r12的130项游戏host测试、ARM构建及VPK检查已通过，实体Vita焦点验收尚待进行。本轮仓库维护清理的是源码与文档，不替换该交付包。
+r13将剧情顶栏第1、2、4、5项（上一场景、回退、快进、下一场景）固定为灰色并禁用，手柄导航自动跳过；自动播放、书签、语音及内部读档恢复保留。包含r12存读档焦点修复。**已装r11配套资源时，只需更新EBOOT或VPK。** 317项host测试通过；构建收据与实机验证边界见[安装说明](doc/08-素材与安装.md)。
 
 ## 已实施的主要优化
 
@@ -61,6 +61,7 @@ Windows可使用`py -3`；指定本机发行版可加`--wsl pocket-ubuntu`。每
 资源放`ux0:data/WitchontheHolyNight/assets/`。从r10或更早升级，需同步r11的`allui.hed`、`allui.mrg`、`vita-540p-assets.json`及程序；VPK不包含这些游戏资源。素材与成品SHA见[安装文档](doc/08-素材与安装.md)。
 
 日志/配置文件位于`ux0:data/WitchontheHolyNight/`：`perf-enable.txt`显式1开启、0关闭；`optimization-profile.txt`可写`hardware-test`。启动核对`build_tag`。r12新增`save_focus`状态变化记录；字段与固定GPU回放见[日志文档](doc/06-性能采集与分析.md)。
+
 
 
 ## 仓库结构

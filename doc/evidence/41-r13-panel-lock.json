@@ -1,0 +1,100 @@
+{
+  "build_tag": "stage-effect-r13-panel-lock-20261107",
+  "base_commit": "01eb835",
+  "branch": "perf/render",
+  "scope": "Vita player-facing story controls only; existing desktop controls retained",
+  "disabled_panel_indices_zero_based": [
+    0,
+    1,
+    3,
+    4
+  ],
+  "disabled_actions": [
+    "previous_scene",
+    "rewind",
+    "fast_forward",
+    "next_scene"
+  ],
+  "retained_panel_indices_zero_based": [
+    2,
+    5,
+    6,
+    7
+  ],
+  "input_guards": [
+    "pointer_hit",
+    "direct_dispatch",
+    "held_panel",
+    "pad_focus",
+    "manual_ZL_ZR_R",
+    "scene_jump_confirmation",
+    "read_scene_autoskip"
+  ],
+  "appearance": "original MODEPNL_PARTS gray state 2, no hover/pressed crossfade",
+  "host_tests": {
+    "game": 139,
+    "renderer": 170,
+    "perf": 8,
+    "new_policy_and_visual_tests": 9,
+    "failed": 0
+  },
+  "arm_build_passed": true,
+  "vpk_check_passed": true,
+  "assets_profile_check_passed": true,
+  "vpk_matches_standalone_eboot": true,
+  "package_entries_changed_from_r12": [
+    "eboot.bin"
+  ],
+  "performance_console_default": true,
+  "quiet_build": false,
+  "optimization_mask": "0x7cfdfffffff",
+  "offline_shader_count": 85,
+  "asset_manifest_sha256": "c317f7da0d07d01af0c13d92720013f0e33b214f5d1356c6a39b8dced168e832",
+  "artifacts": {
+    "eboot.bin": {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/eboot.bin",
+      "bytes": 10156699,
+      "sha256": "28e6b28992632ff699e676f90a60d2ee110014f2fec061ba40c360200e8dc6ec"
+    },
+    "knife-vita-540p.vpk": {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk",
+      "bytes": 7267529,
+      "sha256": "85eee2b4ee1b3d4c9ec6514522492b902d7c96124ee5ed91c2898aa6718bac5c"
+    },
+    "build-receipt-r13.json": {
+      "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/build-receipt-r13.json",
+      "bytes": 86722,
+      "sha256": "db7c5704fa16a0de82fd0f58dc381791c7a4d8641ed5119794b543b965b0b77e"
+    }
+  },
+  "source_files": [
+    {
+      "path": "knife/knife/src/ui.rs",
+      "bytes": 372348,
+      "sha256": "93cfe3eca744115f69e1ff578927e316e6d73c3fbb895b8e2caba6effca54357"
+    },
+    {
+      "path": "knife/knife/src/ui/pad.rs",
+      "bytes": 19981,
+      "sha256": "892411b5e1a35084feeabcf68232b7a62446a90d90d41acd7d1da36884c30066"
+    },
+    {
+      "path": "knife/knife/src/ui/touch.rs",
+      "bytes": 60542,
+      "sha256": "618ce4e9791f668758ac44ff42b29e094eb350f1bad38f42ce82cbeb581b3a8c"
+    },
+    {
+      "path": "knife/knife/src/ui/story_controls.rs",
+      "bytes": 3768,
+      "sha256": "a1bf25990606feb01217e1563eae951ad357e302fc100028a8f9f8a478e724f6"
+    },
+    {
+      "path": "knife/knife/src/ui/witch/modepnl.rs",
+      "bytes": 9839,
+      "sha256": "b7c48e09bff5517d57b59ff5f3133fc51fc835df2c0b08997ae57d40ad35c3c1"
+    }
+  ],
+  "rollback": ".work/vita/rollback/stage-effect-r12-save-focus-20261106",
+  "hardware_verified": false,
+  "remote_push": false
+}

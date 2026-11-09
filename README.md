@@ -87,4 +87,4 @@ VPK不包含这些游戏资源。素材与成品SHA见[安装文档](doc/08-素�
 
 ## 来源与许可
 
-引擎基于 [AuroraWright/knife](https://github.com/AuroraWright/knife)，沿用 [MPL 2.0](knife/LICENSE)，详情见[上游来源](knife/UPSTREAM.txt)。第三方依赖保留 `knife/vita/vendor/` 下的原许可与说明。游戏内容归各权利人所有，不随源码提供。
+引擎基于 [AuroraWright/knife](https://github.com/AuroraWright/knife)，沿用 [MPL 2.0](knife/LICENSE)，详情见[上游来源](knife/UPSTREAM.txt)。第三方依赖保留 `knife/vita/vendor/` 下的原许可与说明。游戏内容归各权利人所有，不随源码提供，特别感谢@SpriteLisenLisen大大给与这个项目的技术支持

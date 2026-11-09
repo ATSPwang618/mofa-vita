@@ -4,9 +4,9 @@
 
 [![English](doc/language-en.svg)](README.en.md)
 
-[技术文档](doc/README.md) · [优化清单](doc/05-优化记录与实测数据.md)
+[技术文档](doc/README.md) · [优化清单](doc/05-优化记录与实测数据.md) · [原版资源提取](doc/10-Switch原版资源提取.md)
 
-基于 [AuroraWright/knife](https://github.com/AuroraWright/knife) 0.9.4，将《魔法使之夜》Switch版的数据交由Rust引擎运行，图形使用Vita原生 **GXM**。场景与合成分辨率 **960×540**，居中输出至960×544屏幕。桌面WGPU后端保留供开发对照。
+本移植版本基于 [AuroraWright/knife](https://github.com/AuroraWright/knife) 0.9.4，将《魔法使之夜》Switch版的数据交由Rust引擎运行，图形使用Vita原生 **GXM**。场景与合成分辨率 **960×540**，居中输出至960×544屏幕。桌面WGPU后端保留供开发对照。
 
 仓库提供引擎源码、构建工具、离线Shader和资源元数据；游戏本体、字体、图像、音视频及汉化数据须自行准备，不随源码分发。**编译引擎不需要整套游戏素材。**
 
@@ -45,6 +45,10 @@ r13将剧情顶栏第1、2、4、5项（上一场景、回退、快进、下一�
 
 完整的 **43个开关、专项修复、默认状态与验证边界**见[优化清单](doc/05-优化记录与实测数据.md)。r10长日志最重完整窗口约12.75FPS；不能承诺全游戏20FPS。Half/Tiled/Blur等候选虽按要求默认测试开启，仍不等于已经完成逐项实机像素与性能验收。
 
+## 游戏资源
+
+请自行准备 Switch 原版游戏、本体对应的 1.02 更新及所需字体/汉化资源。提取步骤、命令和 Vita 转换要求见 [Switch 原版资源提取指南](doc/10-Switch原版资源提取.md)。
+
 ## 构建
 
 从仓库根目录执行。Windows需要WSL；Vita构建固定`nightly-2026-05-28`、rust-src与VitaSDK。
@@ -60,7 +64,9 @@ Windows可使用`py -3`；指定本机发行版可加`--wsl pocket-ubuntu`。每
 
 本地交付目录为`dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/`（不入Git）。安装`knife-vita-540p.vpk`，或关闭游戏后用VitaDeck将同名`eboot.bin`更新至`ux0:app/KNIF00540/eboot.bin`。
 
-资源放`ux0:data/WitchontheHolyNight/assets/`。从r10或更早升级，需同步r11的`allui.hed`、`allui.mrg`、`vita-540p-assets.json`及程序；VPK不包含这些游戏资源。素材与成品SHA见[安装文档](doc/08-素材与安装.md)。
+资源放`ux0:data/WitchontheHolyNight/assets/`
+
+VPK不包含这些游戏资源。素材与成品SHA见[安装文档](doc/08-素材与安装.md)。
 
 日志/配置文件位于`ux0:data/WitchontheHolyNight/`：`perf-enable.txt`显式1开启、0关闭；`optimization-profile.txt`可写`hardware-test`。启动核对`build_tag`。r12新增`save_focus`状态变化记录；字段与固定GPU回放见[日志文档](doc/06-性能采集与分析.md)。
 
@@ -81,5 +87,3 @@ Windows可使用`py -3`；指定本机发行版可加`--wsl pocket-ubuntu`。每
 ## 来源与许可
 
 引擎基于 [AuroraWright/knife](https://github.com/AuroraWright/knife)，沿用 [MPL 2.0](knife/LICENSE)，详情见[上游来源](knife/UPSTREAM.txt)。第三方依赖保留 `knife/vita/vendor/` 下的原许可与说明。游戏内容归各权利人所有，不随源码提供。
-
-[致谢图片与更新工具](tools/credit-intro/README.md)。

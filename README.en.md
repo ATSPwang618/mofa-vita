@@ -4,7 +4,7 @@
 
 [![简体中文](doc/language-zh.svg)](README.md)
 
-[Technical documentation (Chinese)](doc/README.md) · [Optimization inventory (Chinese)](doc/05-优化记录与实测数据.md)
+[Technical documentation (Chinese)](doc/README.md) · [Optimization inventory (Chinese)](doc/05-优化记录与实测数据.md) · [Extracting assets](doc/10-switch-asset-extraction.en.md)
 
 This project ports the [knife](https://github.com/AuroraWright/knife) 0.9.4 Rust engine to **native PS Vita GXM**, using user-supplied data from the Switch release of *Witch on the Holy Night*. Scenes and composition render at **960×540**, centered on the Vita's 960×544 display. The desktop WGPU backend remains available for development comparisons.
 
@@ -36,6 +36,10 @@ r13 disables story-panel buttons 1, 2, 4 and 5 (previous scene, rewind, fast-for
 - **Audio and UI stability:** approximately one second of BGM PCM buffering, gallery/library loading fixes, save/load target recovery and r12 focus fixes. Auto playback remains; player-triggered fast-forward is disabled on Vita.
 
 The [optimization inventory](doc/05-优化记录与实测数据.md) lists all **43 switches**, fixes, defaults and evidence limits. The heaviest complete window in the r10 hardware log was approximately 12.75 FPS. This is **not a guarantee of 20 FPS throughout the game**. Enabled Half/Tiled/Blur experiments still require individual device image and performance validation.
+
+## Game assets
+
+Supply your own Switch game, matching 1.02 update, and required fonts/translation files. See the [Switch asset extraction guide](doc/10-switch-asset-extraction.en.md) for steps, commands and Vita conversion requirements.
 
 ## Build and install
 
@@ -72,4 +76,3 @@ Place `perf-enable.txt` and `optimization-profile.txt` in `ux0:data/WitchontheHo
 
 Engine: [AuroraWright/knife](https://github.com/AuroraWright/knife), [MPL 2.0](knife/LICENSE), [upstream provenance](knife/UPSTREAM.txt). Third-party components retain their own notices and licenses under `knife/vita/vendor/`. Game content belongs to its respective rights holders and is not included.
 
-[Credit artwork and update tools](tools/credit-intro/README.md).

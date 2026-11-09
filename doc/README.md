@@ -13,6 +13,7 @@
 | [07 限制](07-已知限制与未验证项.md) | 待验证项目及已停止推广的实验 |
 | [08 安装与资源](08-素材与安装.md) | 设备路径、升级、素材身份和编辑链 |
 | [09 维护](09-仓库维护与清理.md) | 保留政策、清理结果与历史检索 |
+| [10 原版资源提取](10-Switch原版资源提取.md) / [English](10-switch-asset-extraction.en.md) | Switch 本体与更新合并、字体、汉化、检查和 Vita 转换要求 |
 
 [中文首页](../README.md) · [English](../README.en.md) · [工具索引](../tools/README.md) · [验证收据](evidence/README.md)
 

@@ -111,6 +111,11 @@ void sceGxmFinish(SceGxmContext *context) { ++finishes; EXPECT(context == owner-
 int sceGxmTransferFinish(void) { ++transfers; return unexpected(); }
 int sceGxmTextureInitLinear(SceGxmTexture *t, const void *p, SceGxmTextureFormat f,
         unsigned w, unsigned h, unsigned n) { (void)t; (void)p; (void)f; (void)w; (void)h; (void)n; return unexpected(); }
+int sceGxmTextureInitTiled(SceGxmTexture *t, const void *p, SceGxmTextureFormat f,
+        unsigned w, unsigned h, unsigned n) { (void)t; (void)p; (void)f; (void)w; (void)h; (void)n; return unexpected(); }
+int sceGxmGetRenderTargetMemSize(const SceGxmRenderTargetParams *p, unsigned int *bytes) {
+    (void)p; (void)bytes; return unexpected();
+}
 int sceGxmTextureValidate(const SceGxmTexture *t) { (void)t; return unexpected(); }
 int sceGxmDestroyRenderTarget(SceGxmRenderTarget *t) { (void)t; return unexpected(); }
 int sceGxmSyncObjectDestroy(SceGxmSyncObject *t) { (void)t; return unexpected(); }

@@ -429,6 +429,17 @@ impl FontAtlas {
         { let _ = (r, chars); Ok(0) }
     }
 
+    /// Release lookup ownership only. Recorded glyph quads retain immutable
+    /// native owners until GPU retirement; returned bytes are not immediate free.
+    #[cfg(target_os = "vita")]
+    pub fn trim_pressure_cache(&mut self) -> usize {
+        let (bytes, pages) = (self.atlas.bytes(), self.atlas.pages());
+        let evicted = self.atlas.trim_unrequested(&[]);
+        let released = evicted.bytes;
+        self.account_glyph_pool(bytes, pages, evicted);
+        released
+    }
+
     #[cfg(target_os = "vita")]
     fn raster_glyph(&self, c: char) -> anyhow::Result<Option<atlas::R8Glyph<Glyph>>> {
         let scope = knife_perf::Scope::new(knife_perf::Metric::GlyphRaster);

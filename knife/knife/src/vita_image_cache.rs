@@ -20,13 +20,24 @@ impl ImageCachePolicy {
         self.last_use.retain(|key, _| live(key));
     }
 
+    #[cfg(test)]
     pub fn admit<T, E>(
         &mut self,
         images: &mut HashMap<String, Option<Arc<T>>>,
+        reserve: impl FnMut() -> Result<(), E>,
+    ) -> Result<usize, E> {
+        self.admit_if(images, reserve, |_| true)
+    }
+
+    pub fn admit_if<T, E>(
+        &mut self,
+        images: &mut HashMap<String, Option<Arc<T>>>,
         mut reserve: impl FnMut() -> Result<(), E>,
+        is_pressure: impl Fn(&E) -> bool,
     ) -> Result<usize, E> {
         let mut last_error = match reserve() {
             Ok(()) => return Ok(0),
+            Err(error) if !is_pressure(&error) => return Err(error),
             Err(error) => error,
         };
         // Collect keys only: cloning an Arc here would make an idle entry active.
@@ -50,6 +61,7 @@ impl ImageCachePolicy {
             self.last_use.remove(&key);
             match reserve() {
                 Ok(()) => return Ok(evicted),
+                Err(error) if !is_pressure(&error) => return Err(error),
                 Err(error) => last_error = error,
             }
         }
@@ -61,6 +73,14 @@ impl ImageCachePolicy {
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    #[test]
+    fn unrelated_driver_error_never_evicts_images() {
+        let mut p = ImageCachePolicy::default();
+        let mut images = HashMap::from([("idle".into(), Some(Arc::new(1)))]);
+        assert_eq!(p.admit_if(&mut images, || Err("driver"), |e| *e == "pressure"), Err("driver"));
+        assert_eq!(images.len(), 1);
+    }
 
     #[test]
     fn no_pressure_keeps_every_cached_entry_and_probes_once() {

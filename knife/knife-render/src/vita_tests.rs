@@ -1235,6 +1235,99 @@ fn allocation_failure_retries_a_decoded_reload_without_reading_or_decoding_twice
 }
 
 #[test]
+fn physical_pressure_escalates_to_game_caches_for_rgba_and_dxt_without_redecode() {
+    for compressed in [false, true] {
+        let (mut r, control) = setup();
+        let canvas = r.create_target(2, 2, "canvas");
+        let active = r.create_target(2, 2, "live story");
+        let active_id = active.tex.native.resident_id().unwrap().0;
+        let mut idle = Some(r.create_target(2, 2, "optional game cache"));
+        let reads = Rc::new(Cell::new(0));
+        let texture = if compressed {
+            let bytes = gxt_fixture([4, 4], 0x8700_0000);
+            let load = { let reads = reads.clone(); let bytes = bytes.clone();
+                Rc::new(move || { reads.set(reads.get()+1); Ok(bytes.clone()) }) };
+            defer_test_gxt(&r, &bytes, load).unwrap()
+        } else {
+            let load = { let reads = reads.clone();
+                Rc::new(move || { reads.set(reads.get()+1); Ok(vec![2, 73]) }) };
+            r.defer_altered_reload([2, 2], [2, 2], 2, "menu atlas", load, decode_deferred_test).unwrap()
+        };
+        let mut enc = r.encoder();
+        r.try_draw(&mut enc, &canvas, None, &[
+            Quad::rect(active.tex.clone(), [0.,0.,2.,2.], [1.;4]),
+            Quad::rect(texture.clone(), [0.,0.,2.,2.], [1.;4]),
+        ]).unwrap();
+        control.borrow_mut().events.clear();
+        control.borrow_mut().fail_texture_allocations = usize::MAX;
+        let mut recoveries = 0;
+        r.try_present_with_recovery(enc, &canvas, |operation, reason| {
+            if reason == FrameAdmissionReason::AllocationRetry {
+                recoveries += 1;
+                assert!(!control.borrow().events.iter().any(|e| matches!(e, Event::Present(_) | Event::Draw { .. })));
+                drop(idle.take());
+                control.borrow_mut().fail_texture_allocations = 0;
+            }
+            operation().map(|_| true)
+        }).unwrap();
+        assert_eq!(recoveries, 1);
+        assert_eq!(reads.get(), 1);
+        assert_eq!(active.tex.native.resident_id().unwrap().0, active_id);
+        assert!(texture.native.resident_id().is_ok());
+        assert_eq!(control.borrow().events.iter().filter(|e| matches!(e, Event::Present(_))).count(), 1);
+    }
+}
+
+#[test]
+fn outer_allocation_recovery_is_once_per_frame_and_never_for_other_errors() {
+    let (r, _) = setup();
+    let calls = Cell::new(0);
+    let mut used = false;
+    let mut admit = |operation: &mut dyn FnMut() -> Result<()>, reason| {
+        assert_eq!(reason, FrameAdmissionReason::AllocationRetry);
+        calls.set(calls.get()+1);
+        operation().map(|_| true)
+    };
+    let bad = retry_frame_allocation::<()>(&r.device, &mut admit, &mut used, || Err(anyhow!("corrupt source")));
+    assert!(bad.is_err());
+    assert!(!used);
+    assert_eq!(calls.get(), 0);
+    for _ in 0..2 {
+        assert!(retry_frame_allocation::<()>(&r.device, &mut admit, &mut used,
+            || Err(anyhow!("allocation denied").context(TextureMemoryPressure))).is_err());
+    }
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn all_image_classes_share_native_budget_and_release_back_to_baseline() {
+    let (mut r, control) = setup();
+    let baseline = r.vita_cache_headroom().unwrap();
+    for kind in 0..5 {
+        let texture = match kind {
+            0 => r.try_upload(2, 2, Upload::R8(&[255;4]), "font").unwrap(),
+            1 => r.try_upload_baked(2, 2, &[73;16], "graded CG").unwrap(),
+            2 => r.try_create_scene_target(2, 2, "offscreen").unwrap().tex,
+            3 => r.try_upload(2, 2, Upload::Rgba8(&[73;16]), "UI").unwrap(),
+            _ => {
+                let bytes = gxt_fixture([4,4], 0x8500_0000);
+                let tex = defer_test_gxt(&r, &bytes, { let bytes=bytes.clone(); Rc::new(move || Ok(bytes.clone())) }).unwrap();
+                let canvas = r.create_target(2, 2, "probe canvas");
+                submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+                tex
+            }
+        };
+        assert!(r.vita_cache_headroom().unwrap() < baseline, "class {kind} must be charged");
+        drop(texture);
+        // Retire submitted owners before checking the complete physical balance.
+        r.device.call(|g| g.reclaim_retired(true)).unwrap();
+        r.vita_reclaim_idle().unwrap();
+        assert_eq!(r.vita_cache_headroom().unwrap(), baseline, "class {kind} leaked its allocation");
+    }
+    assert!(control.borrow().texture_allocation_attempts >= 5);
+}
+
+#[test]
 fn immediate_r8_upload_uses_one_block_and_does_not_evict_an_idle_image() {
     let (mut r, control) = setup();
     let canvas = r.create_target(2, 2, "canvas-test");
@@ -3017,7 +3110,9 @@ fn scene_plan_contains_all_unique_draw_inputs_and_copy_source() {
     let expected_dst = dst.tex.native.resident_id().unwrap().0;
     let expected_src = src.tex.native.resident_id().unwrap().0;
     let expected_aux = aux.tex.native.resident_id().unwrap().0;
-    let mut admission = |operation: &mut dyn FnMut() -> Result<()>| operation();
+    let mut admission = |operation: &mut dyn FnMut() -> Result<()>, reason| {
+        if reason == FrameAdmissionReason::AllocationRetry { Ok(false) } else { operation().map(|_| true) }
+    };
     execute_with_admission(&r.device, &encoder.commands, &mut admission).unwrap();
     let c = control.borrow();
     assert_eq!(c.scene_plans[c.scene_plans.len()-2], (Some(expected_dst), vec![expected_src, expected_aux], 0));

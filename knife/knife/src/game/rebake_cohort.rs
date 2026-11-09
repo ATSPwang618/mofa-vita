@@ -200,6 +200,11 @@ impl Game {
                         Ok(())
                     }
                     ImageNeeded::Pending => Ok(()),
+                    ImageNeeded::Pressure(error) => {
+                        self.vita_reclaim_resource_pressure(r);
+                        self.resource_event_at("allocation_retry", &error, pending.scene, pending.pc);
+                        Ok(())
+                    }
                     ImageNeeded::Failed(error) => Err(error),
                 }
             }

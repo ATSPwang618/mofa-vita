@@ -251,7 +251,7 @@ impl Touch {
             wbtn: Default::default(),
             panel_key: None,
             // Start on Auto when the platform disables the fast-forward button.
-            panel_last: if super::STORY_FAST_FORWARD_ENABLED { 3 } else { 2 },
+            panel_last: if super::STORY_CONTROLS.fast_forward { 3 } else { 2 },
             trail: Trail::default(),
             trail_t: 0.0,
             zl: None,
@@ -553,7 +553,7 @@ impl Ui {
     /// TeaTime state 10 (ZL): the menu returns 2 and sub_40ED0 starts the rewind
     /// (off_AE05B8 = 1) with a step that frame (sub_814C0); it goes on while ZL or the drag holds.
     pub(super) fn teatime_rewind(&mut self, game: &mut Game, r: &Renderer) {
-        if !game.teatime_rewind() {
+        if !super::STORY_CONTROLS.rewind || !game.teatime_rewind() {
             return;
         }
         self.touch.rewind = 1;
@@ -575,7 +575,7 @@ impl Ui {
     /// the restored one whole above it and pushes a ring entry for the next step to take back.
     pub fn rewind_before_script(&mut self, game: &mut Game) {
         game.rest_hold = false;
-        if self.touch.rewind == 0 {
+        if !super::STORY_CONTROLS.rewind || self.touch.rewind == 0 {
             return;
         }
         let held = match self.touch.rewind_by {
@@ -623,7 +623,7 @@ impl Ui {
         if self.touch.panel != Panel::Open || matches!(self.screen, Screen::Confirm(_)) || self.dlg_holding() {
             return None;
         }
-        let i = self.touch.panel_hover.or(self.touch.panel_key)?;
+        let i = self.touch.panel_hover.or(self.touch.panel_key).filter(|&i| super::STORY_CONTROLS.panel_button(i))?;
         let pos = [PANEL_X0 + PANEL_DX * i as f32, self.panel_y() + PANEL_BTN_Y];
         // Witch on the Holy Night: table 0x3cdfd8, SYSMES 145..152, rect (5, -4)-(70, 35)
         if crate::assets::witch() {
@@ -656,6 +656,9 @@ impl Ui {
         let [x, y] = self.units();
         let top = self.panel_y() + PANEL_BTN_Y;
         (0..8).find(|&i| {
+            if !super::STORY_CONTROLS.panel_button(i) {
+                return false;
+            }
             let x0 = PANEL_X0 + PANEL_DX * i as f32;
             if crate::assets::witch() {
                 let (x0, y0) = ((x0 as i32 + 5).max(0) as f32, (top as i32 - 4).max(0) as f32);
@@ -669,6 +672,9 @@ impl Ui {
     /// 2 flag 2 (unavailable; auto lit), else 0. Only the open panel's buttons take the focus, and none while a
     /// dialog has it.
     fn wpanel_state(&self, i: usize) -> u8 {
+        if !super::STORY_CONTROLS.panel_button(i) {
+            return 2; // Original gray sprite, never hover/pressed/auto-lit.
+        }
         let dialog = self.screen == Screen::Witch || self.w.dlg.busy();
         let focus = self.touch.panel_hover.or(self.touch.panel_key).filter(|_| !dialog && self.touch.panel == Panel::Open);
         let on = self.touch.pflags[i];
@@ -686,8 +692,10 @@ impl Ui {
     /// Panel buttons 4..6 that sub_4E0C0 leaves enabled: next scene except in a gallery flowchart replay
     /// (sub_50F0), Q.SAVE / Q.LOAD unless saving is off (F025, sub_47B10).
     pub(super) fn panel_ok(&self, game: &Game, b: usize) -> bool {
+        if !super::STORY_CONTROLS.panel_button(b) {
+            return false;
+        }
         match b {
-            3 => super::STORY_FAST_FORWARD_ENABLED,
             // (Witch on the Holy Night has no gallery replay: nothing sets object 184's flag)
             4 => crate::assets::witch() || self.gal_ret[0] != 2,
             5 | 6 => game.var("F025") == 0,
@@ -708,12 +716,17 @@ impl Ui {
     /// as the panel opens): object 209 lit in auto mode, 207 unavailable without a previous scene.
     fn panel_flags_scene(&mut self, game: &Game) {
         self.touch.pflags[2] = game.auto;
-        self.touch.pflags[3] = !super::STORY_FAST_FORWARD_ENABLED;
-        self.touch.pflags[0] = !game.can_prev_scene();
+        self.touch.pflags[1] = !super::STORY_CONTROLS.rewind;
+        self.touch.pflags[3] = !super::STORY_CONTROLS.fast_forward;
+        self.touch.pflags[0] = !super::STORY_CONTROLS.scene_jump || !game.can_prev_scene();
     }
 
     /// A tapped mode panel button (sub_4E170 state 3 cases 0..7; 1 and 3 act while held, see `touch_update`).
     pub(super) fn panel_press(&mut self, game: &mut Game, r: &Renderer, b: usize) {
+        // Cover direct dispatch and stale pad focus as well as pointer hit testing.
+        if !super::STORY_CONTROLS.panel_button(b) {
+            return;
+        }
         if crate::assets::witch() {
             self.witch_panel_press(game, r, b);
             return;
@@ -907,12 +920,12 @@ impl Ui {
         };
         if in_game && self.touch.panel == Panel::Open && held_button.is_some() {
             match held_button {
-                Some(1) => {
+                Some(1) if super::STORY_CONTROLS.rewind => {
                     let t = self.touch.held_frames;
                     panel_rewind = Some(if t > 107.0 { 64 } else if t >= 8.0 { ((t as i32) * 64 - 512) / 100 } else { 0 });
                     self.touch.held_frames += f;
                 }
-                Some(3) if super::STORY_FAST_FORWARD_ENABLED => panel_skip = true,
+                Some(3) if super::STORY_CONTROLS.fast_forward => panel_skip = true,
                 _ => self.touch.held_frames = 0.0,
             }
             // Witch on the Holy Night: cases 1 / 3 press their object every held frame (jp_AE040(.., 10))
@@ -938,7 +951,7 @@ impl Ui {
             self.touch.arrow_a = 0.0;
         }
         let staff = self.screen == Screen::Game && game.mode_task() && !game.in_choice();
-        let zr = if !super::STORY_FAST_FORWARD_ENABLED {
+        let zr = if !super::STORY_CONTROLS.fast_forward {
             None
         } else if staff {
             self.touch.zr.map(|_| 32)
@@ -952,12 +965,12 @@ impl Ui {
         if self.touch.zl.is_none() {
             self.w.zl_block = false;
         }
-        let zl = if in_game && self.touch.panel == Panel::Closed && !self.w.zl_block { self.touch.zl.map(|_| ramp(255)) } else { None };
+        let zl = if super::STORY_CONTROLS.rewind && in_game && self.touch.panel == Panel::Closed && !self.w.zl_block { self.touch.zl.map(|_| ramp(255)) } else { None };
         // forward: skip at the speed (unread text still stops it unless the config allows it);
         // backward: rewind, one ring entry a frame without running the script
-        let fwd = if !super::STORY_FAST_FORWARD_ENABLED { 0 }
+        let fwd = if !super::STORY_CONTROLS.fast_forward { 0 }
             else if panel_skip { 64 } else { zr.unwrap_or(speed.max(0) as u32) };
-        if !super::STORY_FAST_FORWARD_ENABLED {
+        if !super::STORY_CONTROLS.fast_forward {
             // Also release stale manual state restored by a mode task. Do not
             // touch auto playback or the separate scene/load seek state.
             game.skip_mode = false;
@@ -985,7 +998,9 @@ impl Ui {
         }
         // (the held panel button rewinds from its first frame, at speed 0 for the first 8: sub_814C0 ignores
         // the speed)
-        let back = if let Some(v) = zl {
+        let back = if !super::STORY_CONTROLS.rewind {
+            None
+        } else if let Some(v) = zl {
             self.touch.rewind_by = 0;
             Some(v)
         } else if let Some(v) = panel_rewind {

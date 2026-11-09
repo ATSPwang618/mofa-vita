@@ -30,6 +30,8 @@ mod focus;
 mod shake;
 mod ghost;
 mod records;
+#[cfg(any(target_os = "vita", test))]
+mod resource_checkpoint;
 mod story_movie;
 mod teatime;
 mod witch_log;
@@ -785,7 +787,9 @@ pub struct Game {
     page_ring: (Option<u64>, Option<u64>),
     /// What a save writes (the exe's in-memory record, sub_527F0): the state as the first message of the
     /// current page started (F823 <= 1, never a choice), so a save resumes at the start of its page
-    save_point: Option<crate::save::SaveData>,
+    save_point: Option<Arc<crate::save::SaveData>>,
+    #[cfg(target_os = "vita")]
+    recovery_checkpoint: resource_checkpoint::Checkpoint<crate::save::SaveData>,
     /// The stage backup block (off_AE08D0, record +6664): the stage as it was before the first stage command
     /// since the last refresh (F991 = 0), or at the last FADS, VPLY, MSAD, WTTM or `_Z` message / label that
     /// found F991 set. None until the first refresh (the current stage is written then).
@@ -1160,6 +1164,8 @@ impl Game {
             speed: 1,
             history: Default::default(),
             save_point: None,
+            #[cfg(target_os = "vita")]
+            recovery_checkpoint: Default::default(),
             stage_backup: None,
             scene_ring: Vec::new(),
             scene_msgs: 0,
@@ -1310,6 +1316,7 @@ impl Game {
         self.resource_command = None;
         self.resource_pending = false;
         self.resource_error = None;
+        self.recovery_checkpoint.clear_fault();
         knife_perf::gauge_set(knife_perf::Gauge::AsyncBakeLayers, 0);
         self.assets.reset_image_needed_context();
     }
@@ -1340,7 +1347,13 @@ impl Game {
             self.text_cache.trim(0);
             self.vita_release_optional_render_targets(r);
         }
-        match self.assets.poll_image_needed(r, name, bake) {
+        let result = self.assets.poll_image_needed(r, name, bake);
+        let result = if let crate::assets::ImageNeeded::Pressure(error) = result {
+            self.vita_reclaim_resource_pressure(r);
+            self.resource_event("allocation_retry", &error);
+            crate::assets::ImageNeeded::Pending
+        } else { result };
+        match result {
             crate::assets::ImageNeeded::Ready(image) => Some(image),
             crate::assets::ImageNeeded::Pending => {
                 if self.resource_command.is_none() {
@@ -1357,6 +1370,7 @@ impl Game {
                 self.resource_pending = true;
                 None
             }
+            crate::assets::ImageNeeded::Pressure(_) => unreachable!("pressure converted to a pending command"),
         }
     }
 
@@ -2328,7 +2342,7 @@ impl Game {
         // 0x6e7a0: the save point keeps the newest scene point as its previous entry (sub_527F0); not while
         // byte_146E648 (a rewound message, until the next push) is set
         if !locked && self.var("F823") <= 1 && !self.ring_restored {
-            self.save_point = Some(self.with_scene_prev(s));
+            self.set_save_point(self.with_scene_prev(s));
         }
     }
 
@@ -2342,7 +2356,7 @@ impl Game {
         h.data.preview = preview;
         let (d, locked, kind) = (h.data.clone(), h.locked, h.kind);
         if !locked && !matches!(kind, 11 | 12) && self.var("F823") <= 1 && !self.ring_restored {
-            self.save_point = Some(self.with_scene_prev(d));
+            self.set_save_point(self.with_scene_prev(d));
         }
     }
 
@@ -2769,7 +2783,7 @@ impl Game {
     /// entry; otherwise the save point stays.
     fn restore_save_point(&mut self, d: &crate::save::SaveData, locked: bool, kind: u16) {
         if !locked && !matches!(kind, 11 | 12) && d.choice.is_none() && entry_f823(d) <= 1 {
-            self.save_point = Some(self.with_scene_prev(d.clone()));
+            self.set_save_point(self.with_scene_prev(d.clone()));
         }
     }
 
@@ -4203,7 +4217,7 @@ impl Game {
                     (ScenePoint { data: h.data.clone(), serial: None }, h.locked, h.kind)
                 };
                 if !entry_locked && !matches!(entry_kind, 11 | 12) && self.var("F823") <= 1 && !self.ring_restored {
-                    self.save_point = Some(self.with_scene_prev(point.data.clone()));
+                    self.set_save_point(self.with_scene_prev(point.data.clone()));
                 }
                 if flags & 4 == 0 && !locked {
                     if self.scene_ring.len() >= SCENE_POINTS {
@@ -6312,7 +6326,7 @@ impl Game {
             let y = CANVAS_H as f32 * 0.08;
             out.push(Quad::rect(r.white.clone(), [x, y, CANVAS_W as f32 * 0.84, 112.0], [0.0, 0.0, 0.0, 0.9]));
             self.font.draw_str_slot(r, &mut out,
-                "资源加载失败，剧情已暂停。请打开菜单重新读档。",
+                self.recovery_checkpoint.notice,
                 [36.0, 36.0], 0.0, [x + 20.0, y + 64.0], [1.0; 4]);
         }
         out
@@ -7364,20 +7378,24 @@ impl Game {
                 // captures; they may wait instead of competing for their storage.
                 prepared_previews = self.render_previews(r, &mut enc);
                 let canvas = RenderTarget { tex: self.canvas.tex.clone() };
-                r.try_present_with_admission(enc, &canvas, |reserve| {
+                r.try_present_with_recovery(enc, &canvas, |reserve, reason| {
+                    if reason == knife_render::FrameAdmissionReason::AllocationRetry {
+                        let released = self.vita_trim_pressure_caches();
+                        let result = reserve();
+                        self.resource_event("allocation_recovery", &format!(
+                            "frame upload optional_bytes={released} recovered={}", result.is_ok()));
+                        return result.map(|_| true);
+                    }
                     match self.assets.admit_frame_upload(reserve) {
                         Ok(()) => Ok(()),
                         Err(error) => {
-                            let before = self.text_cache.bytes();
-                            self.text_cache.trim(0);
-                            let released = self.vita_drop_optional_render_targets()
-                                + before.saturating_sub(self.text_cache.bytes());
-                            if released == 0 { return Err(error); }
+                            if !knife_render::is_texture_memory_pressure(&error) { return Err(error); }
+                            self.vita_trim_pressure_caches();
                             // The renderer pins all commands and performs the actual
                             // retirement fence before observing recovered headroom.
                             self.assets.admit_frame_upload(reserve)
                         }
-                    }
+                    }.map(|_| true)
                 })?;
             }
             #[cfg(not(target_os = "vita"))]
@@ -7387,6 +7405,8 @@ impl Game {
         #[cfg(target_os = "vita")]
         match result {
             Ok(()) => {
+                self.recovery_checkpoint.presented(!self.resource_waiting()
+                    && !self.ended && self.can_save() && self.var("F025") == 0);
                 // Publish only successfully submitted outputs. A discarded encoder
                 // must never leave an uninitialized save preview in the menu.
                 for (slot, texture) in prepared_previews {
@@ -7432,8 +7452,38 @@ impl Game {
 
     // ---- save / load --------------------------------------------------------------
 
+    fn set_save_point(&mut self, data: crate::save::SaveData) {
+        let point = Arc::new(data);
+        #[cfg(target_os = "vita")]
+        self.recovery_checkpoint.stage(point.clone());
+        self.save_point = Some(point);
+    }
+
+    /// Handled synchronously outside rendering, before input can leave/reset the
+    /// failed scene. Never encode partially loaded live layers or create previews.
+    #[cfg(target_os = "vita")]
+    pub fn take_resource_checkpoint(&mut self) -> Option<Option<Arc<crate::save::SaveData>>> {
+        if self.resource_error.is_none() || !self.recovery_checkpoint.begin_fault() { return None; }
+        Some(self.recovery_checkpoint.point().cloned())
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn resource_checkpoint_result(&mut self, status: &str, detail: &str, notice: &'static str) {
+        self.recovery_checkpoint.notice = notice;
+        let mut quoted = String::new();
+        knife_perf::json_string(&mut quoted, detail);
+        // Critical persistence result: also emit when periodic profiling is off.
+        let _ = knife_platform_vita::audit::console(&format!(
+            "{{\"kind\":\"resource_checkpoint\",\"status\":\"{status}\",\"scene\":{},\"pc\":{},\"detail\":{quoted}}}\n",
+            self.scene_index, self.pc));
+    }
+
     /// Whether the game is at a point that can be saved (a message or a choice).
     pub fn can_save(&self) -> bool {
+        #[cfg(target_os = "vita")]
+        if self.resource_error.is_some() {
+            return self.recovery_checkpoint.point().is_some() && !self.ended;
+        }
         // a SELS / SELA question is not a resumable point (knife keeps no record kind for it)
         // (Witch on the Holy Night writes its snapshot at the WIK select and the TeaTime menu too: sub_65380's
         // quick save, sub_745E0's save and title buttons)
@@ -7448,7 +7498,12 @@ impl Game {
         if !self.can_save() {
             return None;
         }
-        self.save_point.as_ref().map(|s| crate::save::SaveData { timestamp: crate::save::now(), ..s.clone() })
+        #[cfg(target_os = "vita")]
+        if self.resource_error.is_some() {
+            return self.recovery_checkpoint.point().map(|s| crate::save::SaveData {
+                timestamp: crate::save::now(), ..s.as_ref().clone() });
+        }
+        self.save_point.as_ref().map(|s| crate::save::SaveData { timestamp: crate::save::now(), ..s.as_ref().clone() })
     }
 
     /// The committed layers as a save snapshot stores them (pending STCH layers are left out).
@@ -8184,7 +8239,9 @@ impl Game {
     /// point again, with itself as the previous entry) and drops it from the scene ring. The message count
     /// is 0 afterwards.
     pub fn restore(&mut self, r: &Renderer, d: &crate::save::SaveData) {
-        self.save_point = Some(d.clone());
+        #[cfg(target_os = "vita")]
+        { self.recovery_checkpoint = Default::default(); }
+        self.set_save_point(d.clone());
         self.menu_lock = true;
         self.history.clear();
         self.backlog_pages.clear();
@@ -8408,6 +8465,8 @@ impl Game {
     }
 
     pub fn reset(&mut self) {
+        #[cfg(target_os = "vita")]
+        { self.recovery_checkpoint = Default::default(); }
         #[cfg(target_os = "vita")]
         self.reset_resource_command();
         self.menu_lock = true;
@@ -8791,6 +8850,31 @@ impl Game {
         let before = self.text_cache.bytes();
         self.text_cache.trim(0);
         self.vita_drop_optional_render_targets() + before.saturating_sub(self.text_cache.bytes())
+    }
+
+    /// Drop cache references, not live scene/history state. A command may still
+    /// pin these owners; only the native retirement fence can reclaim storage.
+    fn vita_trim_pressure_caches(&mut self) -> usize {
+        let mut released = self.vita_trim_target_caches();
+        self.ui_pass_cache.clear();
+        self.assets.trim_images(0);
+        self.previews.clear(); // metadata/queue remain available to regenerate
+        self.preview_rt = None;
+        released += self.font.trim_pressure_cache();
+        if let Some(font) = self.font_bubble.as_mut() {
+            released += font.trim_pressure_cache();
+        }
+        released
+    }
+
+    /// One owner-thread pressure boundary for STCH, motion/rebake and frame
+    /// upload. Never drop live stage layers, persistent group surfaces, history
+    /// required by the current effect, or GPU owners pinned by recorded commands.
+    fn vita_reclaim_resource_pressure(&mut self, renderer: &Renderer) {
+        let released = self.vita_trim_pressure_caches();
+        let retired = renderer.vita_reclaim_idle();
+        self.resource_event("pressure_reclaim", &format!(
+            "optional_target_bytes={released} retirement_ok={}", retired.is_ok()));
     }
 
     /// Required resource jobs take precedence over optional render residency.

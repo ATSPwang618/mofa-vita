@@ -34,6 +34,10 @@
 | [39-r12-save-focus.json](39-r12-save-focus.json) | 对应调查或构建的历史证据；先核对build/schema与验证边界 |
 | [history-index.json](history-index.json) | 文档原路径/SHA及历史提交 |
 
-当前成品身份看39-r12；资源布局看38-r11；最近完整长时间硬件分析看37-r10。源码维护验证见本地`.work/cleanup-20261106/`，不会修改历史成品收据。
+当前成品身份看42-r14；r12焦点修复看39-r12；资源布局看38-r11；最近完整长时间硬件分析看37-r10。源码维护验证见本地`.work/cleanup-20261106/`，不会修改历史成品收据。
 
 当前整理收据：[40-repository-maintenance.json](40-repository-maintenance.json)，含清理体积、保留校验、源码验证与自动审批拦截例外。
+
+当前按钮禁用交付：[41-r13-panel-lock.json](41-r13-panel-lock.json)，含317项测试、ARM/VPK校验、哈希、日志配置及实机未验收边界。
+
+当前资源保护交付：[42-r14-resource-guard.json](42-r14-resource-guard.json)，含统一分配审计、故障恢复与保存回归、程序身份和实机验证边界。

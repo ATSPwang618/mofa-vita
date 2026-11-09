@@ -159,10 +159,8 @@ impl Ui {
             if panel == Panel::Open {
                 let k = self.touch.panel_key.unwrap_or(self.touch.panel_last);
                 let key = match b {
-                    Pad::Right if k < 7 => Some(k + 1),
-                    Pad::Right if !repeat => Some(0),
-                    Pad::Left if k > 0 => Some(k - 1),
-                    Pad::Left if !repeat => Some(7),
+                    Pad::Right => super::STORY_CONTROLS.panel_focus(k, true, repeat),
+                    Pad::Left => super::STORY_CONTROLS.panel_focus(k, false, repeat),
                     Pad::A if k != 1 && k != 3 => {
                         self.panel_press(game, r, k);
                         None
@@ -238,7 +236,7 @@ impl Ui {
             }
             Pad::Minus if crate::assets::witch() => self.witch_quick_load(game, r),
             // Desktop R toggles skip; the Vita story deliberately has no fast-forward input.
-            Pad::R if super::STORY_FAST_FORWARD_ENABLED && !self.touch.hidden => game.skip_mode = !game.skip_mode,
+            Pad::R if super::STORY_CONTROLS.fast_forward && !self.touch.hidden => game.skip_mode = !game.skip_mode,
             // mask [21] opens the mode panel on its last button
             // (Witch on the Holy Night: jp_40ED0 asks only outside a TeaTime scene, jp_83B00 and a story movie)
             Pad::Up if !self.touch.hidden && (!crate::assets::witch() || self.panel_allowed(game)) => {

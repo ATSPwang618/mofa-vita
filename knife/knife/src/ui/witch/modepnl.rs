@@ -22,6 +22,11 @@ pub struct WBtn {
 }
 
 impl WBtn {
+    /// A policy-disabled button must never cross-fade from an old hover or flash.
+    fn with_availability(self, enabled: bool) -> Self {
+        if enabled { self } else { Self { last: 2, prev: 2, w: 0.0 } }
+    }
+
     /// One 60 Hz step (`f` frames) towards `st`.
     pub fn step(&mut self, st: u8, f: f32) {
         if self.last != st {
@@ -152,7 +157,7 @@ impl Ui {
             pen.spr(out, &t, 16, None, 0.0, y);
         }
         for (i, o) in objtab::MODEPNL.iter().enumerate().take(8) {
-            let b = btn[i];
+            let b = btn[i].with_availability(super::super::STORY_CONTROLS.panel_button(i));
             let pos = [25.333 + 73.667 * i as f32, y + 6.637];
             let mut draw = |st: u8, a: f32| {
                 for f in o.states[usize::from(st)] {
@@ -171,7 +176,37 @@ impl Ui {
 
 #[cfg(test)]
 mod tests {
-    use super::WSpin;
+    use super::{WBtn, WSpin, objtab};
+
+    #[test]
+    fn disabled_button_never_draws_a_stale_hover_or_pressed_transition() {
+        for last in 0..5 {
+            for prev in 0..5 {
+                for w in [0.0, 0.5, 1.0] {
+                    let b = WBtn { last, prev, w }.with_availability(false);
+                    assert_eq!((b.last, b.prev, b.w), (2, 2, 0.0));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn enabled_button_keeps_auto_lighting_and_normal_feedback() {
+        for last in 0..5 {
+            let b = WBtn { last, prev: 1, w: 0.5 }.with_availability(true);
+            assert_eq!((b.last, b.prev, b.w), (last, 1, 0.5));
+        }
+    }
+
+    #[test]
+    fn disabled_controls_use_the_original_gray_atlas_row() {
+        for i in [0, 1, 3, 4] {
+            let layers = objtab::MODEPNL[i].states[2];
+            assert_eq!(layers.len(), 1, "no hover overlay for button {i}");
+            assert_eq!(layers[0].tex, 527);
+            assert_eq!((layers[0].src[1], layers[0].src[3]), (16, 85));
+        }
+    }
 
     fn run(s: &mut WSpin, frames: usize, speed: f32, auto: bool, rewinding: bool, rewound: bool) {
         for _ in 0..frames {

@@ -50,7 +50,10 @@ const CDRAM_GRANULE: usize = 256 * 1024;
 
 // A game-owned idle image cache may participate in the same native reservation.
 // The callback is invoked for a validated cache miss, before its native upload.
-type FrameAdmission<'a> = dyn FnMut(&mut dyn FnMut() -> Result<()>) -> Result<()> + 'a;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameAdmissionReason { Reservation, AllocationRetry }
+// false means no game-owned recovery is installed (the legacy renderer API).
+type FrameAdmission<'a> = dyn FnMut(&mut dyn FnMut() -> Result<()>, FrameAdmissionReason) -> Result<bool> + 'a;
 
 /// No commands from the pending frame were submitted. The game may retain
 /// the previous complete targets and show its ordinary resource-error UI.
@@ -2861,9 +2864,23 @@ impl Renderer {
     /// Native upload/pass failures are propagated, never retried as pressure.
     pub fn try_present_with_admission(
         &mut self,
-        mut encoder: CommandEncoder,
+        encoder: CommandEncoder,
         canvas: &RenderTarget,
         mut admit: impl FnMut(&mut dyn FnMut() -> Result<()>) -> Result<()>,
+    ) -> Result<()> {
+        self.try_present_with_recovery(encoder, canvas, |operation, reason| {
+            if reason == FrameAdmissionReason::AllocationRetry { return Ok(false); }
+            admit(operation).map(|_| true)
+        })
+    }
+
+    /// Escalate actual allocation pressure once per frame to game-owned caches.
+    /// Decoded bytes and the complete frame's pinned owners survive the retry.
+    pub fn try_present_with_recovery(
+        &mut self,
+        mut encoder: CommandEncoder,
+        canvas: &RenderTarget,
+        mut admit: impl FnMut(&mut dyn FnMut() -> Result<()>, FrameAdmissionReason) -> Result<bool>,
     ) -> Result<()> {
         self.check_encoder(&encoder)?;
         self.check_target(canvas)?;
@@ -3268,6 +3285,7 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
         device.preparation_sorts.set(device.preparation_sorts.get() + 1);
         required.sort_by_key(|(allocation, _)| std::cmp::Reverse(*allocation));
     }
+    let mut allocation_recovery_used = false;
     for (allocation, texture) in required {
         #[cfg(target_os = "vita")]
         let _item = deferred_metrics::Item::start();
@@ -3286,11 +3304,12 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
                     ensure!(GxtDescriptor::from_texture(&gxt) == *info,
                         "deferred GXT descriptor changed for {}", source.label);
                     // Validate everything before reclaiming another texture.
-                    admit(&mut || reserve_cdram(device, allocation, allocation, &pinned))
+                    admit(&mut || reserve_cdram(device, allocation, allocation, &pinned), FrameAdmissionReason::Reservation)
                         .with_context(|| format!("preparing GXT atlas {}", source.label))?;
                     let upload_start = std::time::Instant::now();
-                    let uploaded = allocate_texture_with_recovery(device, &pinned,
-                        |g| g.create_gxt_texture(view.file, false, true));
+                    let uploaded = retry_frame_allocation(device, admit, &mut allocation_recovery_used, ||
+                        allocate_texture_with_recovery(device, &pinned,
+                            |g| g.create_gxt_texture(view.file, false, true)));
                     #[cfg(target_os = "vita")]
                     deferred_metrics::add(&deferred_metrics::UPLOAD_US, upload_start.elapsed());
                     uploaded.with_context(|| format!("uploading GXT atlas {}", source.label))
@@ -3323,10 +3342,11 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
             let stride = width.checked_mul(4).context("deferred decode stride overflow")?;
             ensure!(pixels.len() == layout_bytes(width, height, 4, stride)?, "deferred RGBA byte length mismatch for {}", source.label);
             let _ = srgb; // Decoder metadata; native descriptors never apply gamma.
-            admit(&mut || reserve_cdram(device, allocation, allocation, &pinned))
+            admit(&mut || reserve_cdram(device, allocation, allocation, &pinned), FrameAdmissionReason::Reservation)
                 .with_context(|| format!("preparing native atlas {}", source.label))?;
-            let uploaded = make_texture_inner(&texture.device, texture.size, texture.size,
-                Some(&pixels), TextureFormat::Rgba8, false, true, false, false, &pinned)
+            let uploaded = retry_frame_allocation(device, admit, &mut allocation_recovery_used, ||
+                make_texture_inner(&texture.device, texture.size, texture.size,
+                    Some(&pixels), TextureFormat::Rgba8, false, true, false, false, &pinned))
                 .with_context(|| format!("uploading native atlas {}", source.label))?;
             drop(pixels);
             let id = uploaded.native.id.borrow_mut().take()
@@ -3340,8 +3360,33 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
     Ok(())
 }
 
+/// A successful free-byte query does not guarantee a contiguous native block.
+/// Only allocation pressure reaches this retry; source, upload and driver
+/// errors retain their original failure path. Never re-read/decode the image.
+fn retry_frame_allocation<T>(device: &Device, admit: &mut FrameAdmission<'_>, used: &mut bool,
+    mut allocate: impl FnMut() -> Result<T>) -> Result<T>
+{
+    let error = match allocate() { Ok(value) => return Ok(value), Err(error) => error };
+    if *used || !is_texture_memory_pressure(&error) { return Err(error); }
+    *used = true;
+    let mut recovered = None;
+    let handled = admit(&mut || {
+        device.call(|g| g.reclaim_retired(true))?;
+        recovered = Some(allocate()?);
+        Ok(())
+    }, FrameAdmissionReason::AllocationRetry)?;
+    if !handled { return Err(error); }
+    recovered.context("allocation recovery did not execute its operation")
+}
+
+pub fn is_texture_memory_pressure(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<TextureMemoryPressure>().is_some()
+}
+
 fn execute(device: &Device, commands: &[Command]) -> Result<()> {
-    execute_with_admission(device, commands, &mut |reserve| reserve())
+    execute_with_admission(device, commands, &mut |reserve, reason| {
+        if reason == FrameAdmissionReason::AllocationRetry { Ok(false) } else { reserve().map(|_| true) }
+    })
 }
 
 /// Frame submission breakdown: how much of render_us went into executing recorded

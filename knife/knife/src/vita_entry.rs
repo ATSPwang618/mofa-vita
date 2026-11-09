@@ -521,6 +521,8 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         game.render(&mut renderer, &mut |game, renderer, quads| {
             ui.draw(game, renderer, quads)
         });
+        // Protect progress before next-frame input can leave/reset this fault.
+        ui.protect_resource_checkpoint(&mut game);
         let replay_capture = game.vita_gpu_replay_take_capture();
         let replayed = replay_capture.is_some();
         if let Some(capture) = replay_capture {

@@ -1,5 +1,6 @@
 # mofa-vita · 魔法使之夜
 - 项目官网介绍：https://atspwang618.github.io/myvita.github.io/mofa-vita/
+- 实机演示：https://www.bilibili.com/video/BV1vUxn6nE59
 
 **PS Vita 原生 GXM 移植引擎**
 

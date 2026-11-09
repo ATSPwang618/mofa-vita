@@ -869,6 +869,32 @@ impl SaveFile {
         }
     }
 
+    /// Emergency CONTINUE checkpoint: no previews/GPU work and no manual or
+    /// quick-save overwrite. Roll back the in-memory transaction on I/O failure
+    /// so a later menu write cannot accidentally publish a failed checkpoint.
+    #[cfg(any(target_os = "vita", test))]
+    pub fn store_resource_checkpoint(&mut self, rec: &[u8], system: impl FnOnce(&mut Self)) -> Result<()> {
+        self.resource_checkpoint_with(rec, system, Self::store)
+    }
+
+    #[cfg(any(target_os = "vita", test))]
+    fn resource_checkpoint_with(&mut self, rec: &[u8], system: impl FnOnce(&mut Self),
+        persist: impl FnOnce(&Self) -> Result<()>) -> Result<()>
+    {
+        anyhow::ensure!(rec.len() == lay().rec_size && page_of(rec).is_some(), "invalid recovery record");
+        let range = Self::rec_range(lay().auto_first);
+        let old_record = self.buf[range.clone()].to_vec();
+        let old_system = self.buf[..lay().rec_base].to_vec();
+        self.buf[range.clone()].copy_from_slice(rec);
+        system(self);
+        if let Err(error) = persist(self) {
+            self.buf[range].copy_from_slice(&old_record);
+            self.buf[..lay().rec_base].copy_from_slice(&old_system);
+            return Err(error);
+        }
+        Ok(())
+    }
+
     #[cfg(any(target_os = "vita", test))]
     fn store_vita_at(&self, path: &Path) -> Result<()> {
         crate::save::storage::store(path, &self.buf, lay().file_size)
@@ -1121,6 +1147,45 @@ mod tests {
             let f: std::collections::HashMap<u16, i16> = read_f(&page).into_iter().collect();
             assert_eq!((f[&3], f[&298], f[&998], f[&110]), (486, 7, 1, 0));
             assert_eq!(get_i16(&page, WITCH.p_f_words + 2 * 3), 486);
+        });
+    }
+
+    #[test]
+    fn recovery_checkpoint_preserves_manual_quick_and_replay_mode() {
+        witch(|| {
+            let mut f = SaveFile::new();
+            let old = record(&empty_page(), None, 100);
+            f.set_record(17, &old);
+            f.set_record(WITCH.quick_slot, &old);
+            let mut p = empty_page();
+            write_f(&mut p, |n| if n == 24 { 1 } else { 0 });
+            put_i16(&mut p, P_SCENE, 79);
+            let rec = record(&p, None, 200);
+            f.resource_checkpoint_with(&rec, |f| f.set_g(130, 7), |f| {
+                assert_eq!(f.continue_slot(), Some(WITCH.auto_first));
+                assert_eq!(f.record(17), Some(old.as_slice()));
+                assert_eq!(f.record(WITCH.quick_slot), Some(old.as_slice()));
+                Ok(())
+            }).unwrap();
+            let restored = page_of(f.record(WITCH.auto_first).unwrap()).unwrap();
+            assert_eq!(get_i16(restored, P_SCENE), 79);
+            assert!(read_f(restored).contains(&(24, 1)));
+        });
+    }
+
+    #[test]
+    fn recovery_checkpoint_failed_write_rolls_back_all_changed_bytes() {
+        witch(|| {
+            let mut f = SaveFile::new();
+            let old = record(&empty_page(), None, 100);
+            f.set_record(WITCH.auto_first, &old);
+            let before = f.buf.clone();
+            let rec = record(&empty_page(), None, 200);
+            let result = f.resource_checkpoint_with(&rec, |f| f.set_g(130, 7), |_| anyhow::bail!("disk full"));
+            assert!(result.is_err());
+            assert_eq!(f.buf, before);
+            assert!(f.resource_checkpoint_with(&rec[..20], |_| {}, |_| Ok(())).is_err());
+            assert_eq!(f.buf, before);
         });
     }
 

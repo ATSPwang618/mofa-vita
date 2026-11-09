@@ -75,7 +75,7 @@ PY
         [[ $variant != red ]] || backend="$build/backend/gxm_backend.red.c"
         command=("$host_cc" "${flags[@]}" "-DKV_GXM_BACKEND_SOURCE=\"$backend\""
             -MD -MF "$build/$variant.d" "$build/gxm_compressed_test.c" "$build/perf_audit.o"
-            "-Wl,-Map,$build/$variant.map" -o "$build/compressed-$variant")
+            "-Wl,-Map,$build/$variant.map" -lm -o "$build/compressed-$variant")
         printf '%q ' "${command[@]}" > "$build/$variant.command"
         printf '\n' >> "$build/$variant.command"
         cat "$build/$variant.command"

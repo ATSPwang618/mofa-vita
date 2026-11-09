@@ -1241,8 +1241,8 @@ impl Assets {
             let (width, height, bpp, altered) = pixels.vita_upload_layout()
                 .with_context(|| format!("invalid image upload {name}"))?;
             let before = self.images.len();
-            let admission = self.image_cache.admit(&mut self.images,
-                || r.try_reserve_image_upload(width, height, bpp, altered));
+            let admission = self.image_cache.admit_if(&mut self.images,
+                || r.try_reserve_image_upload(width, height, bpp, altered), knife_render::is_texture_memory_pressure);
             let reclaimed = before - self.images.len();
             if reclaimed != 0 || admission.is_err() {
                 tracing::info!(name, width, height, bpp, altered, reclaimed,
@@ -1298,7 +1298,7 @@ impl Assets {
     #[cfg(target_os = "vita")]
     pub fn admit_frame_upload(&mut self, reserve: &mut dyn FnMut() -> Result<()>) -> Result<()> {
         let before = self.images.len();
-        let admission = self.image_cache.admit(&mut self.images, reserve);
+        let admission = self.image_cache.admit_if(&mut self.images, reserve, knife_render::is_texture_memory_pressure);
         let reclaimed = before - self.images.len();
         if reclaimed != 0 || admission.is_err() {
             tracing::info!(reclaimed, cached = self.images.len(), admitted = admission.is_ok(),

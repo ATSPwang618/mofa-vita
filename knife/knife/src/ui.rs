@@ -1300,6 +1300,42 @@ impl Ui {
         }
     }
 
+    /// Resource exhaustion must not require a working menu, thumbnail, sound or
+    /// GPU upload to protect progress. CONTINUE already reads this automatic slot.
+    #[cfg(target_os = "vita")]
+    pub fn protect_resource_checkpoint(&mut self, game: &mut Game) {
+        let Some(point) = game.take_resource_checkpoint() else { return; };
+        let Some(point) = point else {
+            game.resource_checkpoint_result("unavailable", "no successfully presented save point in this playthrough; existing saves retained",
+                "资源加载失败，暂无有效恢复点。原有存档已保留。");
+            return;
+        };
+        let data = save::SaveData { timestamp: save::now(), ..point.as_ref().clone() };
+        let result = (|| -> anyhow::Result<()> {
+            let record = game.encode_record(&data)
+                .ok_or_else(|| anyhow::anyhow!("recovery point cannot be encoded"))?;
+            let decoded = game.decode_record(&record)
+                .ok_or_else(|| anyhow::anyhow!("recovery record cannot resolve its script position"))?;
+            anyhow::ensure!((decoded.scene, decoded.pc) == (data.scene, data.pc), "recovery record position mismatch");
+            self.file.store_resource_checkpoint(&record, |file| game.store_system(file))?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                let slot = save::auto_first();
+                let detail = format!("saved slot={slot} checkpoint_scene={} checkpoint_pc={} archive={} path={}",
+                    data.scene, data.pc, data.vars.iter().any(|(k, v)| k == "F024" && *v != 0),
+                    crate::savedata::SaveFile::path().display());
+                // No refresh_slots/preview request: update CPU metadata only.
+                if let Some(entry) = self.slots.get_mut(slot) { *entry = Some(data); }
+                game.resource_checkpoint_result("saved", &detail,
+                    "资源加载失败，进度已保护。重启后选“继续游戏”恢复。");
+            }
+            Err(error) => game.resource_checkpoint_result("failed", &format!("{error:#}"),
+                "资源加载失败，保护存档写入失败。请勿覆盖原有存档。"),
+        }
+    }
+
     /// Put a snapshot into a record, then write the file. The save list rebuilds its preview from the
     /// record (sub_884F0), so nothing else is stored.
     fn write_record(&mut self, game: &mut Game, slot: usize, data: &SaveData) -> anyhow::Result<()> {
@@ -5835,6 +5871,8 @@ impl Ui {
 
     /// Per-frame bookkeeping.
     pub fn update(&mut self, game: &mut Game, r: &Renderer, dt: f32) {
+        #[cfg(target_os = "vita")]
+        self.protect_resource_checkpoint(game);
         // SELA Yes: the save screen over the game (sub_84A90 states 6 / 7), then the script goes on
         if self.screen == Screen::Game {
             if game.take_choice_save() {

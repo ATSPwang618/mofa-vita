@@ -4,12 +4,12 @@ use super::*;
 use std::time::{Duration,Instant};
 use knife_platform_vita::image_worker::{WorkerPoll,resource_state::{self,Phase}};
 
-pub enum ImageNeeded {Ready(Arc<Image>),Pending,Failed(String)}
+pub enum ImageNeeded {Ready(Arc<Image>),Pending,Pressure(String),Failed(String)}
 #[derive(Clone,Copy)]
 enum Step {Source,Decode}
 pub(super) struct NeededRequest {
     key:String,name:String,strip:Option<(usize,usize)>,archive:Arc<Archive>,index:usize,
-    generation:u64,started:Instant,step:Step,failure:Option<String>,retry_source:bool,
+    generation:u64,started:Instant,step:Step,failure:Option<String>,retry_source:bool,pressure_retries:u8,
 }
 const DEADLINE:Duration=Duration::from_secs(10);
 impl Assets {
@@ -49,7 +49,19 @@ impl Assets {
                 self.image_needed=None;resource_state::demand(Phase::Idle,"",0,usize::MAX,self.image_context);
                 ImageNeeded::Ready(image)
             },
-            Err(error)=>self.image_need_failed(format!("{name}: {error:#}")),
+            Err(error)=>{
+                // A native allocation refusal is not a missing/corrupt image.
+                // Let the owner thread release optional targets before one retry
+                // of this SAME demand. Preserve identity and the original deadline.
+                if knife_render::is_texture_memory_pressure(&error)
+                    && let Some(request)=self.image_needed.as_mut().filter(|r|r.pressure_retries>0) {
+                    request.pressure_retries-=1;
+                    request.step=Step::Source;
+                    if let Some(worker)=&self.image_worker {worker.release_needed(&key);}
+                    return ImageNeeded::Pressure(format!("{name}: {error:#}"));
+                }
+                self.image_need_failed(format!("{name}: {error:#}"))
+            },
         }
     }
     pub fn image_needed_context(&self)->u64 { self.image_context }
@@ -90,7 +102,7 @@ impl Assets {
                 return ImageNeeded::Failed(format!("image source missing: {name}"));
             };
             self.image_needed=Some(NeededRequest {key:key.clone(),name:name.clone(),strip:self.strip(&name),
-                archive,index,generation:self.image_context,started:Instant::now(),step:Step::Source,failure:None,retry_source:true});
+                archive,index,generation:self.image_context,started:Instant::now(),step:Step::Source,failure:None,retry_source:true,pressure_retries:1});
         }
         let request=self.image_needed.as_ref().unwrap();
         if let Some(error)=request.failure.clone() {return ImageNeeded::Failed(error);}

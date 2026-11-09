@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "build_tag": "stage-effect-r14-resource-guard-20261109",
+  "device_tested": false,
+  "head": "049b6d1ec1be7d007ba2c681a4fabfccdb13c030",
+  "branch": "perf/render",
+  "local_only": true,
+  "artifacts": {
+    "eboot.bin": {
+      "sha256": "f1fe1841303c56a05324843af0564ec2d955ef99a765a916a2d4e2a142560bd3",
+      "bytes": 10175383
+    },
+    "knife-vita-540p.vpk": {
+      "sha256": "f12ed8ee82ff6e1fe82a35b26a721c64954bbfbfb8c273f35865e6649b23edd0",
+      "bytes": 7276626
+    },
+    "build-receipt-r14.json": {
+      "sha256": "c8e12eeaeaac327fae1671c7febae0f1014a73690c8ed0530b0b1095241a2389",
+      "bytes": 86904
+    }
+  },
+  "symbols": {
+    "knife.elf": {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\game-release-540p\\knife.elf",
+      "sha256": "932983b6653fb4b6d4d35ee027885f4544baf21128cc4a58f8b6a3ff4c1dcd2b"
+    },
+    "knife.map": {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\vita\\game-release-540p\\knife.map",
+      "sha256": "eadbfed0d7fd5e282fe63cf315a56e0f1e508f30f74aa22a56b0591d2f87a7ec"
+    }
+  },
+  "asset_manifest_sha256": "c317f7da0d07d01af0c13d92720013f0e33b214f5d1356c6a39b8dced168e832",
+  "vpk_changed_entries_from_r13": [
+    "eboot.bin"
+  ],
+  "validation": {
+    "host": {
+      "knife": 145,
+      "knife_perf": 8,
+      "knife_render": 173,
+      "failed": 0
+    },
+    "native_pool": {
+      "cases": 5,
+      "checks": 89,
+      "failed": 0
+    },
+    "native_copy": {
+      "cases": 68,
+      "checks": 8686,
+      "failed": 0
+    },
+    "native_compressed": {
+      "cases": 95,
+      "checks": 1343,
+      "failed": 0,
+      "negative_control_failed_as_expected": true
+    },
+    "arm_build": "passed",
+    "package": "KNIF00540 ATTRIBUTE2=12; 21 engine-only entries",
+    "asset_profile": "passed; 37 key files, startup 4435840 bytes, one 8192-byte buffer",
+    "git_diff_check": "passed",
+    "artifact_and_source_hashes": "passed against local evidence"
+  },
+  "logs": {
+    "recovery-all-tests.log": "608030b8325cbcff6e18d626024dd7a6575704db8c6f275b5645e4074987587e",
+    "recovery-native-tests.log": "ddb2d56df3f72d2cbee0be9b8068e356b9b125bfdfcfbabe5bab1d79e27adb84",
+    "recovery-compressed-tests.log": "9eb13b55c8ec304a557a75d23033d7a7f83d5d5014dacb95804199e6ba7f6811",
+    "recovery-arm-build.log": "02b32e5c61891897049596df7c85e76004080baad77aacbd9be27bd95b5fb4c3"
+  },
+  "native_log_note": "pool/copy pass in native-tests.log; compressed harness link failure there superseded by separate compressed-tests.log after adding libm and rejection SDK stubs",
+  "source_sha256": {
+    "knife/knife-render/src/vita.rs": "f8f0c89d3117d564db109e8d80809da30abd6518f92f4bebd80326d0b7ca10e8",
+    "knife/knife-render/src/vita_tests.rs": "e961dae8b2f59f52276dd9331076eb37f5e6daa9b1f6b672a46220aacfcc4da5",
+    "knife/knife/src/assets.rs": "e2c1259069f31ab3b1b92cd88a1aec9d2f82865112d06e1f9cf5f65828401e93",
+    "knife/knife/src/game.rs": "82c74242195538aa1e90f8d44fb7c68d33c133066e3af851a125093ecade4f56",
+    "knife/knife/src/game/rebake_cohort.rs": "ca3129f2ab04f76515cceeb5e2f2daf3bce14a9c138e519df38b13861d66c345",
+    "knife/knife/src/image_needed.rs": "0626d4f214b269aadc5d508686a790ec0f22fc1e7fde2a6530747af68c82b500",
+    "knife/knife/src/savedata.rs": "7780b87f8ba2e2a1aeecbeac1671359a6c56418bc1213cb2df0264db8eb80c75",
+    "knife/knife/src/text.rs": "bc49eb2cf06dc526667ff607879d777de5bbfc80485e6ef4e4d71ddbb0b4d45c",
+    "knife/knife/src/ui.rs": "90dd21ad5ed35dee66b9afecd293abebddd46dcd4cc0b80a15199e77902480ad",
+    "knife/knife/src/vita_entry.rs": "38cfa72db0170b896fb8bd36a5a8e3d3e5d72adf67d49bdf341d74d22fb54d94",
+    "knife/knife/src/vita_image_cache.rs": "e6c9409ce6562a063d6bfc7fbe2f2dd05bb7adfd5aab810850dfc50f3bd4aa5e",
+    "knife/vita/tests/gxm_compressed_test.c": "40f668879f881ae0a2ad3a94dc51c6068b21d440e97d21b975ecde6b446f289e",
+    "tools/test-vita-compressed.sh": "4d1497a53f2dbff1a5d8ca837f19041c900dc9c12e4a2171939738cce4661457",
+    "knife/knife/src/game/resource_checkpoint.rs": "15f7b477acdeeac0c8e851d835266839636e6aad6b41a426c493dc8e77b55426"
+  },
+  "scope": [
+    "shared native image accounting confirmed for RGBA/R8/DXT/offscreen",
+    "typed actual-allocation escalation with frame pins retained",
+    "same-demand bounded story/motion retry",
+    "CPU-only last-presented automatic checkpoint with disk-failure rollback"
+  ],
+  "limits": [
+    "no hardware long-run validation",
+    "not a guarantee against corrupt files, driver failures, impossible live working sets or extreme CPU exhaustion",
+    "automatic slot 122 replaced on successful fault protection; manual/quick records preserved",
+    "archive F024 semantics preserved",
+    "cache-reference bytes are not immediate physical free bytes"
+  ]
+}

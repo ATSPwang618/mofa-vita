@@ -113,7 +113,15 @@ struct PanelInfo {
 struct FontMenu {
     original_size: Size,
     original_l2r2_mode: u8,
+    original_rear_touch_debug_enabled: bool,
     selected: usize,
+}
+
+#[derive(Clone, Copy)]
+struct RearTouchDebug {
+    x_percent: i32,
+    y_percent: i32,
+    zone: &'static str,
 }
 
 #[cfg(target_os = "vita")]
@@ -140,14 +148,18 @@ pub struct Input {
     font_menu: Option<FontMenu>,
     font_settings: PathBuf,
     l2r2_settings: PathBuf,
+    rear_debug_settings: PathBuf,
     l2r2_mode: u8,
+    rear_touch_debug_enabled: bool,
     touch_id: Option<u8>,
     touch_suppressed: bool,
     panel: PanelInfo,
     back_panel: Option<PanelInfo>,
+    rear_touch_debug: Option<RearTouchDebug>,
 }
 impl Input {
-    pub fn new(game: &mut Game, font_settings: PathBuf, l2r2_settings: PathBuf) -> anyhow::Result<Self> {
+    pub fn new(game: &mut Game, font_settings: PathBuf, l2r2_settings: PathBuf,
+        rear_debug_settings: PathBuf) -> anyhow::Result<Self> {
         anyhow::ensure!(
             std::mem::size_of::<CtrlData>() == 0x20
                 && std::mem::size_of::<TouchData>() == 0x90
@@ -192,6 +204,21 @@ impl Input {
                 0
             }
         };
+        let rear_touch_debug_enabled = match std::fs::read_to_string(&rear_debug_settings) {
+            Ok(text) => match text.trim() {
+                "0" => false,
+                "1" => true,
+                _ => {
+                    tracing::warn!("Invalid rear touch debug setting in {}; using 0", rear_debug_settings.display());
+                    false
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                tracing::warn!("Reading rear touch debug setting {}: {error}; using 0", rear_debug_settings.display());
+                false
+            }
+        };
         match std::fs::read_to_string(&font_settings) {
             Ok(text) => game.set_story_font_size(Size::parse(&text)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -207,11 +234,14 @@ impl Input {
             font_menu: None,
             font_settings,
             l2r2_settings,
+            rear_debug_settings,
             l2r2_mode,
+            rear_touch_debug_enabled,
             touch_id: None,
             touch_suppressed: false,
             panel,
             back_panel,
+            rear_touch_debug: None,
         })
     }
     /// Last successful native pad observation, for the optional DEV log.
@@ -229,12 +259,12 @@ impl Input {
         }
         let size = game.story_font_size().percent();
         let left = (CANVAS_W as f32 - 784.0) * 0.5;
-        let top = CANVAS_H as f32 - 318.0;
+        let top = CANVAS_H as f32 - 426.0;
         let mut rect = |x, y, w, h, color| {
             out.push(Quad::rect(r.white.clone(), [left + x, top + y, w, h], color));
         };
         let accent = [0.59, 0.79, 1.0, 1.0];
-        rect(0.0, 0.0, 784.0, 290.0, [0.05, 0.07, 0.12, 0.97]);
+        rect(0.0, 0.0, 784.0, 398.0, [0.05, 0.07, 0.12, 0.97]);
         rect(0.0, 0.0, 784.0, 3.0, accent);
         rect(36.0, 96.0, 712.0, 5.0, [0.26, 0.32, 0.42, 1.0]);
         let position = f32::from(size - Size::MIN) / f32::from(Size::MAX - Size::MIN);
@@ -250,6 +280,9 @@ impl Input {
         let mode_width = font.measure_slot(mode, [34.0; 2], 1.0);
         let selected_size = self.font_menu.is_some_and(|menu| menu.selected == 0);
         let selected_mode = self.font_menu.is_some_and(|menu| menu.selected == 1);
+        let selected_debug = self.font_menu.is_some_and(|menu| menu.selected == 2);
+        let debug_value = if self.rear_touch_debug_enabled { "开启" } else { "关闭" };
+        let debug_width = font.measure_slot(debug_value, [34.0; 2], 1.0);
         for (text, x, y, px, color) in [
             ("剧情字号", 36.0, 62.0, 42.0, if selected_size { accent } else { [1.0; 4] }),
             (&value, 748.0 - value_width, 62.0, 44.0, accent),
@@ -257,6 +290,8 @@ impl Input {
             ("150%", 670.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
             ("L2/R2", 36.0, 190.0, 36.0, if selected_mode { accent } else { [1.0; 4] }),
             (mode, 748.0 - mode_width, 190.0, 34.0, if selected_mode { accent } else { [1.0; 4] }),
+            ("背板触摸诊断", 36.0, 280.0, 36.0, if selected_debug { accent } else { [1.0; 4] }),
+            (debug_value, 748.0 - debug_width, 280.0, 34.0, if selected_debug { accent } else { [1.0; 4] }),
         ] {
             font.draw_str_slot(r, out, text, [px; 2], 1.0, [left + x, top + y], color);
         }
@@ -268,8 +303,26 @@ impl Input {
         };
         font.draw_str_slot(r, out, description, [27.0; 2], 1.0,
             [left + 36.0, top + 226.0], [0.76, 0.81, 0.88, 1.0]);
+        font.draw_str_slot(r, out, "触摸背板时显示位置与映射区域", [25.0; 2], 1.0,
+            [left + 36.0, top + 322.0], [0.76, 0.81, 0.88, 1.0]);
         font.draw_str_slot(r, out, "↑↓ 选择项目   ←→ 调整（字号每次 5%）   ○ 保存   × 取消", [25.0; 2], 1.0,
-            [left + 36.0, top + 270.0], [1.0; 4]);
+            [left + 36.0, top + 360.0], [1.0; 4]);
+    }
+
+    /// Show the selected rear touch position and mapped region while diagnostics are enabled.
+    pub fn draw_rear_touch_debug(&self, game: &mut Game, r: &Renderer, out: &mut Vec<Quad>) {
+        if !self.rear_touch_debug_enabled { return; }
+        let Some(debug) = self.rear_touch_debug else { return; };
+        let left = CANVAS_W as f32 - 440.0;
+        let top = 18.0;
+        out.push(Quad::rect(r.white.clone(), [left, top, 422.0, 94.0], [0.02, 0.04, 0.08, 0.92]));
+        out.push(Quad::rect(r.white.clone(), [left, top, 422.0, 3.0], [0.59, 0.79, 1.0, 1.0]));
+        let font = game.font_mut();
+        let coords = format!("背板 X={}%, Y={}%", debug.x_percent, debug.y_percent);
+        let mapping = format!("当前区域：{}", debug.zone);
+        font.draw_str_slot(r, out, "L2/R2 触摸诊断", [28.0; 2], 1.0, [left + 14.0, top + 14.0], [0.59, 0.79, 1.0, 1.0]);
+        font.draw_str_slot(r, out, &coords, [27.0; 2], 1.0, [left + 14.0, top + 44.0], [1.0; 4]);
+        font.draw_str_slot(r, out, &mapping, [25.0; 2], 1.0, [left + 14.0, top + 72.0], [1.0; 4]);
     }
 
     fn font_menu_input(&mut self, game: &mut Game, event: &Option<Event>, pressed: u32) {
@@ -277,10 +330,12 @@ impl Input {
             if let Some(menu) = self.font_menu.take() {
                 game.set_story_font_size(menu.original_size);
                 self.l2r2_mode = menu.original_l2r2_mode;
+                self.rear_touch_debug_enabled = menu.original_rear_touch_debug_enabled;
             } else {
                 self.font_menu = Some(FontMenu {
                     original_size: game.story_font_size(),
                     original_l2r2_mode: self.l2r2_mode,
+                    original_rear_touch_debug_enabled: self.rear_touch_debug_enabled,
                     selected: 0,
                 });
             }
@@ -289,6 +344,7 @@ impl Input {
                 self.font_menu = None;
                 game.set_story_font_size(menu.original_size);
                 self.l2r2_mode = menu.original_l2r2_mode;
+                self.rear_touch_debug_enabled = menu.original_rear_touch_debug_enabled;
             } else if pressed & CIRCLE != 0 {
                 self.font_menu = None;
                 let size = game.story_font_size();
@@ -300,14 +356,22 @@ impl Input {
                 if let Err(error) = std::fs::write(&self.l2r2_settings, format!("{}\n", self.l2r2_mode)) {
                     tracing::warn!("Writing L2/R2 mode: {error}");
                 }
+                if let Err(error) = std::fs::write(&self.rear_debug_settings,
+                    format!("{}\n", u8::from(self.rear_touch_debug_enabled))) {
+                    tracing::warn!("Writing rear touch debug setting: {error}");
+                }
             } else {
                 let direction = i16::from(pressed & RIGHT != 0) - i16::from(pressed & LEFT != 0);
-                if pressed & (UP | DOWN) != 0 {
-                    menu.selected = 1 - menu.selected;
+                if pressed & UP != 0 {
+                    menu.selected = (menu.selected + 2) % 3;
+                } else if pressed & DOWN != 0 {
+                    menu.selected = (menu.selected + 1) % 3;
                 } else if direction != 0 && menu.selected == 0 {
                     game.set_story_font_size(game.story_font_size().step(direction));
-                } else if direction != 0 {
+                } else if direction != 0 && menu.selected == 1 {
                     self.l2r2_mode = (i16::from(self.l2r2_mode) + direction).rem_euclid(4) as u8;
+                } else if direction != 0 {
+                    self.rear_touch_debug_enabled = !self.rear_touch_debug_enabled;
                 }
                 self.font_menu = Some(menu);
             }
@@ -350,7 +414,9 @@ impl Input {
         let left = if modal { [0; 2] } else { [axis(pad.lx), -axis(pad.ly)] };
         let right = if modal { [0; 2] } else { [axis(pad.rx), -axis(pad.ry)] };
         let mut back_pressed = [false; 2];
-        if !modal && self.l2r2_mode != 0 && let Some(panel) = self.back_panel {
+        self.rear_touch_debug = None;
+        if !modal && (self.l2r2_mode != 0 || self.rear_touch_debug_enabled)
+            && let Some(panel) = self.back_panel {
             let mut back = TouchData::default();
             let status = unsafe { sceTouchPeek(TOUCH_BACK, &mut back, 1) };
             if status == 1 && back.count <= 8 {
@@ -365,6 +431,24 @@ impl Input {
                         3 => y >= mid_y,
                         _ => false,
                     };
+                    if self.rear_touch_debug_enabled {
+                        let x_percent = (x - i32::from(panel.min_disp_x)) * 100
+                            / (i32::from(panel.max_disp_x) - i32::from(panel.min_disp_x));
+                        let y_percent = (y - i32::from(panel.min_disp_y)) * 100
+                            / (i32::from(panel.max_disp_y) - i32::from(panel.min_disp_y));
+                        let zone = if !in_row {
+                            if self.l2r2_mode == 0 { "模式关闭" } else { "未映射" }
+                        } else if x >= mid_x {
+                            "ZR（右侧）"
+                        } else {
+                            "ZL（左侧）"
+                        };
+                        self.rear_touch_debug = Some(RearTouchDebug {
+                            x_percent: x_percent.clamp(0, 100),
+                            y_percent: y_percent.clamp(0, 100),
+                            zone,
+                        });
+                    }
                     if in_row {
                         back_pressed[if x >= mid_x { 1 } else { 0 }] = true;
                     }

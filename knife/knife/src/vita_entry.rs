@@ -449,6 +449,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         &mut game,
         Path::new(PERF_ROOT).join("story-font-size.txt"),
         Path::new(PERF_ROOT).join("l2-r2-mode.txt"),
+        Path::new(PERF_ROOT).join("rear-touch-debug.txt"),
     )?;
     log.event("UI booted; input ready");
     if let Some(perf_log) = &mut perf {
@@ -525,6 +526,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         game.render(&mut renderer, &mut |game, renderer, quads| {
             ui.draw(game, renderer, quads);
             input.draw_font_menu(game, renderer, quads);
+            input.draw_rear_touch_debug(game, renderer, quads);
         });
         // Protect progress before next-frame input can leave/reset this fault.
         ui.protect_resource_checkpoint(&mut game);

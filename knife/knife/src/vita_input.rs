@@ -121,7 +121,6 @@ struct FontMenu {
 struct RearTouchDebug {
     x_percent: i32,
     y_percent: i32,
-    zone: &'static str,
 }
 
 #[cfg(target_os = "vita")]
@@ -155,7 +154,7 @@ pub struct Input {
     touch_suppressed: bool,
     panel: PanelInfo,
     back_panel: Option<PanelInfo>,
-    rear_touch_debug: Option<RearTouchDebug>,
+    rear_touch_debug: [Option<RearTouchDebug>; 2],
 }
 impl Input {
     pub fn new(game: &mut Game, font_settings: PathBuf, l2r2_settings: PathBuf,
@@ -241,7 +240,7 @@ impl Input {
             touch_suppressed: false,
             panel,
             back_panel,
-            rear_touch_debug: None,
+            rear_touch_debug: [None; 2],
         })
     }
     /// Last successful native pad observation, for the optional DEV log.
@@ -288,18 +287,18 @@ impl Input {
             (&value, 748.0 - value_width, 62.0, 44.0, accent),
             ("50%", 36.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
             ("150%", 670.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
-            ("L2/R2", 36.0, 190.0, 36.0, if selected_mode { accent } else { [1.0; 4] }),
+            ("L2 R2 背板触摸映射", 36.0, 190.0, 36.0, if selected_mode { accent } else { [1.0; 4] }),
             (mode, 748.0 - mode_width, 190.0, 34.0, if selected_mode { accent } else { [1.0; 4] }),
-            ("背板触摸诊断", 36.0, 280.0, 36.0, if selected_debug { accent } else { [1.0; 4] }),
+            ("L2 R2 调试显示", 36.0, 280.0, 36.0, if selected_debug { accent } else { [1.0; 4] }),
             (debug_value, 748.0 - debug_width, 280.0, 34.0, if selected_debug { accent } else { [1.0; 4] }),
         ] {
             font.draw_str_slot(r, out, text, [px; 2], 1.0, [left + x, top + y], color);
         }
         let description = match self.l2r2_mode {
             0 => "背板触摸关闭",
-            1 => "左半边 = ZL   右半边 = ZR",
-            2 => "左上 = ZL   右上 = ZR",
-            _ => "左下 = ZL   右下 = ZR",
+            1 => "左半边 = L2   右半边 = R2",
+            2 => "左上 = L2   右上 = R2",
+            _ => "左下 = L2   右下 = R2",
         };
         font.draw_str_slot(r, out, description, [27.0; 2], 1.0,
             [left + 36.0, top + 226.0], [0.76, 0.81, 0.88, 1.0]);
@@ -312,17 +311,19 @@ impl Input {
     /// Show the selected rear touch position and mapped region while diagnostics are enabled.
     pub fn draw_rear_touch_debug(&self, game: &mut Game, r: &Renderer, out: &mut Vec<Quad>) {
         if !self.rear_touch_debug_enabled { return; }
-        let Some(debug) = self.rear_touch_debug else { return; };
-        let left = CANVAS_W as f32 - 440.0;
-        let top = 18.0;
-        out.push(Quad::rect(r.white.clone(), [left, top, 422.0, 94.0], [0.02, 0.04, 0.08, 0.92]));
-        out.push(Quad::rect(r.white.clone(), [left, top, 422.0, 3.0], [0.59, 0.79, 1.0, 1.0]));
         let font = game.font_mut();
-        let coords = format!("背板 X={}%, Y={}%", debug.x_percent, debug.y_percent);
-        let mapping = format!("当前区域：{}", debug.zone);
-        font.draw_str_slot(r, out, "L2/R2 触摸诊断", [28.0; 2], 1.0, [left + 14.0, top + 14.0], [0.59, 0.79, 1.0, 1.0]);
-        font.draw_str_slot(r, out, &coords, [27.0; 2], 1.0, [left + 14.0, top + 44.0], [1.0; 4]);
-        font.draw_str_slot(r, out, &mapping, [25.0; 2], 1.0, [left + 14.0, top + 72.0], [1.0; 4]);
+        for (side, debug) in self.rear_touch_debug.iter().enumerate() {
+            let Some(debug) = debug else { continue; };
+            let left = if side == 0 { 18.0 } else { CANVAS_W as f32 - 440.0 };
+            let top = 18.0;
+            out.push(Quad::rect(r.white.clone(), [left, top, 422.0, 94.0], [0.02, 0.04, 0.08, 0.92]));
+            out.push(Quad::rect(r.white.clone(), [left, top, 422.0, 3.0], [0.59, 0.79, 1.0, 1.0]));
+            let coords = format!("X={}%, Y={}%", debug.x_percent, debug.y_percent);
+            let label = if side == 0 { "L2" } else { "R2" };
+            font.draw_str_slot(r, out, label, [28.0; 2], 1.0, [left + 14.0, top + 24.0], [0.59, 0.79, 1.0, 1.0]);
+            font.draw_str_slot(r, out, &coords, [27.0; 2], 1.0, [left + 14.0, top + 54.0], [1.0; 4]);
+            font.draw_str_slot(r, out, "映射生效", [25.0; 2], 1.0, [left + 14.0, top + 82.0], [1.0; 4]);
+        }
     }
 
     fn font_menu_input(&mut self, game: &mut Game, event: &Option<Event>, pressed: u32) {
@@ -414,8 +415,8 @@ impl Input {
         let left = if modal { [0; 2] } else { [axis(pad.lx), -axis(pad.ly)] };
         let right = if modal { [0; 2] } else { [axis(pad.rx), -axis(pad.ry)] };
         let mut back_pressed = [false; 2];
-        self.rear_touch_debug = None;
-        if !modal && (self.l2r2_mode != 0 || self.rear_touch_debug_enabled)
+        self.rear_touch_debug = [None; 2];
+        if !modal && self.l2r2_mode != 0
             && let Some(panel) = self.back_panel {
             let mut back = TouchData::default();
             let status = unsafe { sceTouchPeek(TOUCH_BACK, &mut back, 1) };
@@ -425,32 +426,25 @@ impl Input {
                 for report in &back.reports[..back.count as usize] {
                     let x = i32::from(report.x);
                     let y = i32::from(report.y);
+                    let side = usize::from(x >= mid_x);
                     let in_row = match self.l2r2_mode {
                         1 => true,
                         2 => y < mid_y,
                         3 => y >= mid_y,
                         _ => false,
                     };
-                    if self.rear_touch_debug_enabled {
+                    if in_row && self.rear_touch_debug_enabled {
                         let x_percent = (x - i32::from(panel.min_disp_x)) * 100
                             / (i32::from(panel.max_disp_x) - i32::from(panel.min_disp_x));
                         let y_percent = (y - i32::from(panel.min_disp_y)) * 100
                             / (i32::from(panel.max_disp_y) - i32::from(panel.min_disp_y));
-                        let zone = if !in_row {
-                            if self.l2r2_mode == 0 { "模式关闭" } else { "未映射" }
-                        } else if x >= mid_x {
-                            "ZR（右侧）"
-                        } else {
-                            "ZL（左侧）"
-                        };
-                        self.rear_touch_debug = Some(RearTouchDebug {
+                        self.rear_touch_debug[side] = Some(RearTouchDebug {
                             x_percent: x_percent.clamp(0, 100),
                             y_percent: y_percent.clamp(0, 100),
-                            zone,
                         });
                     }
                     if in_row {
-                        back_pressed[if x >= mid_x { 1 } else { 0 }] = true;
+                        back_pressed[side] = true;
                     }
                 }
             }

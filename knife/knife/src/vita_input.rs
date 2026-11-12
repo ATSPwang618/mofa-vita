@@ -207,10 +207,11 @@ impl Input {
             (&value, 748.0 - value_width, 62.0, 44.0, accent),
             ("50%", 36.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
             ("150%", 670.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
-            ("左右键  调整 5%    ○ 保存    × 取消", 36.0, 194.0, 33.0, [1.0; 4]),
         ] {
             font.draw_str_slot(r, out, text, [px; 2], 1.0, [left + x, top + y], color);
         }
+        font.draw_str_slot(r, out, "左右键  调整 5%    ○ 保存    × 取消", [33.0; 2], 1.0,
+            [left + 36.0, top + 194.0], [1.0; 4]);
     }
 
     fn font_menu_input(&mut self, game: &mut Game, event: &Option<Event>, pressed: u32) {

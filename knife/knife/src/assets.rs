@@ -1757,6 +1757,10 @@ impl Assets {
             for member in atlas.members {
                 anyhow::ensure!(member.offset.checked_add(member.len).is_some_and(|end| end <= atlas.decoded_bytes),
                     "indexed atlas member exceeds decoded entry");
+                if member.name == "help_key" {
+                    out.push((member.name.to_string(), replace_help_key_ps(r)?));
+                    continue;
+                }
                 let archive = self.allui.clone();
                 let cache = self.atlas_cache.clone();
                 let (offset, len) = (member.offset, member.len);
@@ -1830,6 +1834,7 @@ impl Assets {
         #[cfg(target_os = "vita")]
         let shared_atlas = knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS);
         #[cfg(target_os = "vita")]
+        #[cfg(target_os = "vita")]
         let indexed = if shared_atlas || atlas_index::find(knife_platform_vita::audit::ASSET_MANIFEST,
             i, &self.allui.entries()[i]).is_some_and(|atlas| atlas.direct) {
             if let Some(result) = self.indexed_ui_textures(r, i) { out = result?; true } else { false }
@@ -1846,6 +1851,11 @@ impl Assets {
 
         if compact::is_atlas(&data) {
             for (name, image) in compact::parse_atlas(&data)? {
+                #[cfg(target_os = "vita")]
+                if name == "help_key" {
+                    out.push((name.to_string(), replace_help_key_ps(r)?));
+                    continue;
+                }
                 #[cfg(target_os = "vita")]
                 {
                     let metadata = compact::parse(image)?;
@@ -2278,6 +2288,20 @@ impl Assets {
     pub fn voice(&self, name: &str) -> Result<Pcm> {
         self.load_stream_file(&format!("stream/{name}.opus"))
     }
+}
+
+/// Substitute the complete help_key image with the embedded PS atlas. The
+/// game's archive remains read-only and the original atlas UVs stay valid.
+#[cfg(target_os = "vita")]
+fn replace_help_key_ps(r: &Renderer) -> Result<TexRef> {
+    let replacement = include_bytes!("../data/help_key_ps.kimg");
+    let image = compact::parse(replacement)?;
+    anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm
+        && image.logical == [384, 256] && image.size == [384, 256],
+        "invalid embedded PS help_key replacement");
+    let load = Rc::new(move || Ok(replacement.to_vec()));
+    r.defer_gxt_altered_reload(image.logical, image.size, replacement,
+        "help_key PS replacement", load, extract_native_gxt)
 }
 
 /// Upload a BNTX texture as a sprite texture (through pre_alter, `Renderer::upload_altered`; the exe builds every

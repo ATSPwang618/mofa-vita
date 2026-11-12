@@ -5758,12 +5758,7 @@ impl Game {
 
     #[cfg(target_os = "vita")]
     fn story_font_factor(&self) -> f32 {
-        // Script-positioned bubbles use fixed artwork sized to the original text.
-        if self.page_mode() && self.window_type().is_some_and(|t| self.is_bubble(t)) {
-            1.0
-        } else {
-            self.story_font_size.factor()
-        }
+        self.story_font_size.factor()
     }
 
     #[cfg(target_os = "vita")]

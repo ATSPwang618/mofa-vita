@@ -120,6 +120,13 @@ impl Ui {
                 }
                 v = w + 4.0;
             } else {
+                if let (Some(icons), Some(slot)) = (&self.ps_button_icons, super::super::ps_button_slot(id)) {
+                    let [x0, y0, x1, y1] = super::super::ps_button_cell(slot);
+                    let w = v + x1 - x0;
+                    pen.spr(out, icons, 16, Some([x0, y0, x1, y1]), (1920.0 - w) * 0.33333 + x, y);
+                    v = w + 6.0 + 4.0;
+                    continue;
+                }
                 let Some(&[x0, y0, x1, y1]) = ICONS.get(usize::from(id)) else { continue };
                 let w = v + f32::from(x1 - x0);
                 if let Some(t) = self.w.tex.get(76) {

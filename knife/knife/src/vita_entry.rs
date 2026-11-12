@@ -445,7 +445,11 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     let mut ui = ui::Ui::new(&mut game, &renderer);
     ui.boot(&mut game, &renderer, false);
     ui.warm_runtime_font(&game, &renderer);
-    let mut input = Input::new(&mut game, Path::new(PERF_ROOT).join("story-font-size.txt"))?;
+    let mut input = Input::new(
+        &mut game,
+        Path::new(PERF_ROOT).join("story-font-size.txt"),
+        Path::new(PERF_ROOT).join("l2-r2-mode.txt"),
+    )?;
     log.event("UI booted; input ready");
     if let Some(perf_log) = &mut perf {
         if let Err(error) = perf_log.finish_startup() {

@@ -1,4 +1,4 @@
-//! VitaSDK controller and front-panel input, polled once per game frame.
+//! VitaSDK controller and touch input, polled once per game frame.
 use crate::{
     game::Game,
     story_font::{CHORD, Event, L, SQUARE, Shortcut, Size},
@@ -9,8 +9,12 @@ use std::path::PathBuf;
 
 const LEFT: u32 = 0x80;
 const RIGHT: u32 = 0x20;
+const UP: u32 = 0x10;
+const DOWN: u32 = 0x40;
 const CIRCLE: u32 = 0x2000;
 const CROSS: u32 = 0x4000;
+const TOUCH_BACK: u32 = 1;
+// l2-r2-mode.txt: 0 off, 1 full left/right, 2 upper left/right, 3 lower left/right.
 
 // Buttons follow the Japanese (Asian) PlayStation layout: Circle confirms and advances, Cross
 // cancels and goes back (the reverse of the Western convention). The game itself is Switch code
@@ -50,6 +54,8 @@ const ALL: &[Pad] = &[
     Pad::Y,
     Pad::L,
     Pad::R,
+    Pad::ZL,
+    Pad::ZR,
     Pad::Minus,
     Pad::Plus,
     Pad::LUp,
@@ -88,7 +94,7 @@ struct TouchData {
     reports: [TouchReport; 8],
 }
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct PanelInfo {
     min_aa_x: i16,
     min_aa_y: i16,
@@ -101,6 +107,13 @@ struct PanelInfo {
     min_force: u8,
     max_force: u8,
     reserved: [u8; 30],
+}
+
+#[derive(Clone, Copy)]
+struct FontMenu {
+    original_size: Size,
+    original_l2r2_mode: u8,
+    selected: usize,
 }
 
 #[cfg(target_os = "vita")]
@@ -118,20 +131,23 @@ unsafe extern "C" {
 }
 
 pub struct Input {
-    held: [bool; 16],
-    frames: [u16; 16],
+    held: [bool; 18],
+    frames: [u16; 18],
     buttons: u32,
     suppressed: u32,
     shortcut: Shortcut,
     shortcut_enabled: bool,
-    font_menu: Option<Size>,
+    font_menu: Option<FontMenu>,
     font_settings: PathBuf,
+    l2r2_settings: PathBuf,
+    l2r2_mode: u8,
     touch_id: Option<u8>,
     touch_suppressed: bool,
     panel: PanelInfo,
+    back_panel: Option<PanelInfo>,
 }
 impl Input {
-    pub fn new(game: &mut Game, font_settings: PathBuf) -> anyhow::Result<Self> {
+    pub fn new(game: &mut Game, font_settings: PathBuf, l2r2_settings: PathBuf) -> anyhow::Result<Self> {
         anyhow::ensure!(
             std::mem::size_of::<CtrlData>() == 0x20
                 && std::mem::size_of::<TouchData>() == 0x90
@@ -151,23 +167,51 @@ impl Input {
                 && panel.max_disp_y > panel.min_disp_y,
             "front touch panel info unavailable: {status:#x}"
         );
+        let back_panel = if unsafe { sceTouchSetSamplingState(TOUCH_BACK, 1) } >= 0 {
+            let mut panel = PanelInfo::default();
+            let status = unsafe { sceTouchGetPanelInfo(TOUCH_BACK, &mut panel) };
+            (status >= 0 && panel.max_disp_x > panel.min_disp_x && panel.max_disp_y > panel.min_disp_y)
+                .then_some(panel)
+        } else {
+            None
+        };
+        if back_panel.is_none() {
+            tracing::warn!("rear touch panel unavailable; L2/R2 touch modes will be inactive");
+        }
+        let l2r2_mode = match std::fs::read_to_string(&l2r2_settings) {
+            Ok(text) => match text.trim().parse::<u8>() {
+                Ok(mode @ 0..=3) => mode,
+                _ => {
+                    tracing::warn!("Invalid L2/R2 mode in {}; using 0", l2r2_settings.display());
+                    0
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => {
+                tracing::warn!("Reading L2/R2 mode {}: {error}; using 0", l2r2_settings.display());
+                0
+            }
+        };
         match std::fs::read_to_string(&font_settings) {
             Ok(text) => game.set_story_font_size(Size::parse(&text)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => tracing::warn!("Reading story font setting: {error}"),
         }
         Ok(Self {
-            held: [false; 16],
-            frames: [0; 16],
+            held: [false; 18],
+            frames: [0; 18],
             buttons: 0,
             suppressed: 0,
             shortcut: Shortcut::default(),
             shortcut_enabled: false,
             font_menu: None,
             font_settings,
+            l2r2_settings,
+            l2r2_mode,
             touch_id: None,
             touch_suppressed: false,
             panel,
+            back_panel,
         })
     }
     /// Last successful native pad observation, for the optional DEV log.
@@ -185,12 +229,12 @@ impl Input {
         }
         let size = game.story_font_size().percent();
         let left = (CANVAS_W as f32 - 784.0) * 0.5;
-        let top = CANVAS_H as f32 - 250.0;
+        let top = CANVAS_H as f32 - 318.0;
         let mut rect = |x, y, w, h, color| {
             out.push(Quad::rect(r.white.clone(), [left + x, top + y, w, h], color));
         };
         let accent = [0.59, 0.79, 1.0, 1.0];
-        rect(0.0, 0.0, 784.0, 222.0, [0.05, 0.07, 0.12, 0.97]);
+        rect(0.0, 0.0, 784.0, 290.0, [0.05, 0.07, 0.12, 0.97]);
         rect(0.0, 0.0, 784.0, 3.0, accent);
         rect(36.0, 96.0, 712.0, 5.0, [0.26, 0.32, 0.42, 1.0]);
         let position = f32::from(size - Size::MIN) / f32::from(Size::MAX - Size::MIN);
@@ -202,40 +246,70 @@ impl Input {
         let font = game.font_mut();
         let value = format!("{size}%");
         let value_width = font.measure_slot(&value, [44.0; 2], 1.0);
+        let mode = ["0 关闭", "1 左右全区", "2 上半区域", "3 下半区域"][usize::from(self.l2r2_mode)];
+        let mode_width = font.measure_slot(mode, [34.0; 2], 1.0);
+        let selected_size = self.font_menu.is_some_and(|menu| menu.selected == 0);
+        let selected_mode = self.font_menu.is_some_and(|menu| menu.selected == 1);
         for (text, x, y, px, color) in [
-            ("剧情字号", 36.0, 62.0, 42.0, [1.0; 4]),
+            ("剧情字号", 36.0, 62.0, 42.0, if selected_size { accent } else { [1.0; 4] }),
             (&value, 748.0 - value_width, 62.0, 44.0, accent),
             ("50%", 36.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
             ("150%", 670.0, 146.0, 29.0, [0.76, 0.81, 0.88, 1.0]),
+            ("L2/R2", 36.0, 190.0, 36.0, if selected_mode { accent } else { [1.0; 4] }),
+            (mode, 748.0 - mode_width, 190.0, 34.0, if selected_mode { accent } else { [1.0; 4] }),
         ] {
             font.draw_str_slot(r, out, text, [px; 2], 1.0, [left + x, top + y], color);
         }
-        font.draw_str_slot(r, out, "左右键  调整 5%    ○ 保存    × 取消", [33.0; 2], 1.0,
-            [left + 36.0, top + 194.0], [1.0; 4]);
+        let description = match self.l2r2_mode {
+            0 => "背板触摸关闭",
+            1 => "左半边 = ZL   右半边 = ZR",
+            2 => "左上 = ZL   右上 = ZR",
+            _ => "左下 = ZL   右下 = ZR",
+        };
+        font.draw_str_slot(r, out, description, [27.0; 2], 1.0,
+            [left + 36.0, top + 226.0], [0.76, 0.81, 0.88, 1.0]);
+        font.draw_str_slot(r, out, "↑↓ 选择项目   ←→ 调整（字号每次 5%）   ○ 保存   × 取消", [25.0; 2], 1.0,
+            [left + 36.0, top + 270.0], [1.0; 4]);
     }
 
     fn font_menu_input(&mut self, game: &mut Game, event: &Option<Event>, pressed: u32) {
         if matches!(event, Some(Event::Toggle)) {
-            if let Some(original) = self.font_menu.take() {
-                game.set_story_font_size(original);
+            if let Some(menu) = self.font_menu.take() {
+                game.set_story_font_size(menu.original_size);
+                self.l2r2_mode = menu.original_l2r2_mode;
             } else {
-                self.font_menu = Some(game.story_font_size());
+                self.font_menu = Some(FontMenu {
+                    original_size: game.story_font_size(),
+                    original_l2r2_mode: self.l2r2_mode,
+                    selected: 0,
+                });
             }
-        } else if let Some(original) = self.font_menu {
+        } else if let Some(mut menu) = self.font_menu {
             if pressed & CROSS != 0 {
                 self.font_menu = None;
-                game.set_story_font_size(original);
+                game.set_story_font_size(menu.original_size);
+                self.l2r2_mode = menu.original_l2r2_mode;
             } else if pressed & CIRCLE != 0 {
                 self.font_menu = None;
                 let size = game.story_font_size();
-                if size != original
+                if size != menu.original_size
                     && let Err(error) = std::fs::write(&self.font_settings, format!("{}\n", size.percent()))
                 {
                     tracing::warn!("Writing story font setting: {error}");
                 }
+                if let Err(error) = std::fs::write(&self.l2r2_settings, format!("{}\n", self.l2r2_mode)) {
+                    tracing::warn!("Writing L2/R2 mode: {error}");
+                }
             } else {
                 let direction = i16::from(pressed & RIGHT != 0) - i16::from(pressed & LEFT != 0);
-                game.set_story_font_size(game.story_font_size().step(direction));
+                if pressed & (UP | DOWN) != 0 {
+                    menu.selected = 1 - menu.selected;
+                } else if direction != 0 && menu.selected == 0 {
+                    game.set_story_font_size(game.story_font_size().step(direction));
+                } else if direction != 0 {
+                    self.l2r2_mode = (i16::from(self.l2r2_mode) + direction).rem_euclid(4) as u8;
+                }
+                self.font_menu = Some(menu);
             }
         }
     }
@@ -275,6 +349,28 @@ impl Input {
         let axis = |v: u8| -> i32 { (v as i32 - 128).clamp(-128, 127) };
         let left = if modal { [0; 2] } else { [axis(pad.lx), -axis(pad.ly)] };
         let right = if modal { [0; 2] } else { [axis(pad.rx), -axis(pad.ry)] };
+        let mut back_pressed = [false; 2];
+        if !modal && self.l2r2_mode != 0 && let Some(panel) = self.back_panel {
+            let mut back = TouchData::default();
+            let status = unsafe { sceTouchPeek(TOUCH_BACK, &mut back, 1) };
+            if status == 1 && back.count <= 8 {
+                let mid_x = (i32::from(panel.min_disp_x) + i32::from(panel.max_disp_x)) / 2;
+                let mid_y = (i32::from(panel.min_disp_y) + i32::from(panel.max_disp_y)) / 2;
+                for report in &back.reports[..back.count as usize] {
+                    let x = i32::from(report.x);
+                    let y = i32::from(report.y);
+                    let in_row = match self.l2r2_mode {
+                        1 => true,
+                        2 => y < mid_y,
+                        3 => y >= mid_y,
+                        _ => false,
+                    };
+                    if in_row {
+                        back_pressed[if x >= mid_x { 1 } else { 0 }] = true;
+                    }
+                }
+            }
+        }
         ui.stick = left;
         ui.rstick = right[1];
         for (i, &button) in ALL.iter().enumerate() {
@@ -291,6 +387,8 @@ impl Input {
                     Pad::LDown => left[1] < -80,
                     Pad::LLeft => left[0] < -80,
                     Pad::LRight => left[0] > 80,
+                    Pad::ZL => back_pressed[0],
+                    Pad::ZR => back_pressed[1],
                     _ => false,
                 };
             if on != self.held[i] {

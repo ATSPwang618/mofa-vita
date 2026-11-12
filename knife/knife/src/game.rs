@@ -607,6 +607,8 @@ pub struct Game {
     resource_error: Option<String>,
     pub vars: HashMap<String, i32>,
     page: Page,
+    #[cfg(target_os = "vita")]
+    story_font_size: crate::story_font::Size,
     sel_opts: Vec<ChoiceOpt>,
     choice: Option<Choice>,
     /// SELECT_PARTS_JA (texture ids 142..147), loaded with the first choice
@@ -1083,6 +1085,8 @@ impl Game {
             resource_error: None,
             vars: HashMap::new(),
             page: Page::default(),
+            #[cfg(target_os = "vita")]
+            story_font_size: Default::default(),
             sel_opts: Vec::new(),
             choice: None,
             select_parts: None,
@@ -5486,6 +5490,26 @@ impl Game {
     /// The message layout and its first baseline (sub_391A0: page mode, else LABEL_135). Window types 3..32
     /// put the text at the bubble's text origin (unk_34DAD8, plus the F1106 / F1107 offsets), flt_34DEFC wide.
     fn text_layout(&self) -> (Layout, f32) {
+        let (lay, baseline) = self.base_text_layout();
+        #[cfg(target_os = "vita")]
+        {
+            let k = self.story_font_factor();
+            if k != 1.0 {
+                let ascent = lay.ascent * k;
+                return (Layout {
+                    size: lay.size * k,
+                    spacing: lay.spacing * k,
+                    line_height: lay.line_height * k,
+                    ascent,
+                    ruby_y: lay.ruby_y * k,
+                    ..lay
+                }, baseline - lay.ascent + ascent);
+            }
+        }
+        (lay, baseline)
+    }
+
+    fn base_text_layout(&self) -> (Layout, f32) {
         let base = msg_layout();
         if !self.page_mode() {
             let right = (WINDOW_LEFT + self.msg_width()) * 3.0;
@@ -5727,21 +5751,51 @@ impl Game {
         true
     }
 
+    #[cfg(target_os = "vita")]
+    pub fn story_font_size(&self) -> crate::story_font::Size {
+        self.story_font_size
+    }
+
+    #[cfg(target_os = "vita")]
+    fn story_font_factor(&self) -> f32 {
+        // Script-positioned bubbles use fixed artwork sized to the original text.
+        if self.page_mode() && self.window_type().is_some_and(|t| self.is_bubble(t)) {
+            1.0
+        } else {
+            self.story_font_size.factor()
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn set_story_font_size(&mut self, size: crate::story_font::Size) {
+        if self.story_font_size != size {
+            let before = self.story_font_factor();
+            self.story_font_size = size;
+            if self.story_font_factor() != before {
+                let revealed = self.page.revealed;
+                let rng = self.app_rng.clone();
+                self.relayout_page();
+                self.app_rng = rng;
+                self.page.revealed = revealed.min(self.page.order as f32);
+            }
+        }
+    }
+
     /// The page's messages laid out again from their script text (each at the start the page gives it, as
     /// sub_391A0 places them), fully shown; their read fades stay.
     fn relayout_page(&mut self) {
         let texts = std::mem::take(&mut self.page.texts);
-        self.page.extras.clear();
+        let extras = std::mem::take(&mut self.page.extras);
         let msgs = std::mem::take(&mut self.page.msgs);
         self.relay_zs = std::mem::take(&mut self.page.zs);
-        let (waiting, visible, msg_pc) = (self.page.waiting, self.page.visible, self.msg_pc);
+        let (waiting, visible, msg_pc, slot_flip) = (self.page.waiting, self.page.visible, self.msg_pc, self.slot_flip);
         self.relaying = true;
         let old_chars = std::mem::take(&mut self.page.chars);
         self.page.order = 0;
         let (lay, top) = self.text_layout();
         self.page.pen = (lay.left, top);
-        for t in &texts {
-            self.show_message(t, false);
+        for (i, t) in texts.iter().enumerate() {
+            self.show_message_with_extra(t, false, extras.get(i).copied());
         }
         for (m, old) in self.page.msgs.iter_mut().zip(&msgs) {
             m.2 = old.2;
@@ -5757,6 +5811,7 @@ impl Game {
         }
         self.relaying = false;
         self.msg_pc = msg_pc;
+        self.slot_flip = slot_flip;
         self.page.revealed = self.page.order as f32;
         self.page.waiting = waiting;
         self.page.visible = visible;
@@ -5841,6 +5896,10 @@ impl Game {
     /// Lay out a message (`text` as the script has it: `$` references resolve in the game language, and the
     /// page keeps it unresolved, as the exe's history records do) at the page pen.
     fn show_message(&mut self, text: &str, wait: bool) {
+        self.show_message_with_extra(text, wait, None);
+    }
+
+    fn show_message_with_extra(&mut self, text: &str, wait: bool, saved_extra: Option<i32>) {
         self.slot_flip = false;
         let shown = self.resolve_text(text);
         let runs = text::parse_markup(&shown);
@@ -5863,7 +5922,9 @@ impl Game {
         // scripts' WKAD(C847,1) after a message (and the first SELR of a choice) leave a blank line before the
         // next
         let witch = self.assets.build == Build::Witch;
-        let f = if self.page_mode() { self.var(&format!("F{}", 847 + self.page.msgs.len())) } else { 0 };
+        let f = if self.page_mode() {
+            saved_extra.unwrap_or_else(|| self.var(&format!("F{}", 847 + i)))
+        } else { 0 };
         let extra = match f {
             v if v > 32 => v - if witch { 64 } else { 63 },
             v if v >= 1 => v,
@@ -5918,7 +5979,7 @@ impl Game {
         self.page.msgs.push((self.page.chars.len(), shown.trim_end().ends_with("@k"), 0.0, fade_frames));
         self.page.zs.push(self.z_cur);
         self.page.chars.extend(placed);
-        let extra = self.var(&format!("F{}", 847 + self.page.texts.len()));
+        let extra = saved_extra.unwrap_or_else(|| self.var(&format!("F{}", 847 + self.page.texts.len())));
         self.page.extras.push(extra);
         self.page.texts.push(text.to_string());
         if wait {
@@ -6153,6 +6214,14 @@ impl Game {
             // the text (target 30): the page text stays above the choice backdrop
             self.choice_quads(r, &mut out, a);
             let revealed = self.page.revealed;
+            // A single long message can run below the canvas when enlarged.
+            // Follow the revealed line so the end and the advance marker stay visible.
+            let scroll = 0.0f32;
+            #[cfg(target_os = "vita")]
+            let scroll = if self.story_font_factor() > 1.0 {
+                self.page.chars.iter().filter(|pc| (pc.order as f32) < revealed)
+                    .fold(scroll, |dy, pc| dy.max(pc.baseline + oy - BOTTOM_LIMIT))
+            } else { scroll };
             // sub_391A0: no text while F1103; else alpha * 2 * max(content - 0.5, 0), times the layer 30 composite
             let text_a = if self.var("F1103") != 0 { 0.0 } else { layer * layer };
             // fade of each message, resolved through runs of @k messages to the message that ends them; with a
@@ -6219,7 +6288,7 @@ impl Game {
                 // jp_C3C24: the glyph's wobble in 1920x1080 pixels
                 let (wx, wy) = pc.wobble.map_or((0.0, 0.0), |w| w.offset());
                 let (wx, wy) = (wx * CANVAS_W as f32 / 1920.0, wy * CANVAS_H as f32 / 1080.0);
-                let pc = &text::PlacedChar { x: pc.x + ox + sx + wx, baseline: pc.baseline + oy + sy + wy, ..*pc };
+                let pc = &text::PlacedChar { x: pc.x + ox + sx + wx, baseline: pc.baseline + oy + sy + wy - scroll, ..*pc };
                 // sub_C6A58: the bar shows (int) revealed - its first character's index cells
                 let rgb = colours.get(m).copied().unwrap_or([1.0; 3]);
                 if pc.bar.is_some() && !self.rewinding {
@@ -6256,7 +6325,7 @@ impl Game {
             // (the overseas sub_38EC0 also draws nothing in auto mode, word_1916DEC bit 0)
             let auto_hidden = self.assets.build != Build::Japanese && self.auto;
             if self.assets.build == Build::Witch {
-                self.witch_icon_quads(&mut out, shift, a * content * layer);
+                self.witch_icon_quads(&mut out, shift, a * content * layer, scroll);
             } else if self.icon_fade > 0.0 && !self.rewinding && !auto_hidden {
                 // sub_38EC0 at the pen + (2, 3.5) units for the F799 line icon (slot 54, lineBreak_a), (2, 5.5)
                 // for the page icon (slot 55, pageBreak_a, at half alpha); F822 != 1 always the page icon at
@@ -6365,7 +6434,7 @@ impl Game {
     /// 60x45 cells; always outside page mode), 40 frames of 3 ticks each (dword_3AF4F8 % 120) whose rects
     /// (dword_3AF4E8 + 262 / + 182 ints) run two rows of 20 cells, at 0.333 x 0.333 units per texture pixel from
     /// the pen + (2, 6.5) units; nothing in auto mode (byte AE0660 bit 0) or during a rewind.
-    fn witch_icon_quads(&mut self, out: &mut Vec<Quad>, shift: Option<(f32, f32)>, alpha: f32) {
+    fn witch_icon_quads(&mut self, out: &mut Vec<Quad>, shift: Option<(f32, f32)>, alpha: f32, scroll: f32) {
         if self.icon_fade <= 0.0 || self.rewinding || self.auto {
             return;
         }
@@ -6382,7 +6451,7 @@ impl Game {
         let px = if text::english() { px + lay.size * 0.5 } else { px };
         let (ux, uy) = ((px / UX).trunc(), ((py - lay.ascent) / UY).trunc());
         let (sx, sy) = shift.unwrap_or((0.0, 0.0));
-        let (x, y) = ((ux + 2.0) * UX + sx, (uy + 6.5) * UY + sy);
+        let (x, y) = ((ux + 2.0) * UX + sx, (uy + 6.5) * UY + sy - scroll);
         self.icon_ticks = (self.icon_ticks + (self.frame_ms * 0.06).min(2.0)) % 120.0;
         let Some(t) = self.disp.get(usize::from(slot - self.disp_slot0())) else { return };
         let frame = (self.icon_ticks as u32 / 3) % 40;

@@ -24,6 +24,8 @@ mod savedata;
 mod movie;
 mod sound;
 mod stage;
+#[cfg(any(target_os = "vita", test))]
+mod story_font;
 mod text;
 #[cfg(not(target_os = "vita"))]
 mod text_stream;

@@ -445,7 +445,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     let mut ui = ui::Ui::new(&mut game, &renderer);
     ui.boot(&mut game, &renderer, false);
     ui.warm_runtime_font(&game, &renderer);
-    let mut input = Input::new()?;
+    let mut input = Input::new(&mut game, Path::new(PERF_ROOT).join("story-font-size.txt"))?;
     log.event("UI booted; input ready");
     if let Some(perf_log) = &mut perf {
         if let Err(error) = perf_log.finish_startup() {
@@ -482,7 +482,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         { let _scope = knife_perf::Scope::new(knife_perf::Metric::InputPoll);
             input.poll(&mut game, &mut ui, &renderer)?;
         }
-        game.paused = ui.game_paused();
+        game.paused = ui.game_paused() || input.font_menu_open();
         let (held, advance) = ui.held_input();
         game.set_held(held, advance);
         game.flow_replay = ui.flow_replay();
@@ -490,7 +490,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
             ui.rewind_before_script(&mut game);
         }
         watchdog::phase(watchdog::STORY_INPUT);
-        { let _scope = knife_perf::Scope::new(knife_perf::Metric::StoryInput);
+        if !input.font_menu_open() { let _scope = knife_perf::Scope::new(knife_perf::Metric::StoryInput);
             ui.story_input(&mut game, &renderer, step);
         }
         watchdog::phase(watchdog::GAME_UPDATE);
@@ -519,7 +519,8 @@ fn run_game(log: &mut DevLog) -> Result<()> {
             gpu_replay = None;
         }
         game.render(&mut renderer, &mut |game, renderer, quads| {
-            ui.draw(game, renderer, quads)
+            ui.draw(game, renderer, quads);
+            input.draw_font_menu(game, renderer, quads);
         });
         // Protect progress before next-frame input can leave/reset this fault.
         ui.protect_resource_checkpoint(&mut game);

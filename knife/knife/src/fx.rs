@@ -35,6 +35,7 @@ impl Rng {
 
 /// The exe's app random source (off_AE0190 + 80, vtable off_AE1588): nn::util::TinyMt (TinyMT32), seeded once
 /// at boot from the system uptime in microseconds (sub_FE234 with seed -1).
+#[derive(Clone)]
 pub struct TinyMt([u32; 4]);
 
 impl TinyMt {

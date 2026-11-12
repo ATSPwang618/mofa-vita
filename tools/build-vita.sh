@@ -174,7 +174,10 @@ python3 "$ROOT/tools/sanitize-vita-elf.py" "$OUTPUT/$BINARY.elf"
 arm-vita-eabi-readelf -h -A "$OUTPUT/$BINARY.elf" > "$OUTPUT/elf-identity.txt"
 arm-vita-eabi-nm -u "$OUTPUT/$BINARY.elf" > "$OUTPUT/undefined-symbols.txt"
 vita-elf-create "$OUTPUT/$BINARY.elf" "$OUTPUT/$BINARY.velf" > "$OUTPUT/elf-create.log" 2>&1
-vita-make-fself -s "$OUTPUT/$BINARY.velf" "$OUTPUT/eboot.bin"
+# Compressed SELF uses its segment table offsets in Vita3K, including the relocation segment.
+FSELF_ARGS=(-s)
+if [[ "$MODE" = game ]]; then FSELF_ARGS+=(-c); fi
+vita-make-fself "${FSELF_ARGS[@]}" "$OUTPUT/$BINARY.velf" "$OUTPUT/eboot.bin"
 vita-mksfoex -s TITLE_ID="$TITLE_ID" -s APP_VER=00.01 -d ATTRIBUTE2="${KNIFE_VITA_ATTRIBUTE2:-0}" \
     "$TITLE" "$OUTPUT/param.sfo"
 python3 - "$ROOT/knife/vita/vendor/shacccg-ext" "$OUTPUT/SceShaccCgExt-NOTICE.txt" <<'WRITE_NOTICE'

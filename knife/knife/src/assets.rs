@@ -1474,16 +1474,11 @@ impl Assets {
                     anyhow::ensure!(codec == Some(expected_codec), "KIMG payload format mismatch");
                 }
             }
-            let gray = grade.raw && !grade.cpu() && strip.is_none()
-                && knife_perf::optimizations::enabled(knife_perf::optimizations::GRAY_R8)
-                && codec == Some(image::ImageFormat::Png)
-                && payload.get(25).is_some_and(|color| matches!(*color, 0 | 4));
-            if gray || (knife_perf::optimizations::enabled(knife_perf::optimizations::DECODE_OWNER)
-                && matches!(codec, Some(image::ImageFormat::Png | image::ImageFormat::Jpeg))) {
+            if codec == Some(image::ImageFormat::Jpeg)
+                && knife_perf::optimizations::enabled(knife_perf::optimizations::DECODE_OWNER) {
                 use knife_platform_vita::image::DecodedImage;
                 let cap = u32::try_from(rgba_cap.unwrap_or(4 * 960 * 1080))?;
-                let mut owner = if gray { DecodedImage::decode_gray_bounded(payload, cap)? }
-                    else { DecodedImage::decode_bounded(payload, cap)? };
+                let mut owner = DecodedImage::decode_bounded(payload, cap)?;
                 let w = owner.width();
                 let mut h = owner.height();
                 if let Some(expected) = expected { anyhow::ensure!([w, h] == expected, "KIMG encoded dimensions mismatch"); }
@@ -2430,6 +2425,22 @@ fn decode_image_owned(data: &[u8]) -> Result<(u32, u32, knife_render::PixelOwner
 
 #[cfg(target_os = "vita")]
 fn decode_native_image(data: &[u8], cap: Option<usize>) -> Result<(u32, u32, Vec<u8>)> {
+    if image::guess_format(data)? == image::ImageFormat::Png {
+        use knife_platform_vita::image::{IMAGE_ENCODED_LIMIT, IMAGE_HEIGHT_LIMIT, IMAGE_WIDTH_LIMIT};
+        anyhow::ensure!(data.len() <= IMAGE_ENCODED_LIMIT as usize, "encoded PNG exceeds image boundary");
+        anyhow::ensure!(data.len() >= 24 && &data[12..16] == b"IHDR", "invalid PNG header");
+        let w = u32::from_be_bytes(data[16..20].try_into()?);
+        let h = u32::from_be_bytes(data[20..24].try_into()?);
+        anyhow::ensure!(w > 0 && w <= IMAGE_WIDTH_LIMIT && h > 0 && h <= IMAGE_HEIGHT_LIMIT,
+            "PNG dimensions exceed image boundary");
+        let bytes = (w as usize).checked_mul(h as usize).and_then(|n| n.checked_mul(4))
+            .context("PNG size overflow")?;
+        anyhow::ensure!(bytes <= cap.unwrap_or(4 * 960 * 1080), "PNG exceeds decoded image budget");
+        let rgba = image::load_from_memory_with_format(data, image::ImageFormat::Png)
+            .context("decoding PNG")?.to_rgba8();
+        anyhow::ensure!((rgba.width(), rgba.height()) == (w, h), "PNG dimensions changed while decoding");
+        return Ok((w, h, rgba.into_raw()));
+    }
     use knife_platform_vita::image::DecodedImage;
     let image = match cap {
         Some(cap) => DecodedImage::decode_bounded(data, u32::try_from(cap)?)?,

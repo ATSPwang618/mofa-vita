@@ -27,7 +27,7 @@ The local package is **`stage-effect-r14-resource-guard-20261109`**, title ID **
 
 r14 adds typed allocation-pressure recovery shared by frame uploads and story requests. If bounded recovery fails, it writes the last successfully presented resumable point to the automatic slot without rendering a menu. CONTINUE restores it; manual and quick-save slots are preserved. All 326 host tests and native fault-injection suites passed; this release still needs device validation.
 
-r13 disables story-panel buttons 1, 2, 4 and 5 (previous scene, rewind, fast-forward and next scene), keeps them gray, and skips them during controller navigation. Auto playback, bookmarks, voice replay and internal save restoration remain available. It includes the r12 save/load focus fixes. With the r11 asset pack already installed, only the EBOOT or VPK needs updating. All 326 host tests passed; see the [installation guide](doc/08-素材与安装.md) for build receipts and device-validation limits.
+r13 originally disabled story-panel buttons 1, 2, 4 and 5 (previous scene, rewind, fast-forward and next scene). Rewind and fast-forward are now enabled; previous/next scene remain disabled and controller navigation skips them. Auto playback, bookmarks, voice replay and internal save restoration remain available. It includes the r12 save/load focus fixes. With the r11 asset pack already installed, only the EBOOT or VPK needs updating. All 326 host tests passed; see the [installation guide](doc/08-素材与安装.md) for build receipts and device-validation limits.
 
 ## Implemented optimizations
 
@@ -35,7 +35,7 @@ r13 disables story-panel buttons 1, 2, 4 and 5 (previous scene, rewind, fast-for
 - **Less GPU work and safer submission:** native destination fetch, Group composition, bounded adjacent OP7 fusion, conservative composite bounds, compact vertex streams, dependency tracking and per-slot completion.
 - **Bounded resource handling:** native DXT1/DXT5 upload, shared owners, bounded prefetch, grading/text/group caches, allocation recovery and safe GPU retirement.
 - **UI member reads:** r11 preserves image bytes while avoiding the mandatory 16.75 MiB whole-atlas output allocation for DISP. Temporary allocation failures have bounded recovery.
-- **Audio and UI stability:** approximately one second of BGM PCM buffering, gallery/library loading fixes, save/load target recovery and r12 focus fixes. Auto playback remains; player-triggered fast-forward is disabled on Vita.
+- **Audio and UI stability:** approximately one second of BGM PCM buffering, gallery/library loading fixes, save/load target recovery and r12 focus fixes. Auto playback remains; player-triggered fast-forward and rewind are enabled on Vita.
 
 The [optimization inventory](doc/05-优化记录与实测数据.md) lists all **43 switches**, fixes, defaults and evidence limits. The heaviest complete window in the r10 hardware log was approximately 12.75 FPS. This is **not a guarantee of 20 FPS throughout the game**. Enabled Half/Tiled/Blur experiments still require individual device image and performance validation.
 

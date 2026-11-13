@@ -1763,6 +1763,10 @@ impl Assets {
                     out.push((member.name.to_string(), replace_help_key_ps(r)?));
                     continue;
                 }
+                if member.name == "conf_manual0_zc" {
+                    out.push((member.name.to_string(), replace_conf_manual0_ps(r)?));
+                    continue;
+                }
                 let archive = self.allui.clone();
                 let cache = self.atlas_cache.clone();
                 let (offset, len) = (member.offset, member.len);
@@ -1856,6 +1860,11 @@ impl Assets {
                 #[cfg(target_os = "vita")]
                 if name == "help_key" {
                     out.push((name.to_string(), replace_help_key_ps(r)?));
+                    continue;
+                }
+                #[cfg(target_os = "vita")]
+                if name == "conf_manual0_zc" {
+                    out.push((name.to_string(), replace_conf_manual0_ps(r)?));
                     continue;
                 }
                 #[cfg(target_os = "vita")]
@@ -2304,6 +2313,19 @@ fn replace_help_key_ps(r: &Renderer) -> Result<TexRef> {
     let load = Rc::new(move || Ok(replacement.to_vec()));
     r.defer_gxt_altered_reload(image.logical, image.size, replacement,
         "help_key PS replacement", load, extract_native_gxt)
+}
+
+/// Substitute only the Chinese controller-help page image at atlas load time.
+#[cfg(target_os = "vita")]
+fn replace_conf_manual0_ps(r: &Renderer) -> Result<TexRef> {
+    let replacement = include_bytes!("../data/conf_manual0_ps.kimg");
+    let image = compact::parse(replacement)?;
+    anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm
+        && image.logical == [1920, 1080] && image.size == [960, 540],
+        "invalid embedded PS conf_manual0_zc replacement");
+    let load = Rc::new(move || Ok(replacement.to_vec()));
+    r.defer_gxt_altered_reload(image.logical, image.size, replacement,
+        "conf_manual0_zc PS replacement", load, extract_native_gxt)
 }
 
 /// Upload a BNTX texture as a sprite texture (through pre_alter, `Renderer::upload_altered`; the exe builds every

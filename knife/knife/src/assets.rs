@@ -94,7 +94,7 @@ pub enum Pixels {
     /// Exclusive C allocation, moved from worker to renderer with its C destructor.
     #[cfg(target_os = "vita")]
     Native { width: u32, height: u32, owner: knife_platform_vita::image::DecodedImage,
-        range: std::ops::Range<usize>, srgb: Option<bool>, baked: bool },
+        range: std::ops::Range<usize>, baked: bool },
     /// Reduced physical pixels, with the original image dimensions used by scripts and layout.
     Scaled(Box<Pixels>, [u32; 2]),
     /// Reuse the worker's first decode, but let hidden CG layers release GPU
@@ -1249,8 +1249,15 @@ impl Assets {
                     cached = self.images.len(), admitted = admission.is_ok(), "CG_RECLAIM");
                 self.vita_diagnostic_images(&format!("image {name} reclaimed={reclaimed} admitted={}", admission.is_ok()));
             }
-            // A failed admission is not cached as a missing image.
-            admission.with_context(|| format!("image GPU admission {name} ({width}x{height}, bpp={bpp})"))?;
+            // The image cache has finished its pressure sweep. A stale native
+            // free-memory reading must not reject an allocation that the
+            // driver can still satisfy; the upload checks actual capacity.
+            if let Err(error) = admission {
+                if !knife_render::is_unverified_native_headroom(&error) {
+                    return Err(error).with_context(|| format!(
+                        "image GPU admission {name} ({width}x{height}, bpp={bpp})"));
+                }
+            }
         }
         #[cfg(target_os = "vita")]
         let upload_start = std::time::Instant::now();
@@ -1505,8 +1512,7 @@ impl Assets {
                     grade.apply(&mut owner.pixels_mut()[range.clone()], srgb);
                     processing.finish(range.len() as u64, 0);
                 }
-                let sampled = (!cfg!(target_os = "vita") && !baked && !grade.raw).then_some(srgb);
-                return Ok(wrap(Pixels::Native { width: w, height: h, owner, range, srgb: sampled, baked }, logical));
+                return Ok(wrap(Pixels::Native { width: w, height: h, owner, range, baked }, logical));
             }
         }
         let (w, mut h, mut px, srgb) = decode_image_limit(&data, rgba_cap)?;
@@ -1757,6 +1763,14 @@ impl Assets {
             for member in atlas.members {
                 anyhow::ensure!(member.offset.checked_add(member.len).is_some_and(|end| end <= atlas.decoded_bytes),
                     "indexed atlas member exceeds decoded entry");
+                if member.name == "help_key" {
+                    out.push((member.name.to_string(), replace_help_key_ps(r)?));
+                    continue;
+                }
+                if member.name == "conf_manual0_zc" {
+                    out.push((member.name.to_string(), replace_conf_manual0_ps(r)?));
+                    continue;
+                }
                 let archive = self.allui.clone();
                 let cache = self.atlas_cache.clone();
                 let (offset, len) = (member.offset, member.len);
@@ -1846,6 +1860,16 @@ impl Assets {
 
         if compact::is_atlas(&data) {
             for (name, image) in compact::parse_atlas(&data)? {
+                #[cfg(target_os = "vita")]
+                if name == "help_key" {
+                    out.push((name.to_string(), replace_help_key_ps(r)?));
+                    continue;
+                }
+                #[cfg(target_os = "vita")]
+                if name == "conf_manual0_zc" {
+                    out.push((name.to_string(), replace_conf_manual0_ps(r)?));
+                    continue;
+                }
                 #[cfg(target_os = "vita")]
                 {
                     let metadata = compact::parse(image)?;
@@ -2278,6 +2302,33 @@ impl Assets {
     pub fn voice(&self, name: &str) -> Result<Pcm> {
         self.load_stream_file(&format!("stream/{name}.opus"))
     }
+}
+
+/// Substitute the complete help_key image with the embedded PS atlas. The
+/// game's archive remains read-only and the original atlas UVs stay valid.
+#[cfg(target_os = "vita")]
+fn replace_help_key_ps(r: &Renderer) -> Result<TexRef> {
+    let replacement = include_bytes!("../data/help_key_ps.kimg");
+    let image = compact::parse(replacement)?;
+    anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm
+        && image.logical == [384, 256] && image.size == [384, 256],
+        "invalid embedded PS help_key replacement");
+    let load = Rc::new(move || Ok(replacement.to_vec()));
+    r.defer_gxt_altered_reload(image.logical, image.size, replacement,
+        "help_key PS replacement", load, extract_native_gxt)
+}
+
+/// Substitute only the Chinese controller-help page image at atlas load time.
+#[cfg(target_os = "vita")]
+fn replace_conf_manual0_ps(r: &Renderer) -> Result<TexRef> {
+    let replacement = include_bytes!("../data/conf_manual0_ps.kimg");
+    let image = compact::parse(replacement)?;
+    anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm
+        && image.logical == [1920, 1080] && image.size == [960, 540],
+        "invalid embedded PS conf_manual0_zc replacement");
+    let load = Rc::new(move || Ok(replacement.to_vec()));
+    r.defer_gxt_altered_reload(image.logical, image.size, replacement,
+        "conf_manual0_zc PS replacement", load, extract_native_gxt)
 }
 
 /// Upload a BNTX texture as a sprite texture (through pre_alter, `Renderer::upload_altered`; the exe builds every

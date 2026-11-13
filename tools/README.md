@@ -6,7 +6,7 @@
 
 | 入口 | 用途 |
 |---|---|
-| [build-vita.py](build-vita.py) | 统一构建入口；`--check` 检查环境，`game release` 生成正式 VPK |
+| [build-vita.py](build-vita.py) | 统一构建入口；`--check` 检查环境，`game release` 生成 `release/mofa-vita.vpk` 与 `release/eboot.bin` |
 | `build-vita.ps1` / `build-vita.sh` | Windows 包装与 WSL/Linux 构建实现 |
 | [check-vita-package.py](check-vita-package.py) | VPK 的引擎文件、SFO、LiveArea 和模块身份检查 |
 | `vita-build-receipt.py` / `sanitize-vita-elf.py` | 构建收据与 ELF 路径脱敏 |
@@ -22,19 +22,20 @@
 | 入口 | 用途与边界 |
 |---|---|
 | [quality540](quality540/README.md) | 从自备原图重做剧情图库；一次 DXT1/DXT5 编码，保护长图、逻辑坐标、语言条带和蒙版 |
-| [limit_runtime_art.py](quality540/limit_runtime_art.py) / [verify_runtime_art.py](quality540/verify_runtime_art.py) | 全库离线缩小潜在 RGBA 大图，生成只含变化归档的暂存输出；单图 1 MiB 分配限额及逐条校验，见 [14](../doc/04-资源调度与缓存.md) |
+| [limit_runtime_art.py](quality540/limit_runtime_art.py) / [verify_runtime_art.py](quality540/verify_runtime_art.py) | 全库离线缩小潜在 RGBA 大图，生成只含变化归档的暂存输出；单图 1 MiB 分配限额及逐条校验，见 [资源预算](../doc/04-资源调度与缓存.md) |
+| [prepare-vita-ps-help.py](prepare-vita-ps-help.py) | 从配套输入生成随程序内嵌的 PS 操作说明 PNG/KIMG；需要 Pillow 与 ispc_texcomp |
 | [credit-intro](credit-intro/README.md) | 感谢页源图、更新/检查脚本与回归测试 |
 | `generate_vita_asset_profile_540.py` | 清单与启动 profile；`--check` 核对关键文件和已生成源码 |
 | `generate-vita-atlas-index.py` / `generate-vita-stream-index.py` | 图集成员索引与音频文件名索引 |
-| [prepare_vita_ui_ranges.py](prepare_vita_ui_ranges.py) | 将选中的公共菜单/存读档及图录/书库等UI外层 NX 离线去除，逐张校验 KIMG 原字节，另存暂存结果；`--check` 校验直接读取布局，见 [17](../doc/04-资源调度与缓存.md) |
+| [prepare_vita_ui_ranges.py](prepare_vita_ui_ranges.py) | 将选中的公共菜单/存读档及图录/书库等UI外层 NX 离线去除，逐张校验 KIMG 原字节，另存暂存结果；`--check` 校验直接读取布局，见 [UI 范围读取](../doc/04-资源调度与缓存.md) |
 | `prepare_game.py` / `create_540p.py` / `create_compact.py` | 历史初制链路；需要自备原始输入、字体、汉化和对应宿主工具 |
 | `make-vita-assets.py` / `pack_dxt_540.py` / `create_native540.py` / `migrate-vita-native-color.py` | 历史基包的纹理与色彩契约转换；它们的旧 codec8 中间输出不能直接替代当前包 |
 | `compact_media.py` / `slim_languages.py` / `optimize_compact.py` | 初制媒体、双语精简与旧 PNG/JPEG Compact 优化；输入契约见各脚本帮助 |
 | `inspect_textures.py` / `analyze_compact_storage.py` | 纹理和存储分析，需匹配相应输入 |
 | [audit-vita-texture-formats.py](audit-vita-texture-formats.py) | 只读核验可编辑图片 SHA，扫描完整 RGBA 颜色/透明度，对应运行包 DXT，检查精确保留的 P4/P8 候选；不改图，说明见 [调色板排查](../doc/04-资源调度与缓存.md) |
-| [audit-vita-sparse-coverage.py](audit-vita-sparse-coverage.py) | 只读核验 IMG0436 的归档身份和精确 DXT5 非零 alpha，检查覆盖表没有遗漏过滤邻域、没有重叠；`--generate-rectangles` 可另存计划，不修改资源；见 [24](../doc/05-优化记录与实测数据.md) |
+| [audit-vita-sparse-coverage.py](audit-vita-sparse-coverage.py) | 只读核验 IMG0436 的归档身份和精确 DXT5 非零 alpha，检查覆盖表没有遗漏过滤邻域、没有重叠；`--generate-rectangles` 可另存计划，不修改资源；见 [优化记录](../doc/05-优化记录与实测数据.md) |
 
-可编辑图片从当前 Vita 数据解码得到，不能把 PNG 编辑目录直接当作运行时归档。素材改动后要更新清单、profile、atlas/stream 索引并重编 EBOOT，见 [素材文档](../doc/08-素材与安装.md)。
+可编辑 PNG 是素材制作输入，不能直接当作运行时归档；来源与生成合同见 quality540 说明。素材改动后要更新清单、profile、atlas/stream 索引并重编 EBOOT，见 [素材文档](../doc/08-素材与安装.md)。
 
 `audit-vita-sparse-coverage.py` 需要 Python、NumPy 和 Pillow。本机使用 Windows Python 运行；WSL 的默认 Python 未安装这两个图像分析依赖。该工具只生成几何覆盖证据，不是 GXM 性能测试。
 

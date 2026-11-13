@@ -422,6 +422,17 @@ impl Ui {
         self.click(game, r);
     }
 
+    #[cfg(target_os = "vita")]
+    pub fn cancel_vita_touch(&mut self) {
+        self.touch.down = false;
+        self.touch.press = None;
+        self.touch.swallow = false;
+        self.touch.dragged = false;
+        self.drag.release();
+        self.bar = None;
+        self.w.inp.cancel_touch();
+    }
+
     pub fn mouse_up(&mut self, game: &mut Game, r: &Renderer) {
         self.touch.down = false;
         if self.screen == Screen::Witch {

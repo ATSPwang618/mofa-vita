@@ -1,0 +1,69 @@
+{
+  "schema": "knife-repository-maintenance-v2",
+  "date": "2026-11-13",
+  "branch": "perf/render",
+  "base_commit": "210a811d0c35947fef1f92b0b4ea2a977d0540fd",
+  "build_tag": "perf-render-20261109-213051-210a811-local",
+  "status": "documentation_and_dead_metadata_cleanup_complete_disk_deletion_blocked",
+  "code_cleanup": [
+    "Remove unused Vita Pixels::Native.srgb field and always-None sampled expression; actual CPU grade input and PNG/JPEG/R8 paths retained"
+  ],
+  "validation": {
+    "rust_tests": {
+      "game": 145,
+      "render": 179,
+      "perf": 8,
+      "total": 332,
+      "passed": true
+    },
+    "arm_build": "passed",
+    "vpk_check": "passed",
+    "vpk_eboot_matches": true,
+    "offline_gxp_count": 85,
+    "offline_shaders_check": "passed",
+    "asset_profile_check": "passed",
+    "resource_files_metadata_unchanged": 39441,
+    "resource_check_scope": "path, size and mtime_ns; not full asset hash recheck",
+    "device_validation": "not performed",
+    "github_actions": "not run remotely",
+    "quiet_build": false,
+    "documentation_links": {
+      "files": 18,
+      "local_links": 181,
+      "missing": 0
+    },
+    "git_diff_check": "passed"
+  },
+  "artifacts_sha256": {
+    "release/eboot.bin": "5c8c74450c21815108fcea3b60c884ec734dc4892ba6e247f227ed6a99849b24",
+    "release/mofa-vita.vpk": "458853b07903a2221451c1d7b216f751e3fa96c9a6661abb3b4b3d7979d1aa92",
+    ".work/vita/game-release-540p/knife.elf": "ffc93b8aab52e94c02eb41ea9c77409c5a7f4a255aeb54b3c343c85a5eadf5a1",
+    ".work/vita/game-release-540p/knife.map": "9a6c1c5c825d5737cb4e90740fd8f57ea0d50ae6b8e8efa381278da21f3cc32f",
+    ".work/vita/game-release-540p/vita-game-release-540p-build.json": "b4e549678f4aef88c784d14920fb9146809df42a69b0b071518c0d30a7f87e8b",
+    "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets/vita-540p-assets.json": "c317f7da0d07d01af0c13d92720013f0e33b214f5d1356c6a39b8dced168e832"
+  },
+  "rollback": ".work/vita/rollback/pre-maintenance-20261113",
+  "disk_cleanup": {
+    "deleted_bytes": 0,
+    "candidate_bytes": 3309871352,
+    "candidate_count": 8,
+    "blocked_actions": [
+      "batch deletion of preflighted workspace artifacts",
+      "single literal D:/AI-CODEX/mofa-vita/knife/target recursive deletion"
+    ],
+    "reason": "blocked by policy",
+    "candidate_manifest": ".work/cleanup-20261113/delete-manifest.json",
+    "all_candidates_still_present": true,
+    "observed_before_bytes": 11914928388,
+    "observed_after_bytes": 11969477151,
+    "size_note": "Logical bytes excluding .git; new build/rollback/test outputs added during maintenance; no disk space freed."
+  },
+  "logs_directory": ".work/cleanup-20261113",
+  "pushed": false,
+  "committed": false,
+  "remote_refs_read_only": {
+    "main": "59c6c84d2c4cbeaf563a61239ea0d12322e9b63b",
+    "perf/render": "8c494a439c45e4a748045c643ca488823162edfc",
+    "ux-optimization": "8680c4682f22fb07c845111f70e8f150a1096259"
+  }
+}

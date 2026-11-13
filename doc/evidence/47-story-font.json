@@ -1,0 +1,56 @@
+{
+  "schema": "knife-story-font-v1",
+  "date": "2026-11-13",
+  "branch": "perf/render",
+  "base": "210a811d0c35947fef1f92b0b4ea2a977d0540fd",
+  "source_branch": "ux-optimization",
+  "source_commit": "8680c4682f22fb07c845111f70e8f150a1096259",
+  "build_tag": "perf-render-20261109-213051-210a811-story-font-local",
+  "built_at": "2026-11-13T19:48:34.604471+00:00",
+  "features": [
+    "50..150 percent, 5 percent steps, default 100",
+    "L+Square combined reading/rear menu; Circle save, Cross/chord cancel",
+    "Current page reflow; preserve reveal count, RNG, extras, fades, wobble and slot/z state",
+    "Enlarged text scroll follows revealed lines; marker follows same offset",
+    "story-font-size.txt loaded at startup; failed write keeps menu open"
+  ],
+  "excluded": [
+    "PNG decode change",
+    "skip/rewind enablement",
+    "upstream skip old-frame render change",
+    "compressed SELF"
+  ],
+  "validation": {
+    "rust_tests": {
+      "game": 148,
+      "render": 179,
+      "perf": 8,
+      "total": 335
+    },
+    "new_tests": [
+      "size/config bounds",
+      "layout metrics and preserved box/top",
+      "revealed-only scroll and default reset"
+    ],
+    "input_tests": 3,
+    "policy_tests": 6,
+    "policy_tests_also_in_game_suite": true,
+    "arm_build": "passed",
+    "vpk_check": "passed",
+    "vpk_eboot_matches": true,
+    "quiet_build": false,
+    "device_validation": "not performed",
+    "resource_metadata_unchanged_files": 39441
+  },
+  "artifacts_sha256": {
+    "release/eboot.bin": "cecf3fe75bea0c63a7d6eec61301897ba40316b72ad031b940a90a1eecf74045",
+    "release/mofa-vita.vpk": "6761aa1a4d5b6331d22745548e1876955b75f84d1a168ebbaaa4f2847fd9ce11",
+    ".work/vita/game-release-540p/knife.elf": "d98a5502b6380e33ca22fde1e401e1325432cb960e5c680d1d0e5a264d1bcf13",
+    ".work/vita/game-release-540p/knife.map": "2cc17a062e2fb6f5cec16ba95a0ec4d4e3fc05399100a0c708e27284e58674a3"
+  },
+  "rollback": ".work/vita/rollback/pre-story-font-20261113",
+  "source_diff": ".work/story-font-20261113/source-changes.diff",
+  "logs": ".work/story-font-20261113",
+  "committed": false,
+  "pushed": false
+}

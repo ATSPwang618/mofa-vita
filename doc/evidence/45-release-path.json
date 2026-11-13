@@ -1,0 +1,13 @@
+{
+  "schema": "knife-release-path-v1",
+  "outputs": [
+    "release/mofa-vita.vpk",
+    "release/eboot.bin"
+  ],
+  "build_log": ".work/ux-headroom/build-release-path.log",
+  "build": "PASS",
+  "vpk_eboot_matches": true,
+  "eboot_sha256": "f54781a3ef1a3156d003c9fcc79b5f1759494a870ea14c8fbe91415d534f6cd6",
+  "vpk_sha256": "bf0e5d0403362c57ecc616542ea3c4e45fa78bc3331b95c14404d7d783d1e9d2",
+  "note": "Output naming only; uncompressed SELF preserved. Previous evidence receipts describe earlier source snapshots."
+}

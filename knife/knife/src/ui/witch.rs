@@ -168,6 +168,12 @@ impl WIn {
         }
     }
 
+    #[cfg(target_os = "vita")]
+    pub(super) fn cancel_touch(&mut self) {
+        self.finger = None;
+        self.released = false;
+    }
+
     /// Mouse wheel / trackpad notches (+ up); a trackpad's fractions add up to whole notches.
     pub fn wheel(&mut self, lines: f32) {
         if self.wheel_acc != 0.0 && self.wheel_acc.signum() != lines.signum() {

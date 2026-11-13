@@ -805,7 +805,7 @@ fn frame_preparation_pressure_is_recoverable_before_any_frame_submission() {
     control.borrow_mut().events.clear();
     let error = r.try_present(enc, &canvas).unwrap_err();
     assert!(error.downcast_ref::<FramePreparationError>().is_some());
-    assert!(format!("{error:#}").contains("native CDRAM headroom"));
+    assert!(format!("{error:#}").contains("native CDRAM allocation"));
     assert!(control.borrow().events.is_empty(), "the previous complete stage remains untouched");
     let allocations = control.borrow().texture_allocation_attempts;
     let retained = r.encoder();
@@ -813,6 +813,102 @@ fn frame_preparation_pressure_is_recoverable_before_any_frame_submission() {
     assert_eq!(control.borrow().texture_allocation_attempts, allocations);
     assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))),
         "the previous canvas remains displayable without allocating another texture");
+}
+
+#[test]
+fn stale_zero_free_memory_does_not_reject_a_valid_native_allocation() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "stale-headroom-canvas");
+    let tex = r.defer_altered([2, 2], [2, 2], Arc::from([2, 117]),
+        "stale-headroom-atlas", decode_deferred_test).unwrap();
+    let before = control.borrow().texture_allocation_attempts;
+    control.borrow_mut().reported_cdram_free = Some(0);
+    submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+    assert!(tex.native.resident_id().is_ok());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
+    assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))));
+}
+
+#[test]
+fn stale_zero_free_memory_does_not_reject_an_immediate_image_upload() {
+    let (r, control) = setup();
+    let before = control.borrow().texture_allocation_attempts;
+    control.borrow_mut().reported_cdram_free = Some(0);
+    let pixels = [255u8; 2 * 2 * 4];
+    let image = r.try_upload(2, 2, Upload::Rgba8(&pixels), "immediate-image").unwrap();
+    assert!(image.native.resident_id().is_ok());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
+}
+
+#[test]
+fn stale_headroom_allows_dxt_upload_without_changing_the_payload_or_reloading() {
+    for format in [0x8500_0000, 0x8700_0000] {
+        let (mut r, control) = setup();
+        let canvas = r.create_target(2, 2, "stale-dxt-canvas");
+        let bytes = gxt_fixture([4, 4], format);
+        let reads = Rc::new(Cell::new(0));
+        let tex = defer_test_gxt(&r, &bytes, {
+            let bytes = bytes.clone(); let reads = reads.clone();
+            Rc::new(move || { reads.set(reads.get() + 1); Ok(bytes.clone()) })
+        }).unwrap();
+        control.borrow_mut().reported_cdram_free = Some(0);
+        let before = control.borrow().texture_allocation_attempts;
+        submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+        assert!(tex.native.resident_id().is_ok());
+        assert_eq!(reads.get(), 1);
+        assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
+        assert_eq!(control.borrow().events.iter()
+            .filter(|e| matches!(e, Event::CreateCompressed { .. })).count(), 1);
+    }
+}
+
+#[test]
+fn stale_headroom_does_not_bypass_the_deferred_cache_budget() {
+    let (r, control) = setup();
+    r.device.deferred_budget.set(0);
+    control.borrow_mut().reported_cdram_free = Some(0);
+    let before = control.borrow().texture_allocation_attempts;
+    let mut admit = |reserve: &mut dyn FnMut() -> Result<()>, _reason| reserve().map(|_| true);
+    let error = admit_deferred_upload(&r.device, CDRAM_GRANULE, &HashSet::new(), &mut admit).unwrap_err();
+    assert!(is_texture_memory_pressure(&error));
+    assert!(!is_unverified_native_headroom(&error));
+    assert!(format!("{error:#}").contains("deferred texture budget"));
+    assert_eq!(control.borrow().texture_allocation_attempts, before);
+}
+
+#[test]
+fn stale_headroom_keeps_render_target_reservations_strict() {
+    let (r, control) = setup();
+    control.borrow_mut().reported_cdram_free = Some(0);
+    let before = control.borrow().texture_allocation_attempts;
+    assert!(r.try_create_target(2, 2, "strict-rt").is_err());
+    assert_eq!(control.borrow().texture_allocation_attempts, before);
+}
+
+#[test]
+fn zero_headroom_with_real_exhaustion_stops_and_keeps_the_previous_frame() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "previous-canvas");
+    let active = r.defer_altered([2, 2], [2, 2], Arc::from([2, 117]),
+        "pinned-image", decode_deferred_test).unwrap();
+    submit_deferred(&mut r, &canvas, &[active.clone()]).unwrap();
+    let active_id = active.native.resident_id().unwrap().0;
+    let missing = r.defer_altered([2, 2], [2, 2], Arc::from([2, 118]),
+        "missing-image", decode_deferred_test).unwrap();
+    let available = r.vita_cache_headroom().unwrap();
+    control.borrow_mut().external_cdram_bytes = available;
+    control.borrow_mut().reported_cdram_free = Some(0);
+    control.borrow_mut().events.clear();
+    let before = control.borrow().texture_allocation_attempts;
+    let error = submit_deferred(&mut r, &canvas, &[active.clone(), missing.clone()]).unwrap_err();
+    assert!(error.downcast_ref::<FramePreparationError>().is_some());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 2);
+    assert_eq!(active.native.resident_id().unwrap().0, active_id);
+    assert!(missing.native.resident_id().is_err());
+    assert!(control.borrow().events.is_empty());
+    r.try_present(r.encoder(), &canvas).unwrap();
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 2);
+    assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))));
 }
 
 #[test]

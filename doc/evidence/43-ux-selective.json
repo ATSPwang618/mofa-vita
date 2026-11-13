@@ -1,0 +1,100 @@
+{
+  "schema": "knife-selective-ux-v1",
+  "date": "2026-11-13",
+  "local_branch": "perf/render",
+  "baseline": "210a811d0c35947fef1f92b0b4ea2a977d0540fd",
+  "source_branch": "ux-optimization",
+  "source_commit": "8680c4682f22fb07c845111f70e8f150a1096259",
+  "build_tag": "ux-selective-rear-ps-ci-20261113",
+  "included": [
+    "rear touch settings only",
+    "PS prompts and Chinese help with disabled-story policy",
+    "GitHub build/release workflow"
+  ],
+  "excluded": [
+    "font size/layout",
+    "skip/rewind enable",
+    "PNG decoder changes",
+    "CDRAM admission changes",
+    "compressed SELF"
+  ],
+  "unchanged_files": [
+    {
+      "path": "knife/knife/src/game.rs",
+      "sha256": "82c74242195538aa1e90f8d44fb7c68d33c133066e3af851a125093ecade4f56",
+      "baseline_identical": true
+    },
+    {
+      "path": "knife/knife/src/fx.rs",
+      "sha256": "514e370bc3677d2e3d5ef6b0e378ae5bebc885183b8d4d2f12bcbc8a5b2cea15",
+      "baseline_identical": true
+    },
+    {
+      "path": "knife/knife/src/ui/story_controls.rs",
+      "sha256": "a1bf25990606feb01217e1563eae951ad357e302fc100028a8f9f8a478e724f6",
+      "baseline_identical": true
+    },
+    {
+      "path": "knife/knife/src/ui/pad.rs",
+      "sha256": "892411b5e1a35084feeabcf68232b7a62446a90d90d41acd7d1da36884c30066",
+      "baseline_identical": true
+    },
+    {
+      "path": "knife/knife-render/src/vita.rs",
+      "sha256": "f8f0c89d3117d564db109e8d80809da30abd6518f92f4bebd80326d0b7ca10e8",
+      "baseline_identical": true
+    },
+    {
+      "path": "knife/knife-render/src/vita_tests.rs",
+      "sha256": "e961dae8b2f59f52276dd9331076eb37f5e6daa9b1f6b672a46220aacfcc4da5",
+      "baseline_identical": true
+    },
+    {
+      "path": "tools/build-vita.sh",
+      "sha256": "1852b88e740a96904c4455a151e04c63c11afb6d7e4bce9d2f7e8d1907d1de0c",
+      "baseline_identical": true
+    }
+  ],
+  "assets_diff": "only three help substitution insertions; decoder suffix identical",
+  "tests": {
+    "knife_host": 145,
+    "input_shortcut_and_regions": 3,
+    "story_controls": 6,
+    "failed": 0,
+    "arm_build": "PASS",
+    "vpk_validation": "PASS",
+    "eboot_matches_vpk": true
+  },
+  "artwork": [
+    {
+      "name": "help_key_ps",
+      "codec": 9,
+      "gpu_format": "DXT5",
+      "physical": [
+        384,
+        256
+      ],
+      "sha256": "a74f44b634ac304442a180971894728529ffef675095ba84afffa06ad1e6ad96"
+    },
+    {
+      "name": "conf_manual0_ps",
+      "codec": 9,
+      "gpu_format": "DXT5",
+      "physical": [
+        960,
+        540
+      ],
+      "sha256": "48bfa8675f2d3e44b69b393f690b5bfdf158b8bf776810fbf1e35ab6f48df12c"
+    }
+  ],
+  "candidate_eboot_sha256": "8be83f18bb17aa508503766df55d9cb9733cf9ccff93d206c2b18d071ea0b4a8",
+  "candidate_vpk_sha256": "1e52702de060b0ddad260536b4cfcdc9fa0027f985878eb350f21134904cf659",
+  "candidate_directory": ".work/vita/game-release-540p",
+  "dist_updated": false,
+  "limitations": [
+    "No hardware input, pixels or performance validation",
+    "GitHub Actions imported but not executed remotely"
+  ],
+  "committed": false,
+  "pushed": false
+}

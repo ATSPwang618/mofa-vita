@@ -12,7 +12,7 @@ Vita直接调用GXM，桌面WGPU与Vita3K宿主图形API不决定实机使用的
 
 ## 专用Shader
 
-PC离线编译工具：[offline_vita_shaders.py](../tools/offline_vita_shaders.py)，生成源和GXP均有身份校验；当前r12嵌入85个GXP。按准备后的材质、混合OP、目标和能力选路，不按章节/PC/图片名写特例。
+PC离线编译工具：[offline_vita_shaders.py](../tools/offline_vita_shaders.py)，生成源和GXP均有身份校验；当前源码嵌入85个GXP。按准备后的材质、混合OP、目标和能力选路，不按章节/PC/图片名写特例。
 
 | 程序 | 合同 |
 |---|---|

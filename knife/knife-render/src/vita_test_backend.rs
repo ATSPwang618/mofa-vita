@@ -173,6 +173,8 @@ pub struct Trace {
     pub cdram_limit: Option<usize>,
     /// Memory owned by another native subsystem, outside this recorder.
     pub external_cdram_bytes: usize,
+    /// A stale free-memory observation, independent of real allocation capacity.
+    pub reported_cdram_free: Option<usize>,
     pub fail_next_retirement: bool,
     pub fail_next_compressed_create: bool,
     /// Driver allocation failures despite a successful free-memory query.
@@ -217,7 +219,7 @@ impl Gxm {
     pub fn texture_allocation_failed(&self) -> bool { self.last_texture_allocation_failed }
     fn allocate_texture(&mut self, bytes: usize) -> Result<(), String> {
         self.control.borrow_mut().texture_allocation_attempts += 1;
-        if bytes > self.available_cdram()? {
+        if bytes > self.actual_cdram_available()? {
             self.last_texture_allocation_failed = true;
             return Err("mock native CDRAM allocation budget exceeded".into());
         }
@@ -255,12 +257,16 @@ impl Gxm {
     pub fn live_render_targets(&self) -> usize {
         self.textures.values().filter(|texture| texture.target).count()
     }
-    pub fn available_cdram(&self) -> Result<usize, String> {
+    fn actual_cdram_available(&self) -> Result<usize, String> {
         let control = self.control.borrow();
         let used: usize = self.textures.values().map(|t| t.allocation_bytes).sum();
         control.cdram_limit.unwrap_or(48 * 1024 * 1024)
             .checked_sub(used + control.external_cdram_bytes)
             .ok_or_else(|| "mock CDRAM accounting exceeds native limit".into())
+    }
+    pub fn available_cdram(&self) -> Result<usize, String> {
+        let actual = self.actual_cdram_available()?;
+        Ok(self.control.borrow().reported_cdram_free.map_or(actual, |reported| reported.min(actual)))
     }
     pub fn new() -> Result<Self, String> {
         Ok(Self {

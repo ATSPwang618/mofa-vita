@@ -288,6 +288,8 @@ pub struct Ui {
     hover: Option<usize>,
     mouse: (f32, f32),
     tex: HashMap<String, TexRef>,
+    /// Vita's PlayStation face-button prompt atlas, separate from the game-owned Switch UI textures.
+    ps_button_icons: Option<TexRef>,
     /// savedata.bin
     pub file: SaveFile,
     slots: Vec<Option<SaveData>>,
@@ -1041,6 +1043,9 @@ const MUSIC_CTL: [(f32, f32); 6] = [(1432.0, 576.0), (1512.0, 576.0), (1592.0, 5
 impl Ui {
     pub fn new(game: &mut Game, r: &Renderer) -> Self {
         let tex = Self::load_textures(game, r, false);
+        // Assets::ui_textures substitutes the full PS help_key atlas on Vita.
+        // Reuse the same artwork for the in-game button guides.
+        let ps_button_icons = cfg!(target_os = "vita").then(|| tex.get("help_key").cloned()).flatten();
         let file = SaveFile::load();
         let mut ui = Self {
             screen: Screen::Title,
@@ -1049,6 +1054,7 @@ impl Ui {
             hover: None,
             mouse: (0.0, 0.0),
             tex,
+            ps_button_icons,
             file,
             slots: Vec::new(),
             popup: None,
@@ -6755,6 +6761,12 @@ impl Ui {
         let mut x = 55.0;
         for &(kind, id) in GUIDE_SEQ[g] {
             let (tex, r, bottom, pad) = if kind == 0 {
+                if let (Some(icons), Some(slot)) = (&self.ps_button_icons, ps_button_slot(id)) {
+                    let y = (445.0 + dy) * k - 40.0;
+                    out.push(ps_button_quad(icons, slot, [x, y, 40.0, 40.0]));
+                    x += 40.0 + 6.0 + 4.0;
+                    continue;
+                }
                 ("help_key", GUIDE_ICONS[id as usize], 445.0, 6.0)
             } else {
                 ("help_txt_ja", self.guide_words.1.get(id as usize).copied().unwrap_or(GUIDE_WORDS[id as usize]), 444.0, 4.0)
@@ -7586,4 +7598,31 @@ impl Ui {
             }
         }
     }
+
+}
+
+/// Switch face labels in the original resource map to PS symbols: A→Circle, B→Cross, X→Triangle, Y→Square.
+pub(crate) const fn ps_button_slot(id: u8) -> Option<u32> {
+    match id {
+        7 => Some(0),  // A -> Circle
+        10 => Some(1), // B -> Cross
+        9 => Some(3),  // X -> Triangle
+        8 => Some(2),  // Y -> Square
+        _ => None,
+    }
+}
+
+pub(crate) const fn ps_button_cell(slot: u32) -> [f32; 4] {
+    const CELLS: [[f32; 4]; 4] = [
+        [8.0, 56.0, 48.0, 96.0],   // Circle replaces A
+        [152.0, 56.0, 192.0, 96.0], // Cross replaces B
+        [56.0, 56.0, 96.0, 96.0],  // Square replaces Y
+        [104.0, 56.0, 144.0, 96.0], // Triangle replaces X
+    ];
+    CELLS[if slot < 3 { slot as usize } else { 3 }]
+}
+
+pub(crate) fn ps_button_quad(tex: &TexRef, slot: u32, dst: [f32; 4]) -> Quad {
+    let [x0, y0, x1, y1] = ps_button_cell(slot);
+    Quad::rect(tex.clone(), dst, [1.0; 4]).with_uv_rect(x0 / 384.0, y0 / 256.0, x1 / 384.0, y1 / 256.0)
 }

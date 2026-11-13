@@ -77,6 +77,16 @@ impl std::fmt::Display for TextureMemoryPressure {
 }
 impl std::error::Error for TextureMemoryPressure {}
 
+#[derive(Debug)]
+struct UnverifiedNativeHeadroom { peak: usize, available: usize }
+impl std::fmt::Display for UnverifiedNativeHeadroom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "native CDRAM headroom has no evictable atlas: bake/allocation peak {} > available {}",
+            self.peak, self.available)
+    }
+}
+impl std::error::Error for UnverifiedNativeHeadroom {}
+
 /// Deferred-atlas preparation accounting. A pre-baked GXT is only *registered* by
 /// the upload path, so without these counters its read/parse/upload work is
 /// invisible and hides inside render_us.
@@ -2992,7 +3002,12 @@ fn make_texture_inner(
     }
     let allocation = native_allocation_bytes(physical, bpp)?;
     if reclaim {
-        reserve_cdram(device, allocation, 0, pinned)?;
+        if let Err(error) = reserve_cdram(device, allocation, 0, pinned) {
+            // Required render targets keep their game-owned reclaim callback.
+            // Source images may rely on the actual native allocation when the
+            // free-memory observation is stale after retirement.
+            if render_target || !is_unverified_native_headroom(&error) { return Err(error); }
+        }
     }
     let id = allocate_texture_with_recovery(device, pinned,
         |g| g.create_texture_ex(bytes, w, h, stride, format, srgb, linear, render_target))?;
@@ -3140,8 +3155,7 @@ fn reserve_cdram(
                 return Err(anyhow!("deferred texture budget has no evictable atlas: {} + {cache_growth} > {budget}",
                     device.resident_deferred_bytes.get()).context(TextureMemoryPressure));
             }
-            return Err(anyhow!("native CDRAM headroom has no evictable atlas: bake/allocation peak {peak} > available {available}")
-                .context(TextureMemoryPressure));
+            return Err(anyhow!(UnverifiedNativeHeadroom { peak, available }).context(TextureMemoryPressure));
         };
         evict_deferred(device, &victim, pinned.len())?;
         available = device.call(|g| g.available_cdram()).context("querying native CDRAM allowance")?;
@@ -3232,6 +3246,19 @@ fn layout_bytes(width: u32, height: u32, bpp: u32, stride: u32) -> Result<usize>
     Ok(usize::try_from(length).context("texture allocation exceeds address space")?)
 }
 
+fn admit_deferred_upload(device: &Device, allocation: usize,
+    pinned: &HashSet<*const NativeTexture>, admit: &mut FrameAdmission<'_>) -> Result<()> {
+    match admit(&mut || reserve_cdram(device, allocation, allocation, pinned),
+        FrameAdmissionReason::Reservation) {
+        Ok(_) => Ok(()),
+        // Game-owned caches have already had their admission chance. Vita3K
+        // can keep reporting zero free CDRAM after native blocks are retired;
+        // allow one real allocation to decide. Its failure has bounded recovery.
+        Err(error) if error.downcast_ref::<UnverifiedNativeHeadroom>().is_some() => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 /// Pin the complete command list before issuing any game render pass. The LRU
 /// may evict idle atlas GPU storage even while its logical TexRef is still held.
 /// Native destroy waits for outstanding sampling, and a later frame can reload.
@@ -3304,7 +3331,7 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
                     ensure!(GxtDescriptor::from_texture(&gxt) == *info,
                         "deferred GXT descriptor changed for {}", source.label);
                     // Validate everything before reclaiming another texture.
-                    admit(&mut || reserve_cdram(device, allocation, allocation, &pinned), FrameAdmissionReason::Reservation)
+                    admit_deferred_upload(device, allocation, &pinned, admit)
                         .with_context(|| format!("preparing GXT atlas {}", source.label))?;
                     let upload_start = std::time::Instant::now();
                     let uploaded = retry_frame_allocation(device, admit, &mut allocation_recovery_used, ||
@@ -3342,7 +3369,7 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
             let stride = width.checked_mul(4).context("deferred decode stride overflow")?;
             ensure!(pixels.len() == layout_bytes(width, height, 4, stride)?, "deferred RGBA byte length mismatch for {}", source.label);
             let _ = srgb; // Decoder metadata; native descriptors never apply gamma.
-            admit(&mut || reserve_cdram(device, allocation, allocation, &pinned), FrameAdmissionReason::Reservation)
+            admit_deferred_upload(device, allocation, &pinned, admit)
                 .with_context(|| format!("preparing native atlas {}", source.label))?;
             let uploaded = retry_frame_allocation(device, admit, &mut allocation_recovery_used, ||
                 make_texture_inner(&texture.device, texture.size, texture.size,
@@ -3381,6 +3408,10 @@ fn retry_frame_allocation<T>(device: &Device, admit: &mut FrameAdmission<'_>, us
 
 pub fn is_texture_memory_pressure(error: &anyhow::Error) -> bool {
     error.downcast_ref::<TextureMemoryPressure>().is_some()
+}
+
+pub fn is_unverified_native_headroom(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<UnverifiedNativeHeadroom>().is_some()
 }
 
 fn execute(device: &Device, commands: &[Command]) -> Result<()> {

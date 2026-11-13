@@ -1,0 +1,95 @@
+name: Vita 540p Build
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Vita 540p package
+    runs-on: ubuntu-latest
+    container:
+      image: vitasdk/vitasdk:2026.08
+    env:
+      CARGO_HOME: ${{ github.workspace }}/.cargo-home
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup
+      KNIFE_VITA_CACHE: ${{ github.workspace }}/.vita-cache
+      KNIFE_BUILD_TAG: ${{ github.ref_name }}
+      KNIFE_VITA_QUIET: '0'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Install build prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates cmake curl git ninja-build python3
+
+      - name: Cache Rust toolchain and crates
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-home/registry
+            .cargo-home/git
+            .rustup/toolchains
+            .rustup/update-hashes
+          key: vita-${{ runner.os }}-sdk-2026.08-nightly-2026-05-28-${{ hashFiles('knife/Cargo.lock') }}
+          restore-keys: |
+            vita-${{ runner.os }}-sdk-2026.08-nightly-2026-05-28-
+
+      - name: Install pinned Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+          sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal --default-toolchain none
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          "$CARGO_HOME/bin/rustup" toolchain install nightly-2026-05-28 \
+            --profile minimal --component rust-src
+
+      - name: Build and validate release package
+        run: python3 tools/build-vita.py game release
+
+      - name: Collect release files
+        run: |
+          mkdir -p build-artifacts
+          cp release/mofa-vita.vpk build-artifacts/
+          cp release/eboot.bin build-artifacts/
+          cp .work/vita/game-release-540p/vita-game-release-540p-build.json build-artifacts/
+          cd build-artifacts
+          sha256sum mofa-vita.vpk eboot.bin vita-game-release-540p-build.json > SHA256SUMS
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: vita-540p-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish tagged GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: vita-540p-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: build-artifacts/*

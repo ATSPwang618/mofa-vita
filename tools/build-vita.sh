@@ -193,15 +193,26 @@ vita-pack-vpk -s "$OUTPUT/param.sfo" -b "$OUTPUT/eboot.bin" \
     "${PACKAGE_EXTRA[@]}" "$OUTPUT/$VPK"
 python3 "$ROOT/tools/check-vita-package.py" "$OUTPUT/$VPK" "$TITLE_ID" ${CHECK_ARGS[@]+"${CHECK_ARGS[@]}"}
 python3 "$ROOT/tools/vita-build-receipt.py" "$ROOT" "$OUTPUT" "$TOOLCHAIN" "$TARGET" "$MODE"
-# Every successful build also publishes the VPK into release/ at the project root, so the
-# installable package always sits in one predictable place next to the sources.
+# Publish only validated production pairs under stable names. DEV probes must
+# never replace the game EBOOT used by VitaDeck.
 RELEASE_DIR="$ROOT/release"
-mkdir -p "$RELEASE_DIR"
-cp -f "$OUTPUT/$VPK" "$RELEASE_DIR/$VPK"
-python3 - "$RELEASE_DIR/$VPK" <<'PRINT_PACKAGE'
-import hashlib, sys
+python3 - "$OUTPUT/$VPK" "$OUTPUT/eboot.bin" "$RELEASE_DIR" "$BUILD_KIND" <<'PRINT_PACKAGE'
+import hashlib, os, shutil, sys, zipfile
 from pathlib import Path
-p = Path(sys.argv[1])
-print("published", p, "(%s bytes)" % p.stat().st_size)
-print(hashlib.sha256(p.read_bytes()).hexdigest(), p)
+package, eboot, destination = map(Path, sys.argv[1:4])
+production = sys.argv[4] == "release"
+with zipfile.ZipFile(package) as archive:
+    if archive.read("eboot.bin") != eboot.read_bytes():
+        raise SystemExit("Refusing to publish mismatched VPK/EBOOT")
+destination.mkdir(parents=True, exist_ok=True)
+outputs = [(package, destination / ("mofa-vita.vpk" if production else package.name))]
+if production:
+    outputs.append((eboot, destination / "eboot.bin"))
+# Prepare both copies before replacing either public artifact.
+for source, target in outputs:
+    shutil.copyfile(source, target.with_name(target.name + ".tmp"))
+for source, target in outputs:
+    os.replace(target.with_name(target.name + ".tmp"), target)
+    print("published", target, "(%s bytes)" % target.stat().st_size)
+    print(hashlib.sha256(target.read_bytes()).hexdigest(), target)
 PRINT_PACKAGE

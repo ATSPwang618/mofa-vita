@@ -1,0 +1,51 @@
+{
+  "schema": "knife-selective-headroom-v1",
+  "date": "2026-11-13",
+  "source_commit": "b7d5b51a0aa7bcb51652f40408dfe05e33254cbc",
+  "local_branch": "perf/render",
+  "local_head": "210a811d0c35947fef1f92b0b4ea2a977d0540fd",
+  "build_tag": "perf-render-20261109-213051-210a811-local",
+  "scope": "Only render admission, test backend/tests and Assets image admission; excluded upstream game skip change",
+  "baseline_identical_files": [
+    "knife/knife/src/game.rs",
+    "knife/knife/src/fx.rs",
+    "knife/knife/src/ui/story_controls.rs",
+    "knife/knife/src/ui/pad.rs",
+    "tools/build-vita.sh"
+  ],
+  "png_jpeg_decoder_and_gray_r8_baseline_identical": true,
+  "host_tests": {
+    "game": 145,
+    "renderer": 179,
+    "failures": 0
+  },
+  "new_cases": [
+    "stale-zero immediate upload",
+    "stale-zero deferred RGBA",
+    "stale-zero DXT1/DXT5",
+    "cache-budget enforcement",
+    "strict render-target reservation",
+    "real exhaustion bounded retry and retained frame"
+  ],
+  "arm_build": "PASS",
+  "vpk_check": "PASS",
+  "eboot_matches_vpk": true,
+  "quiet_build": false,
+  "eboot_sha256": "f54781a3ef1a3156d003c9fcc79b5f1759494a870ea14c8fbe91415d534f6cd6",
+  "vpk_sha256": "733f243d65b28333049fb2537985316d2aefc60c4a4d8f58eaac7709823b3a80",
+  "candidate_directory": ".work/vita/game-release-540p",
+  "previous_candidate_backup": ".work/vita/rollback/ux-selective-rear-ps-ci-20261113",
+  "dist_updated": false,
+  "hardware_validated": false,
+  "committed": false,
+  "pushed": false,
+  "version_basis": {
+    "branch": "perf/render",
+    "commit": "210a811d0c35947fef1f92b0b4ea2a977d0540fd",
+    "committer_time": "2026-11-09T21:30:51+01:00",
+    "local_suffix": "uncommitted changes included"
+  },
+  "previous_version_tag": "ux-selective-headroom-20261113",
+  "previous_version_backup": ".work/vita/rollback/ux-selective-headroom-20261113",
+  "version_rebuild_log": ".work/ux-headroom/build-version.log"
+}

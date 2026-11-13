@@ -1249,8 +1249,15 @@ impl Assets {
                     cached = self.images.len(), admitted = admission.is_ok(), "CG_RECLAIM");
                 self.vita_diagnostic_images(&format!("image {name} reclaimed={reclaimed} admitted={}", admission.is_ok()));
             }
-            // A failed admission is not cached as a missing image.
-            admission.with_context(|| format!("image GPU admission {name} ({width}x{height}, bpp={bpp})"))?;
+            // The image cache has finished its pressure sweep. A stale native
+            // free-memory reading must not reject an allocation that the
+            // driver can still satisfy; the upload checks actual capacity.
+            if let Err(error) = admission {
+                if !knife_render::is_unverified_native_headroom(&error) {
+                    return Err(error).with_context(|| format!(
+                        "image GPU admission {name} ({width}x{height}, bpp={bpp})"));
+                }
+            }
         }
         #[cfg(target_os = "vita")]
         let upload_start = std::time::Instant::now();

@@ -7035,6 +7035,14 @@ impl Game {
 
     pub fn render(&mut self, r: &mut Renderer, overlay: &mut dyn FnMut(&mut Self, &Renderer, &mut Vec<Quad>)) {
         #[cfg(target_os = "vita")]
+        if self.skip {
+            // Fast skip resolves FADS immediately. Its old-frame capture is
+            // never shown, but retaining it can exhaust CDRAM on rapid scene
+            // changes before the next atlas is admitted.
+            self.snapshot = false;
+            self.old_rt = None;
+        }
+        #[cfg(target_os = "vita")]
         let previous = (
             RenderTarget { tex: self.stage_rt.tex.clone() },
             RenderTarget { tex: self.canvas.tex.clone() },

@@ -805,7 +805,7 @@ fn frame_preparation_pressure_is_recoverable_before_any_frame_submission() {
     control.borrow_mut().events.clear();
     let error = r.try_present(enc, &canvas).unwrap_err();
     assert!(error.downcast_ref::<FramePreparationError>().is_some());
-    assert!(format!("{error:#}").contains("native CDRAM headroom"));
+    assert!(format!("{error:#}").contains("native CDRAM allocation"));
     assert!(control.borrow().events.is_empty(), "the previous complete stage remains untouched");
     let allocations = control.borrow().texture_allocation_attempts;
     let retained = r.encoder();
@@ -813,6 +813,31 @@ fn frame_preparation_pressure_is_recoverable_before_any_frame_submission() {
     assert_eq!(control.borrow().texture_allocation_attempts, allocations);
     assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))),
         "the previous canvas remains displayable without allocating another texture");
+}
+
+#[test]
+fn stale_zero_free_memory_does_not_reject_a_valid_native_allocation() {
+    let (mut r, control) = setup();
+    let canvas = r.create_target(2, 2, "stale-headroom-canvas");
+    let tex = r.defer_altered([2, 2], [2, 2], Arc::from([2, 117]),
+        "stale-headroom-atlas", decode_deferred_test).unwrap();
+    let before = control.borrow().texture_allocation_attempts;
+    control.borrow_mut().reported_cdram_free = Some(0);
+    submit_deferred(&mut r, &canvas, &[tex.clone()]).unwrap();
+    assert!(tex.native.resident_id().is_ok());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
+    assert!(matches!(control.borrow().events.last(), Some(Event::Present(_))));
+}
+
+#[test]
+fn stale_zero_free_memory_does_not_reject_an_immediate_image_upload() {
+    let (r, control) = setup();
+    let before = control.borrow().texture_allocation_attempts;
+    control.borrow_mut().reported_cdram_free = Some(0);
+    let pixels = [255u8; 2 * 2 * 4];
+    let image = r.try_upload(2, 2, Upload::Rgba8(&pixels), "immediate-image").unwrap();
+    assert!(image.native.resident_id().is_ok());
+    assert_eq!(control.borrow().texture_allocation_attempts - before, 1);
 }
 
 #[test]

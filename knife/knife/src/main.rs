@@ -930,6 +930,3 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(target_os = "vita")]
 mod vita_controls;
-
-#[cfg(any(target_os = "vita", test))]
-mod story_font;

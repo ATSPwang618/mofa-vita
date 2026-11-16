@@ -1,8 +1,7 @@
 //! VitaSDK controller and touch input, polled once per game frame.
 use crate::{
     game::Game,
-    story_font::Size,
-    vita_controls::{CHORD, Event, L, SQUARE, Shortcut, rear_side},
+    story_font::{CHORD, Event, L, SQUARE, Shortcut, Size},
     ui::{Pad, Screen, Ui},
 };
 use knife_render::{CANVAS_H, CANVAS_W, Quad, Renderer};
@@ -348,15 +347,13 @@ impl Input {
                 self.l2r2_mode = menu.original_l2r2_mode;
                 self.rear_touch_debug_enabled = menu.original_rear_touch_debug_enabled;
             } else if pressed & CIRCLE != 0 {
+                self.font_menu = None;
                 let size = game.story_font_size();
                 if size != menu.original_size
                     && let Err(error) = std::fs::write(&self.font_settings, format!("{}\n", size.percent()))
                 {
-                    tracing::warn!("Writing story font setting: {error}; settings remain open");
-                    return;
+                    tracing::warn!("Writing story font setting: {error}");
                 }
-                self.font_menu = None;
-                tracing::info!("story_font saved: {}%", size.percent());
                 if let Err(error) = std::fs::write(&self.l2r2_settings, format!("{}\n", self.l2r2_mode)) {
                     tracing::warn!("Writing L2/R2 mode: {error}");
                 }
@@ -424,13 +421,19 @@ impl Input {
             let mut back = TouchData::default();
             let status = unsafe { sceTouchPeek(TOUCH_BACK, &mut back, 1) };
             if status == 1 && back.count <= 8 {
+                let mid_x = (i32::from(panel.min_disp_x) + i32::from(panel.max_disp_x)) / 2;
+                let mid_y = (i32::from(panel.min_disp_y) + i32::from(panel.max_disp_y)) / 2;
                 for report in &back.reports[..back.count as usize] {
                     let x = i32::from(report.x);
                     let y = i32::from(report.y);
-                    let Some(side) = rear_side(self.l2r2_mode,
-                        [panel.min_disp_x, panel.min_disp_y, panel.max_disp_x, panel.max_disp_y],
-                        [report.x, report.y]) else { continue; };
-                    if self.rear_touch_debug_enabled {
+                    let side = usize::from(x >= mid_x);
+                    let in_row = match self.l2r2_mode {
+                        1 => true,
+                        2 => y < mid_y,
+                        3 => y >= mid_y,
+                        _ => false,
+                    };
+                    if in_row && self.rear_touch_debug_enabled {
                         let x_percent = (x - i32::from(panel.min_disp_x)) * 100
                             / (i32::from(panel.max_disp_x) - i32::from(panel.min_disp_x));
                         let y_percent = (y - i32::from(panel.min_disp_y)) * 100
@@ -440,7 +443,9 @@ impl Input {
                             y_percent: y_percent.clamp(0, 100),
                         });
                     }
-                    back_pressed[side] = true;
+                    if in_row {
+                        back_pressed[side] = true;
+                    }
                 }
             }
         }

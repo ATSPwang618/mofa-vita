@@ -5492,8 +5492,20 @@ impl Game {
     fn text_layout(&self) -> (Layout, f32) {
         let (lay, baseline) = self.base_text_layout();
         #[cfg(target_os = "vita")]
-        return crate::story_font::scale_layout(self.story_font_size, lay, baseline);
-        #[cfg(not(target_os = "vita"))]
+        {
+            let k = self.story_font_factor();
+            if k != 1.0 {
+                let ascent = lay.ascent * k;
+                return (Layout {
+                    size: lay.size * k,
+                    spacing: lay.spacing * k,
+                    line_height: lay.line_height * k,
+                    ascent,
+                    ruby_y: lay.ruby_y * k,
+                    ..lay
+                }, baseline - lay.ascent + ascent);
+            }
+        }
         (lay, baseline)
     }
 
@@ -5757,13 +5769,9 @@ impl Game {
             if self.story_font_factor() != before {
                 let revealed = self.page.revealed;
                 let rng = self.app_rng.clone();
-                let z_cur = self.z_cur;
                 self.relayout_page();
-                self.z_cur = z_cur;
                 self.app_rng = rng;
                 self.page.revealed = revealed.min(self.page.order as f32);
-                tracing::info!("story_font preview: {}%; revealed={}/{}",
-                    size.percent(), self.page.revealed, self.page.order);
             }
         }
     }
@@ -6203,11 +6211,12 @@ impl Game {
             let revealed = self.page.revealed;
             // A single long message can run below the canvas when enlarged.
             // Follow the revealed line so the end and the advance marker stay visible.
-            #[cfg(not(target_os = "vita"))]
             let scroll = 0.0f32;
             #[cfg(target_os = "vita")]
-            let scroll = crate::story_font::scroll_offset(self.story_font_size, revealed, oy,
-                BOTTOM_LIMIT, self.page.chars.iter().map(|pc| (pc.order, pc.baseline)));
+            let scroll = if self.story_font_factor() > 1.0 {
+                self.page.chars.iter().filter(|pc| (pc.order as f32) < revealed)
+                    .fold(scroll, |dy, pc| dy.max(pc.baseline + oy - BOTTOM_LIMIT))
+            } else { scroll };
             // sub_391A0: no text while F1103; else alpha * 2 * max(content - 0.5, 0), times the layer 30 composite
             let text_a = if self.var("F1103") != 0 { 0.0 } else { layer * layer };
             // fade of each message, resolved through runs of @k messages to the message that ends them; with a
@@ -7025,6 +7034,14 @@ impl Game {
     }
 
     pub fn render(&mut self, r: &mut Renderer, overlay: &mut dyn FnMut(&mut Self, &Renderer, &mut Vec<Quad>)) {
+        #[cfg(target_os = "vita")]
+        if self.skip {
+            // Fast skip resolves FADS immediately. Its old-frame capture is
+            // never shown, but retaining it can exhaust CDRAM on rapid scene
+            // changes before the next atlas is admitted.
+            self.snapshot = false;
+            self.old_rt = None;
+        }
         #[cfg(target_os = "vita")]
         let previous = (
             RenderTarget { tex: self.stage_rt.tex.clone() },

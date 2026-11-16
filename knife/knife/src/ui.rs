@@ -1044,7 +1044,7 @@ impl Ui {
     pub fn new(game: &mut Game, r: &Renderer) -> Self {
         let tex = Self::load_textures(game, r, false);
         // Assets::ui_textures substitutes the full PS help_key atlas on Vita.
-        // Reuse the same artwork for the in-game button guides.
+        // Reuse it so guides and the font-size menu share the same artwork.
         let ps_button_icons = cfg!(target_os = "vita").then(|| tex.get("help_key").cloned()).flatten();
         let file = SaveFile::load();
         let mut ui = Self {

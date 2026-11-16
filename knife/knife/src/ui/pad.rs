@@ -235,7 +235,7 @@ impl Ui {
                 self.witch_quick_save(game, r)
             }
             Pad::Minus if crate::assets::witch() => self.witch_quick_load(game, r),
-            // Desktop R toggles skip; the Vita story deliberately has no fast-forward input.
+            // R toggles skip on desktop and Vita when manual fast-forward is enabled.
             Pad::R if super::STORY_CONTROLS.fast_forward && !self.touch.hidden => game.skip_mode = !game.skip_mode,
             // mask [21] opens the mode panel on its last button
             // (Witch on the Holy Night: jp_40ED0 asks only outside a TeaTime scene, jp_83B00 and a story movie)

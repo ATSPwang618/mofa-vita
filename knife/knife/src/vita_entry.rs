@@ -451,7 +451,7 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         Path::new(PERF_ROOT).join("l2-r2-mode.txt"),
         Path::new(PERF_ROOT).join("rear-touch-debug.txt"),
     )?;
-    log.event(&format!("UI booted; input ready; story_font={}%; L+Square settings", game.story_font_size().percent()));
+    log.event("UI booted; input ready");
     if let Some(perf_log) = &mut perf {
         if let Err(error) = perf_log.finish_startup() {
             tracing::warn!("Performance console stopped: {error}");

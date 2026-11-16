@@ -59,11 +59,11 @@ jobs:
       - name: Collect release files
         run: |
           mkdir -p build-artifacts
-          cp release/mofa-vita.vpk build-artifacts/
-          cp release/eboot.bin build-artifacts/
+          cp release/knife-vita-game-540p.vpk build-artifacts/
+          cp .work/vita/game-release-540p/eboot.bin build-artifacts/
           cp .work/vita/game-release-540p/vita-game-release-540p-build.json build-artifacts/
           cd build-artifacts
-          sha256sum mofa-vita.vpk eboot.bin vita-game-release-540p-build.json > SHA256SUMS
+          sha256sum knife-vita-game-540p.vpk eboot.bin vita-game-release-540p-build.json > SHA256SUMS
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7

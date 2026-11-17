@@ -2,6 +2,7 @@
 
 pub mod storage;
 pub mod asset_check;
+pub mod audio_banks;
 pub mod boot_error;
 pub mod gxt;
 pub mod movie_geometry;

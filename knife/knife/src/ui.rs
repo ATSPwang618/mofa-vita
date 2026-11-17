@@ -5712,9 +5712,7 @@ impl Ui {
     /// Read record `slot` into the game (sub_82330); false when it is missing or unreadable.
     fn restore_slot(&mut self, game: &mut Game, r: &Renderer, slot: usize) -> bool {
         let Some(data) = self.file.record(slot).and_then(|rec| game.decode_record(rec)) else { return false };
-        game.reset();
-        game.restore(r, &data);
-        true
+        game.restore(r, &data)
     }
 
     /// Show the loaded game: every menu and the backdrop gone at once.
@@ -6783,7 +6781,7 @@ impl Ui {
     /// units wider each side, once it is made.
     fn draw_dialog_thumb(&self, game: &mut Game, r: &Renderer, out: &mut Vec<Quad>) {
         let Some(d) = self.slots.get(save::quick_slot()).cloned().flatten() else { return };
-        let Some(t) = game.preview(save::quick_slot(), &d) else { return };
+        let Some(t) = game.preview(save::quick_slot(), &d, true) else { return };
         let (w, h) = (100.0 * 0.82667 * 0.825, 53.0 * 1.0859 * 0.825);
         let (ux, uy) = (W / 640.0, H / 448.0);
         // the frame's top: 212 for English (the longer message), else 200; Witch on the Holy Night's jp_4AE90
@@ -6796,7 +6794,7 @@ impl Ui {
             200.0
         };
         out.push(Quad::rect(r.white.clone(), [(318.0 - w / 2.0) * ux, y * uy, (w + 4.0) * ux, (h + 4.0) * uy], [0.0, 0.0, 0.0, 1.0]));
-        out.push(Quad::rect(t, [(320.0 - w / 2.0) * ux, (y + 2.0) * uy, w * ux, h * uy], [1.0; 4]));
+        out.push(t.quad([(320.0 - w / 2.0) * ux, (y + 2.0) * uy, w * ux, h * uy], [1.0; 4]));
     }
 
     /// dialog_win at alpha `t`, scaled by `k` about the centre.
@@ -6930,12 +6928,13 @@ impl Ui {
                     // drawn only once made (word_F1F438[40]); nothing in its place until then. Overseas the whole
                     // entry (frame overlay, date, time, AUTO tag, titles) waits for it too: a fresh save's row stays
                     // blank until its thumbnail is made, while the info panel already shows the record
-                    let pic = game.preview(slot, &d);
+                    let pic = game.preview(slot, &d, hovered(i));
+                    #[cfg(not(target_os = "vita"))]
                     if pic.is_none() && game.assets.build == knife_core::exe::Build::Overseas {
                         continue;
                     }
                     if let Some(t) = pic {
-                        out.push(Quad::rect(t, thumb, [1.0; 4]));
+                        out.push(t.quad(thumb, [1.0; 4]));
                     }
                     self.sprite(out, "save_scene_plus", [fx, fy, 960.0, 272.0], Some([32.0, 32.0, 960.0, 272.0]));
                     // "YYYY/MM/DD HH:MM": glyph x from unk_350650 (640 units, relative to the frame)

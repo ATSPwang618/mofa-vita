@@ -9,6 +9,7 @@ pub enum ImageNeeded {Ready(Arc<Image>),Pending,Pressure(String),Failed(String)}
 enum Step {Source,Decode}
 pub(super) struct NeededRequest {
     key:String,name:String,strip:Option<(usize,usize)>,archive:Arc<Archive>,index:usize,
+    prebaked:bool,
     generation:u64,started:Instant,step:Step,failure:Option<String>,retry_source:bool,pressure_retries:u8,
 }
 const DEADLINE:Duration=Duration::from_secs(10);
@@ -101,8 +102,11 @@ impl Assets {
             let Some((archive,index))=Self::primary_image_locator(&self.image_archives(),&name)else{
                 return ImageNeeded::Failed(format!("image source missing: {name}"));
             };
-            self.image_needed=Some(NeededRequest {key:key.clone(),name:name.clone(),strip:self.strip(&name),
-                archive,index,generation:self.image_context,started:Instant::now(),step:Step::Source,failure:None,retry_source:true,pressure_retries:1});
+            let strip = self.strip(&name);
+            let variant = Self::story_variant(&archive, index, grade, strip);
+            self.image_needed=Some(NeededRequest {key:key.clone(),name:name.clone(),strip,
+                archive,index:variant.unwrap_or(index),prebaked:variant.is_some(),
+                generation:self.image_context,started:Instant::now(),step:Step::Source,failure:None,retry_source:true,pressure_retries:1});
         }
         let request=self.image_needed.as_ref().unwrap();
         if let Some(error)=request.failure.clone() {return ImageNeeded::Failed(error);}
@@ -110,6 +114,7 @@ impl Assets {
             return self.image_need_failed(format!("image demand deadline (10s): {name}; active workers retained"));
         }
         let (archive,index,strip,generation,step)=(request.archive.clone(),request.index,request.strip,request.generation,request.step);
+        let prebaked = request.prebaked;
         // A speculative decode may already have completed. Consume exactly its
         // current-generation result; prefetch budget rejection is not a real
         // demand failure and is retried once through the larger demand cap.
@@ -129,7 +134,9 @@ impl Assets {
         // Logical/GPU cache eviction does not invalidate a fully graded CPU
         // owner. Query its exact source/Bake identity before requesting archive
         // bytes; otherwise a warm result still pays card I/O and NX inflation.
-        match graded_cache::try_lookup_source(&archive,index,&name,grade,strip) {
+        match if prebaked { graded_cache::SourceLookup::Missing }
+            else { graded_cache::try_lookup_source(&archive,index,&name,grade,strip) }
+        {
             graded_cache::SourceLookup::Ready(hit)=>{
                 let reload=ImageReload {archive:hit.archive.clone(),index:hit.index,
                     encoded_len:hit.encoded_len,grade,strip,initial:None};
@@ -149,6 +156,10 @@ impl Assets {
             atlas_cache::Poll::Pending=>return ImageNeeded::Pending,
             atlas_cache::Poll::Failed(error)=>return self.image_need_failed(format!("{name}: {error}")),
         };
+        if prebaked {
+            let pixels = Self::prebaked_story_gxt(data, archive, index, &name);
+            return self.finish_needed_pixels(r, key, &name, pixels);
+        }
         let native=compact::parse(&data).ok().is_some_and(|image|
             gxt_native_route(image.encoding==compact::Encoding::GxtNativeUnorm,grade.cpu(),strip.is_some(),grade.raw));
         if native {

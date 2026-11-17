@@ -15,6 +15,9 @@ extern "C" {
 /* C owns and closes the file; memory input stays borrowed and immutable until close. */
 int32_t kv_audio_open_file(const char *path, KvAudioDecoder **out);
 int32_t kv_audio_open_memory(const uint8_t *bytes, uint32_t length, KvAudioDecoder **out);
+/* Caller owns the range context until the decoder is closed. Offsets are member-relative. */
+typedef int32_t (*KvAudioReadAt)(void *context, uint32_t offset, uint8_t *out, uint32_t bytes);
+int32_t kv_audio_open_range(void *context, KvAudioReadAt read_at, uint32_t length, KvAudioDecoder **out);
 /* Interleaved stereo f32; mono centre-panned, stereo gain 0.68. */
 int32_t kv_audio_read(KvAudioDecoder *decoder, float *stereo, uint32_t capacity_frames, uint32_t *frames_read);
 int32_t kv_audio_seek(KvAudioDecoder *decoder, uint64_t frame);

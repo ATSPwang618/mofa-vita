@@ -210,9 +210,23 @@ impl FrameClasses {
         total.probe.native_available = total.native_frames == total.frames;
     }
     pub fn emit(&mut self, frame: u64, window_ms: u128) -> std::io::Result<()> {
+        self.emit_window(frame, window_ms, "")
+    }
+
+    pub fn emit_live_charge(&mut self, frame: u64, window_ms: u128, opening: bool)
+        -> std::io::Result<()>
+    {
+        self.emit_window(frame, window_ms, if opening {
+            ",\"live_charge\":\"ticks_0_47\""
+        } else {
+            ",\"live_charge\":\"ticks_48_239\""
+        })
+    }
+
+    fn emit_window(&mut self, frame: u64, window_ms: u128, extra: &str) -> std::io::Result<()> {
         let window = std::mem::take(self);
         let frames: u64 = window.totals.iter().map(|value| value.frames).sum();
-        let mut line = format!("{{\"kind\":\"frame_classes\",\"schema\":1,\"frame\":{frame},\"first_frame\":{},\"last_frame\":{},\"frames\":{frames},\"window_ms\":{window_ms},\"classes\":{{", window.first_frame, window.last_frame);
+        let mut line = format!("{{\"kind\":\"frame_classes\",\"schema\":1,\"frame\":{frame},\"first_frame\":{},\"last_frame\":{},\"frames\":{frames},\"window_ms\":{window_ms}{extra},\"classes\":{{", window.first_frame, window.last_frame);
         for (i, (name, total)) in ["redraw", "reuse", "other"].iter().zip(window.totals).enumerate() {
             if i > 0 { line.push(','); }
             let _ = write!(line, "\"{name}\":{{\"frames\":{},\"native_frames\":{},\"work_us\":{},\"update_us\":{},\"render_us\":{},\"wall_us\":{},\"max_work_us\":{},\"native_available\":{}",

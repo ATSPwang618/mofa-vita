@@ -28,5 +28,8 @@ pub const GPU_TARGET_RING_BYTES: usize = 6 * MIB;
 pub const GPU_MOVIE_FRAME_BYTES: usize = 3 * MIB;
 pub const GPU_PRESSURE_HEADROOM: usize = 8 * MIB;
 pub const GPU_CACHE_SPARE_BYTES: usize = MIB;
+/// Total framebuffer, output and input-texture charge for optional save thumbnails.
+pub const GPU_PREVIEW_BYTES: usize = 8 * MIB;
+pub const GPU_PREVIEW_SOURCE_BYTES: usize = 2 * MIB;
 pub const CPU_PRESSURE_HEADROOM: usize = 32 * MIB;
 pub const CPU_TARGET_HEADROOM: usize = 48 * MIB;

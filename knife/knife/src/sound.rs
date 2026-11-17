@@ -7,6 +7,8 @@ use std::{
 };
 
 use knife_audio::{Audio, Curve, Pcm, Voice};
+#[cfg(target_os = "vita")]
+use knife_audio::{BgmBuffer, PreparedBgm};
 
 /// One 60 Hz frame (ms). The app loop (sub_FC064) runs the game's frame, whose sound update (sub_9B7F0) comes
 /// after the script, and then the sound manager's update: nn::atk's update (sub_106734, which flushes the frame's
@@ -70,6 +72,8 @@ pub struct Bgm {
     volume: f32,
     /// started on a prefix of the stream: the request generation whose whole decode is still to come
     partial: Option<u64>,
+    #[cfg(target_os = "vita")]
+    buffered: BgmBuffer,
 }
 
 /// A background BGM decode result: (request generation, track, PCM).
@@ -93,9 +97,28 @@ pub struct PendingBgm {
     /// the PCM to start on and, for a prefix, its first source frame
     pcm: Option<(Arc<Pcm>, Option<usize>)>,
     #[cfg(target_os = "vita")]
-    path: PathBuf,
+    priming: PreparedBgm,
     #[cfg(target_os = "vita")]
-    loop_range: Option<(u64, u64)>,
+    fade_out: f64,
+    #[cfg(target_os = "vita")]
+    requested: std::time::Instant,
+}
+
+#[cfg(target_os = "vita")]
+struct WarmBgm {
+    id: i32,
+    start: usize,
+    path: PathBuf,
+    loop_range: Option<(usize, usize)>,
+    priming: PreparedBgm,
+    save_focus: bool,
+}
+
+#[cfg(target_os = "vita")]
+impl WarmBgm {
+    fn matches(&self, id: i32, start: usize, path: &std::path::Path, loop_range: Option<(usize, usize)>) -> bool {
+        self.id == id && self.start == start && self.path == path && self.loop_range == loop_range
+    }
 }
 
 enum VoiceSource {
@@ -196,6 +219,8 @@ pub struct Sound {
     tx: mpsc::Sender<BgmLoaded>,
     rx: mpsc::Receiver<BgmLoaded>,
     pending: Option<PendingBgm>,
+    #[cfg(target_os = "vita")]
+    warm_bgm: Option<WarmBgm>,
     generation: u64,
 }
 
@@ -228,6 +253,8 @@ impl Sound {
             tx,
             rx,
             pending: None,
+            #[cfg(target_os = "vita")]
+            warm_bgm: None,
             generation: 0,
         }
     }
@@ -244,30 +271,24 @@ impl Sound {
         path: PathBuf,
         loop_range: Option<(usize, usize)>,
     ) {
-        if let Some(b) = &self.bgm
-            && b.id == id
-            && b.voice.as_ref().is_some_and(|v| !v.finished())
-        {
-            self.set_bgm_volume(volume, fade_in);
-            return;
-        }
-        if self.pending.as_ref().is_some_and(|p| p.id == id) {
-            self.set_bgm_volume(volume, fade_in);
-            return;
-        }
-        self.stop_bgm(0.0);
-        self.generation += 1;
         #[cfg(target_os = "vita")]
-        {
-            self.pending = Some(PendingBgm {
-                id, generation: self.generation, volume, fade_in, start,
-                at: (self.clock, self.flushes), pcm: None, path,
-                loop_range: loop_range.map(|(a, b)| (a as u64, b as u64)),
-            });
-            return;
-        }
+        self.replace_bgm(id, volume, fade_in, 0.0, start, path, loop_range);
+
         #[cfg(not(target_os = "vita"))]
         {
+            if let Some(b) = &self.bgm
+                && b.id == id
+                && b.voice.as_ref().is_some_and(|v| !v.finished())
+            {
+                self.set_bgm_volume(volume, fade_in);
+                return;
+            }
+            if self.pending.as_ref().is_some_and(|p| p.id == id) {
+                self.set_bgm_volume(volume, fade_in);
+                return;
+            }
+            self.stop_bgm(0.0);
+            self.generation += 1;
             let cached = self.bgm_cache.get(&id).cloned();
             let generation = self.generation;
             if cached.is_none() {
@@ -296,12 +317,99 @@ impl Sound {
         }
     }
 
+    #[cfg(target_os = "vita")]
+    pub fn prepare_bgm(&mut self, id: i32, path: PathBuf, start: usize, loop_range: Option<(usize, usize)>) {
+        if self.bgm_id() == id { return; }
+        if let Some(warm) = self.warm_bgm.as_mut().filter(|p| p.matches(id, start, &path, loop_range)) {
+            if !warm.save_focus || warm.priming.ready().is_ok() {
+                warm.save_focus = false;
+                return;
+            }
+        }
+        self.warm_bgm = None;
+        let range = loop_range.map(|(a, b)| (a as u64, b as u64));
+        if let Ok(priming) = Audio::prepare_bgm(path.clone(), start, range) {
+            self.warm_bgm = Some(WarmBgm { id, path, start, loop_range, priming, save_focus: false });
+        }
+    }
+
+    /// False asks the focused slot to retry when the current audio/open is ready.
+    #[cfg(target_os = "vita")]
+    pub fn prepare_focus_bgm(&mut self, id: i32, path: PathBuf, loop_range: Option<(usize, usize)>) -> bool {
+        if self.bgm_id() == id || self.warm_bgm.as_ref().is_some_and(|p| p.matches(id, 0, &path, loop_range)) {
+            return true;
+        }
+        if self.bgm_io_urgent() { return false; }
+        let range = loop_range.map(|(a, b)| (a as u64, b as u64));
+        match Audio::prepare_focus_bgm(path.clone(), range) {
+            Ok(Some(priming)) => {
+                self.warm_bgm = Some(WarmBgm { id, path, start: 0, loop_range, priming, save_focus: true });
+                if knife_perf::enabled() {
+                    let _ = knife_platform_vita::audit::console(&format!(
+                        "{{\"kind\":\"bgm_focus_warm\",\"id\":{id}}}\n"));
+                }
+                true
+            }
+            Ok(None) => false,
+            Err(error) => {
+                tracing::warn!("BGM {id} focus preparation: {error}");
+                true // confirmed playback can still retry independently
+            }
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn clear_focus_bgm(&mut self) {
+        self.warm_bgm.take_if(|warm| warm.save_focus);
+    }
+
+    /// Prepare the incoming stream now and submit both voices at the same mix
+    /// boundary when the incoming PCM and the script's original delay are due.
+    #[cfg(target_os = "vita")]
+    pub fn replace_bgm(&mut self, id: i32, volume: f32, fade_in: f64, fade_out: f64, start: usize,
+        path: PathBuf, loop_range: Option<(usize, usize)>)
+    {
+        if let Some(p) = self.pending.as_mut().filter(|p| p.id == id) {
+            p.volume = volume;
+            return;
+        }
+        self.pending = None;
+        if self.bgm.as_ref().is_some_and(|b| b.id == id && b.voice.as_ref().is_some_and(|v| !v.finished())) {
+            self.set_bgm_volume(volume, fade_in);
+            return;
+        }
+        let priming = match self.warm_bgm.take().filter(|p| p.matches(id, start, &path, loop_range)) {
+            Some(warm) => Ok(warm.priming),
+            None => Audio::prepare_bgm(path, start, loop_range.map(|(a, b)| (a as u64, b as u64))),
+        };
+        match priming {
+            Ok(mut priming) => {
+                priming.request_start();
+                self.pending = Some(PendingBgm {
+                    id, generation: self.generation, volume, fade_in, start, at: (self.clock, self.flushes),
+                    pcm: None, priming, fade_out, requested: std::time::Instant::now(),
+                });
+            }
+            Err(error) => tracing::warn!("BGM {id} preparation: {error}"),
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn bgm_io_urgent(&self) -> bool {
+        self.pending.is_some() || self.bgm.as_ref().is_some_and(|b| b.buffered.needs_io())
+    }
+
     fn start_bgm(&mut self, p: PendingBgm) {
         #[cfg(target_os = "vita")]
         {
             let vol = p.volume * self.vol.bgm_level();
-            match self.audio.queue_stream(p.path, vol, p.fade_in, true, p.start as u64, p.loop_range, Curve::Bgm) {
-                Ok(voice) => self.bgm = Some(Bgm { id: p.id, voice: Some(voice), volume: p.volume, partial: None }),
+            let outgoing = self.bgm.as_ref().and_then(|b| Some((b.voice.as_ref()?, p.fade_out)));
+            let replaced = outgoing.is_some();
+            match self.audio.queue_primed_bgm(p.priming, vol, p.fade_in, outgoing) {
+                Ok((voice, buffered, lead_frames)) => {
+                    Audio::log_bgm_handoff(p.id, replaced, p.requested.elapsed().as_micros(), lead_frames);
+                    self.bgm = Some(Bgm { id: p.id, voice: Some(voice), volume: p.volume, partial: None, buffered });
+                }
                 Err(error) => tracing::warn!("bgm {}: {error}", p.id),
             }
             return;
@@ -374,12 +482,24 @@ impl Sound {
         // a stream command's frame has been flushed (a load from the UI can run before or after the game's
         // update) and a frame's time has passed
         let due = |(at, flush): (f64, u64)| clock - at >= STREAM_START_MS && flushes > flush;
-        if self.pending.as_ref().is_some_and(|p| {
-            #[cfg(target_os = "vita")] { due(p.at) }
-            #[cfg(not(target_os = "vita"))] { p.pcm.is_some() && due(p.at) }
-        }) {
+        #[cfg(not(target_os = "vita"))]
+        if self.pending.as_ref().is_some_and(|p| p.pcm.is_some() && due(p.at)) {
             let p = self.pending.take().unwrap();
             self.start_bgm(p);
+        }
+        #[cfg(target_os = "vita")]
+        if let Some(p) = self.pending.as_mut().filter(|p| due(p.at)) {
+            match p.priming.ready() {
+                Ok(true) => {
+                    let ready = self.pending.take().unwrap();
+                    self.start_bgm(ready);
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!("BGM {} preparation: {error}", p.id);
+                    self.pending = None;
+                }
+            }
         }
         #[cfg(target_os = "vita")]
         if self.bgm.as_ref().is_some_and(|b| b.voice.as_ref().is_some_and(Voice::finished)) {
@@ -639,6 +759,10 @@ impl Sound {
     }
 
     pub fn bgm_state(&self) -> Option<(i32, f32)> {
+        #[cfg(target_os = "vita")]
+        if let Some(p) = &self.pending {
+            return Some((p.id, p.volume));
+        }
         self.bgm
             .as_ref()
             .map(|b| (b.id, b.volume))

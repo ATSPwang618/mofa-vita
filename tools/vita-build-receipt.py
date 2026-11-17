@@ -111,6 +111,25 @@ optimization_features = [(name, optimization_values[symbol]) for name, symbol in
                          re.findall(r'\("([a-z0-9-]+)",\s*([A-Z][A-Z0-9_]+)\)', features_source)]
 feature_values = dict(optimization_features)
 default_profile = os.environ.get("KNIFE_VITA_OPTIMIZATIONS", hardware_test_profile)
+r6_shipped_profile = re.search(r'const R6_SHIPPED_PROFILE: &str = "([^"]+)";', optimization_source).group(1)
+r7_suffix = re.search(r'const R7_PROFILE_SUFFIX: &str = "([^"]+)";', optimization_source).group(1)
+r8_suffix = re.search(r'const R8_PROFILE_SUFFIX: &str = "([^"]+)";', optimization_source).group(1)
+r9_suffix = re.search(r'const R9_PROFILE_SUFFIX: &str = "([^"]+)";', optimization_source).group(1)
+r10_suffix = re.search(r'const R10_PROFILE_SUFFIX: &str = "([^"]+)";', optimization_source).group(1)
+r7_shipped_profile = r6_shipped_profile + r7_suffix
+r8_shipped_profile = r7_shipped_profile + r8_suffix
+r9_shipped_profile = r8_shipped_profile + r9_suffix
+legacy_profiles = []
+if default_profile.strip() == hardware_test_profile:
+    legacy_profiles = ["all", "all ps-all-operations", "all ps-full-material"]
+elif default_profile.strip() == r7_shipped_profile:
+    legacy_profiles = [r6_shipped_profile]
+elif default_profile.strip() == r8_shipped_profile:
+    legacy_profiles = [r6_shipped_profile, r7_shipped_profile]
+elif default_profile.strip() == r9_shipped_profile:
+    legacy_profiles = [r6_shipped_profile, r7_shipped_profile, r8_shipped_profile]
+elif default_profile.strip() == r9_shipped_profile + r10_suffix:
+    legacy_profiles = [r6_shipped_profile, r7_shipped_profile, r8_shipped_profile, r9_shipped_profile]
 default_mask = 0
 for token in filter(None, re.split(r"[\s,]+", default_profile)):
     if token == "baseline":
@@ -189,9 +208,9 @@ receipt = {"built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                    "scope": "all plus ps-all-operations, group-bounds, half-color, tiled-targets, blur-weights and rt-scenes-2; hardware acceptance pending"},
                "candidate_all_operations": "bit38 selects64..87 from PC-precompiled authored GXP, plain-first with per-entry native fallback; hardware acceptance pending",
                "candidate_full_material": "explicit bit37 enables full-source OP1/6/13 entries54/55/56, with native capability fallback; excluded from hardware-test as superseded",
-               "file": "optimization-profile.txt in external data root; complete override except exact legacy stock values under compiled hardware-test",
-               "legacy_stock_migration": {"enabled": default_profile.strip() == hardware_test_profile,
-                   "exact_profiles": ["all", "all ps-all-operations", "all ps-full-material"],
+               "file": "optimization-profile.txt in external data root; complete override except explicitly recognized stock upgrade values",
+               "legacy_stock_migration": {"enabled": bool(legacy_profiles),
+                   "exact_profiles": legacy_profiles,
                    "trim_outer_whitespace": True, "file_rewritten": False,
                    "custom_profiles_preserved": True, "effective_selection_logged": True},
                "mask_type": "u64", "bits": optimization_bits,

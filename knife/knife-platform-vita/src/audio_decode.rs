@@ -5,9 +5,16 @@ pub const SAMPLE_RATE: u32 = 48_000;
 pub const CHUNK_FRAMES: usize = 960;
 pub const MAX_ENCODED_BYTES: usize = 1024 * 1024 * 1024;
 
+#[cfg(target_os = "vita")]
+use crate::audio_banks::AudioRange;
+
 unsafe extern "C" {
     fn kv_audio_open_file(path: *const c_char, out: *mut *mut c_void) -> i32;
     fn kv_audio_open_memory(bytes: *const u8, length: u32, out: *mut *mut c_void) -> i32;
+    #[cfg(target_os = "vita")]
+    fn kv_audio_open_range(context: *mut c_void,
+        read_at: unsafe extern "C" fn(*mut c_void, u32, *mut u8, u32) -> i32,
+        length: u32, out: *mut *mut c_void) -> i32;
     fn kv_audio_read(handle: *mut c_void, samples: *mut f32, frames: u32, read: *mut u32) -> i32;
     fn kv_audio_seek(handle: *mut c_void, frame: u64) -> i32;
     fn kv_audio_tell(handle: *const c_void) -> u64;
@@ -46,6 +53,8 @@ fn status(code: i32) -> Result<(), AudioDecodeError> {
 /// A decoder remains on its creating thread.
 pub struct AudioStream<'a> {
     handle: NonNull<c_void>,
+    #[cfg(target_os = "vita")]
+    _range: Option<Box<AudioRange>>,
     _encoded: PhantomData<&'a [u8]>,
     _thread: PhantomData<Rc<()>>,
 }
@@ -57,8 +66,34 @@ impl AudioStream<'static> {
         let result = unsafe { kv_audio_open_file(path.as_ptr(), &mut raw) };
         status(result)?;
         let handle = NonNull::new(raw).ok_or(AudioDecodeError::InvalidOutput)?;
-        Ok(Self { handle, _encoded: PhantomData, _thread: PhantomData })
+        Ok(Self { handle,
+            #[cfg(target_os = "vita")]
+            _range: None,
+            _encoded: PhantomData, _thread: PhantomData })
     }
+
+    #[cfg(target_os = "vita")]
+    pub fn open_range(range: AudioRange) -> Result<Self, AudioDecodeError> {
+        let mut range = Box::new(range);
+        let mut raw = std::ptr::null_mut();
+        let len = range.len();
+        // SAFETY: the boxed callback context has a stable address and remains
+        // owned here until after the C decoder is closed.
+        let result = unsafe { kv_audio_open_range(
+            (&mut *range as *mut AudioRange).cast(), read_range, len, &mut raw) };
+        status(result)?;
+        let handle = NonNull::new(raw).ok_or(AudioDecodeError::InvalidOutput)?;
+        Ok(Self { handle, _range: Some(range), _encoded: PhantomData, _thread: PhantomData })
+    }
+}
+
+#[cfg(target_os = "vita")]
+unsafe extern "C" fn read_range(context: *mut c_void, offset: u32, dst: *mut u8, bytes: u32) -> i32 {
+    // SAFETY: kv_audio_open_range retains the valid box pointer. The decoder
+    // supplies writable output with a positive size bounded by its i32 request.
+    let range = unsafe { &*context.cast::<AudioRange>() };
+    let out = unsafe { std::slice::from_raw_parts_mut(dst, bytes as usize) };
+    range.read_at(offset, out).map_or(-1, |count| count as i32)
 }
 impl<'a> AudioStream<'a> {
     pub fn open_memory(encoded: &'a [u8]) -> Result<Self, AudioDecodeError> {
@@ -70,7 +105,10 @@ impl<'a> AudioStream<'a> {
         let result = unsafe { kv_audio_open_memory(encoded.as_ptr(), length, &mut raw) };
         status(result)?;
         let handle = NonNull::new(raw).ok_or(AudioDecodeError::InvalidOutput)?;
-        Ok(Self { handle, _encoded: PhantomData, _thread: PhantomData })
+        Ok(Self { handle,
+            #[cfg(target_os = "vita")]
+            _range: None,
+            _encoded: PhantomData, _thread: PhantomData })
     }
     pub fn channels(&self) -> u32 {
         // SAFETY: handle remains valid until Drop.

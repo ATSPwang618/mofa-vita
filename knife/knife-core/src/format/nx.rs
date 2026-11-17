@@ -83,26 +83,38 @@ pub fn decompress_bounded(data: &[u8], max_unpacked_bytes: usize) -> Result<Vec<
     let body = data
         .get(HEADER_LEN..stored)
         .context("truncated NX compressed payload")?;
+    if header.kind == NxKind::Zlib {
+        return read_zlib_exact(body, unpacked);
+    }
     // Cursor implements BufRead without speculative input reads. Limiting each
     // output read catches false declarations without allocating a bomb's output.
-    let input = std::io::Cursor::new(body);
-    let (out, consumed) = match header.kind {
-        NxKind::Gzip => {
-            let mut decoder = flate2::bufread::GzDecoder::new(input);
-            let out = read_bounded(&mut decoder, unpacked)?;
-            (out, decoder.get_ref().position())
-        }
-        NxKind::Zlib => {
-            let mut decoder = flate2::bufread::ZlibDecoder::new(input);
-            let out = read_bounded(&mut decoder, unpacked)?;
-            (out, decoder.get_ref().position())
-        }
-    };
+    let mut decoder = flate2::bufread::GzDecoder::new(std::io::Cursor::new(body));
+    let out = read_bounded(&mut decoder, unpacked)?;
+    let consumed = decoder.get_ref().position();
     ensure!(
         consumed == body.len() as u64,
         "NX compressed length mismatch: declared {}, consumed {consumed}",
         body.len()
     );
+    Ok(out)
+}
+
+fn read_zlib_exact(body: &[u8], unpacked: usize) -> Result<Vec<u8>> {
+    let capacity = unpacked.checked_add(1).context("NX output length exceeds address space")?;
+    let mut out = Vec::new();
+    out.try_reserve_exact(capacity).context("allocating bounded NX output")?;
+    // With the whole input available, Finish validates the zlib trailer and
+    // decodes directly into the final buffer. The extra byte detects expansion
+    // beyond the declared length, including streams with zero output.
+    let mut decoder = flate2::Decompress::new(true);
+    let status = decoder.decompress_vec(body, &mut out, flate2::FlushDecompress::Finish)
+        .context("decompressing NX payload")?;
+    ensure!(out.len() <= unpacked, "NX expansion exceeds declared length {unpacked}");
+    ensure!(status == flate2::Status::StreamEnd, "incomplete NX zlib stream");
+    ensure!(out.len() == unpacked,
+        "NX unpacked length mismatch: declared {unpacked}, decoded {}", out.len());
+    ensure!(decoder.total_in() == body.len() as u64,
+        "NX compressed length mismatch: declared {}, consumed {}", body.len(), decoder.total_in());
     Ok(out)
 }
 

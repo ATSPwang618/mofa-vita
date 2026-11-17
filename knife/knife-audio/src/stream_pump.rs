@@ -64,7 +64,7 @@ impl Drop for Permit {
 }
 struct Block { pcm: Box<[[f32; 2]]>, frames: usize, mono: bool }
 enum Packet { Data(Block), End, Failed(String) }
-struct Channel { _permit: Permit, bytes: AtomicUsize }
+struct Channel { _permit: Permit, bytes: AtomicUsize, ready_frames: Arc<AtomicUsize> }
 impl Drop for Channel {
     fn drop(&mut self) {
         knife_perf::gauge_sub(Gauge::AudioStreamBufferBytes, self.bytes.load(Ordering::Relaxed) as u64);
@@ -80,11 +80,26 @@ pub(super) struct Pump {
 impl Pump {
     pub(super) fn spawn_named<F, R>(name: &str, buffering: Buffering, open: F) -> Result<Self, String>
     where F: FnOnce() -> Result<R, String> + Send + 'static, R: Reader + 'static {
-        let channel = Arc::new(Channel { _permit: Permit::acquire()?, bytes: AtomicUsize::new(0) });
+        Self::spawn(name, buffering, true, open)
+    }
+
+    #[cfg(target_os = "vita")]
+    pub(super) fn prepare_bgm<F, R>(name: &str, open: F) -> Result<Self, String>
+    where F: FnOnce() -> Result<R, String> + Send + 'static, R: Reader + 'static {
+        Self::spawn(name, Buffering::Bgm, false, open)
+    }
+
+    fn spawn<F, R>(name: &str, buffering: Buffering, start_requested: bool, open: F) -> Result<Self, String>
+    where F: FnOnce() -> Result<R, String> + Send + 'static, R: Reader + 'static {
+        let channel = Arc::new(Channel {
+            _permit: Permit::acquire()?,
+            bytes: AtomicUsize::new(0),
+            ready_frames: Arc::new(AtomicUsize::new(0)),
+        });
         let worker_channel = channel.clone();
         let label = stream_label(name);
         let worker_label = label.clone();
-        let wait = Some(WaitEpisode::new(Metric::AudioStreamStartWall));
+        let wait = start_requested.then(|| WaitEpisode::new(Metric::AudioStreamStartWall));
         let (sender, ready) = mpsc::sync_channel(buffering.queued());
         let (recycle, free) = mpsc::sync_channel(buffering.blocks());
         tracing::info!(stream = %label, queued_blocks = buffering.queued(),
@@ -154,7 +169,11 @@ impl Pump {
                             if decode.elapsed_us() >= 20_000 {
                                 decode.finish_hot(&worker_label, (n * 8) as u64, 1);
                             } else { decode.finish((n * 8) as u64, 1); }
-                            if sender.send(Packet::Data(block)).is_err() { break; }
+                            owner.ready_frames.fetch_add(n, Ordering::Release);
+                            if sender.send(Packet::Data(block)).is_err() {
+                                owner.ready_frames.fetch_sub(n, Ordering::Relaxed);
+                                break;
+                            }
                         }
                         result => {
                             knife_perf::add(Metric::AudioStreamFailed, 0, 2);
@@ -170,6 +189,41 @@ impl Pump {
     }
     fn finish_wait(&mut self) {
         if let Some(wait) = self.wait.take() { wait.finish(&self.label); }
+    }
+    #[cfg(target_os = "vita")]
+    pub(super) fn ready_frames(&self) -> Arc<AtomicUsize> {
+        self._channel.ready_frames.clone()
+    }
+
+    #[cfg(target_os = "vita")]
+    pub(super) fn request_start(&mut self) {
+        self.wait = Some(WaitEpisode::new(Metric::AudioStreamStartWall));
+    }
+
+    /// The already audible lead belongs to this same song. Only report a
+    /// late continuation as starvation, independently of startup.
+    pub(super) fn mark_continuation(&mut self) {
+        self.started = true;
+    }
+
+    /// The producer can count the block it is publishing. It can only make
+    /// one such reservation, so require an extra block before handing off.
+    pub(super) fn primed(&mut self, frames: usize) -> Result<bool, String> {
+        if self._channel.ready_frames.load(Ordering::Acquire) >= frames + FRAMES {
+            return Ok(true);
+        }
+        if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+            let error = match self.ready.try_recv() {
+                Ok(Packet::Failed(error)) => error,
+                Ok(Packet::Data(block)) => {
+                    self._channel.ready_frames.fetch_sub(block.frames, Ordering::Relaxed);
+                    "BGM decoder exited before priming enough PCM".into()
+                }
+                _ => "BGM decoder exited without PCM".into(),
+            };
+            return Err(error);
+        }
+        Ok(false)
     }
     /// Called once for an incomplete mixer block, not once per missing sample.
     /// A submitted device block can contain silence for just this one stream.
@@ -190,6 +244,7 @@ impl Pump {
             if let Some(block) = self.current.take() { let _ = self.recycle.try_send(block); }
             match self.ready.try_recv() {
                 Ok(Packet::Data(block)) => {
+                    self._channel.ready_frames.fetch_sub(block.frames, Ordering::Relaxed);
                     self.current = Some(block); self.cursor = 0;
                     self.finish_wait();
                     if !self.started { knife_perf::add(Metric::AudioStreamReady, 0, 1); }
@@ -234,10 +289,12 @@ impl Drop for Pump {
 }
 
 #[cfg(test)]
+pub(super) static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Instant;
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
     struct Sequence { at: usize, end: usize }
     impl Reader for Sequence {
         fn mono(&self) -> bool { false }
@@ -254,7 +311,7 @@ mod tests {
     }
     #[test]
     fn bgm_prefill_survives_700ms_of_pcm_demand_while_its_reader_is_blocked() {
-        let _lock = SERIAL.lock().unwrap(); drain_workers();
+        let _lock = TEST_SERIAL.lock().unwrap(); drain_workers();
         struct Gated {
             at: usize, gate_at: usize, entered: mpsc::Sender<()>, resume: Receiver<()>,
         }
@@ -319,7 +376,7 @@ mod tests {
     }
     #[test]
     fn blocked_open_does_not_block_poll_or_another_channel_and_late_cancel_is_safe() {
-        let _lock = SERIAL.lock().unwrap(); drain_workers();
+        let _lock = TEST_SERIAL.lock().unwrap(); drain_workers();
         let (tx, rx) = mpsc::channel();
         let mut blocked = Pump::spawn_named("test-stream", Buffering::Default, move || { rx.recv().unwrap(); Ok(Sequence { at: 0, end: 1 }) }).unwrap();
         for _ in 0..1000 { assert!(matches!(blocked.sample(), Poll::Pending)); }
@@ -333,7 +390,7 @@ mod tests {
     }
     #[test]
     fn recycled_pool_preserves_pcm_across_queue_backpressure_and_partial_eof() {
-        let _lock = SERIAL.lock().unwrap(); drain_workers();
+        let _lock = TEST_SERIAL.lock().unwrap(); drain_workers();
         for buffering in [Buffering::Default, Buffering::Bgm] {
             let total = FRAMES * (buffering.blocks() + 5) + 37;
             let mut pump = Pump::spawn_named("test-stream", buffering, move || Ok(Sequence { at: 0, end: total })).unwrap();
@@ -349,7 +406,7 @@ mod tests {
     }
     #[test]
     fn failed_open_is_terminal_and_channels_are_bounded() {
-        let _lock = SERIAL.lock().unwrap(); drain_workers();
+        let _lock = TEST_SERIAL.lock().unwrap(); drain_workers();
         let mut pump = Pump::spawn_named("test-stream", Buffering::Default, || -> Result<Sequence, String> { Err("broken ogg".into()) }).unwrap();
         let until = Instant::now() + Duration::from_secs(2);
         loop { match pump.sample() { Poll::Failed(e) => { assert_eq!(e, "broken ogg"); break; },
@@ -362,7 +419,7 @@ mod tests {
     }
     #[test]
     fn queued_pcm_keeps_channel_permit_after_decoder_eof_and_decoder_is_thread_local() {
-        let _lock = SERIAL.lock().unwrap(); drain_workers();
+        let _lock = TEST_SERIAL.lock().unwrap(); drain_workers();
         struct Local { at: std::rc::Rc<std::cell::Cell<usize>>, thread: thread::ThreadId }
         impl Reader for Local {
             fn mono(&self) -> bool { true }

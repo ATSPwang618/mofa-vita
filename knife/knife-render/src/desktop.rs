@@ -18,6 +18,21 @@ const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 /// sub_A3180's altered textures (see `Renderer::upload_altered`)
 const ALTERED_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
+/// Offline Vita material capture uses the encoded UNORM8 blending contract.
+pub fn vita_capture_colors() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("KNIFE_VITA_CAPTURE_COLORS").is_some())
+    }
+    #[cfg(not(debug_assertions))]
+    false
+}
+
+fn target_format() -> wgpu::TextureFormat {
+    if vita_capture_colors() { wgpu::TextureFormat::Rgba8Unorm } else { TARGET_FORMAT }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum PipeKey {
     Sprite(Shade, Blend),
@@ -504,7 +519,7 @@ impl Renderer {
 
     /// Upload RGBA8 pixels already baked the way pre_alter would (sRGB-encoded, see `upload_altered`).
     pub fn upload_baked(&self, width: u32, height: u32, data: &[u8], label: &str) -> TexRef {
-        upload_texture(&self.device, &self.queue, &self.sprite_layout, &self.sampler, width, height, Upload::Rgba8(data), true, label)
+        upload_texture(&self.device, &self.queue, &self.sprite_layout, &self.sampler, width, height, Upload::Rgba8(data), !vita_capture_colors(), label)
     }
 
     /// Upload an image the way sub_A3180 builds every sprite texture: the source (sampled through an sRGB view
@@ -513,6 +528,9 @@ impl Renderer {
     /// 0 (sub_CD5F8 -> 2822, R8G8B8A8 sRGB); draws sample that copy. The output curve then shows an opaque
     /// texel at its file value.
     pub fn upload_altered(&self, width: u32, height: u32, data: Upload, srgb: bool, label: &str) -> TexRef {
+        if vita_capture_colors() {
+            return self.upload(width, height, data, label);
+        }
         let src = upload_texture(&self.device, &self.queue, &self.sprite_layout, &self.sampler, width, height, data, srgb, label);
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
@@ -656,7 +674,7 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: TARGET_FORMAT,
+            format: target_format(),
             usage: wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
@@ -772,9 +790,9 @@ impl Renderer {
         // make sure all pipelines exist before borrowing them in the pass
         for q in quads {
             match (q.blend, &q.rule) {
-                (Blend::Ps(_), _) => self.pipeline(PipeKey::Ps, TARGET_FORMAT),
-                (_, Some(_)) => self.pipeline(PipeKey::Rule(q.blend), TARGET_FORMAT),
-                (_, None) => self.pipeline(PipeKey::Sprite(q.shade, q.blend), TARGET_FORMAT),
+                (Blend::Ps(_), _) => self.pipeline(PipeKey::Ps, target_format()),
+                (_, Some(_)) => self.pipeline(PipeKey::Rule(q.blend), target_format()),
+                (_, None) => self.pipeline(PipeKey::Sprite(q.shade, q.blend), target_format()),
             };
         }
         let has_ps = quads.iter().any(|q| matches!(q.blend, Blend::Ps(_)));
@@ -839,7 +857,7 @@ impl Renderer {
             {
                 let mut pass = begin_pass(encoder, target, None);
                 pass.set_vertex_buffer(0, vbuf.slice(..));
-                pass.set_pipeline(&self.pipelines[&(PipeKey::Ps, TARGET_FORMAT)]);
+                pass.set_pipeline(&self.pipelines[&(PipeKey::Ps, target_format())]);
                 pass.set_bind_group(0, bg, &[]);
                 pass.set_bind_group(1, &self.lut_group, &[]);
                 pass.draw(a..b, 0..1);
@@ -861,7 +879,7 @@ impl Renderer {
         while i < end {
             let q = &quads[i];
             if let Some(bg) = &groups[i] {
-                pass.set_pipeline(&self.pipelines[&(PipeKey::Rule(q.blend), TARGET_FORMAT)]);
+                pass.set_pipeline(&self.pipelines[&(PipeKey::Rule(q.blend), target_format())]);
                 pass.set_bind_group(0, bg, &[]);
                 pass.set_bind_group(1, &self.lut_group, &[]);
                 let (a, b) = ranges[i];
@@ -880,7 +898,7 @@ impl Renderer {
             {
                 j += 1;
             }
-            let p = &self.pipelines[&(PipeKey::Sprite(q.shade, q.blend), TARGET_FORMAT)];
+            let p = &self.pipelines[&(PipeKey::Sprite(q.shade, q.blend), target_format())];
             pass.set_pipeline(p);
             pass.set_bind_group(0, &q.tex.bind_group, &[]);
             pass.set_bind_group(1, &self.lut_group, &[]);
@@ -905,7 +923,7 @@ impl Renderer {
         soft: f32,
     ) {
         let encoder = &mut encoder.inner;
-        self.pipeline(PipeKey::Transition, TARGET_FORMAT);
+        self.pipeline(PipeKey::Transition, target_format());
         let params: [f32; 4] = [progress, rule_flags(0, false, soft), rule.is_some() as u32 as f32, 0.0];
         let rule_view = rule.map(|r| &r.view).unwrap_or(&self.white.view);
         let bg = self.trans_bind_group(&old.view, &new.view, rule_view, params);
@@ -915,7 +933,7 @@ impl Renderer {
             contents: bytemuck::cast_slice(&verts),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let p = &self.pipelines[&(PipeKey::Transition, TARGET_FORMAT)];
+        let p = &self.pipelines[&(PipeKey::Transition, target_format())];
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("transition"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -997,7 +1015,7 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     pub fn blur(&mut self, encoder: &mut CommandEncoder, src: &GpuTexture, dst: &RenderTarget, dir: [f32; 2], sigma: f32, mode: BlurMode) {
         let encoder = &mut encoder.inner;
-        self.pipeline(PipeKey::Blur, TARGET_FORMAT);
+        self.pipeline(PipeKey::Blur, target_format());
         let half = (sigma * 3.0).ceil();
         let [pw, ph] = src.physical_size();
         let params = [dir[0] * pw as f32 / src.width as f32, dir[1] * ph as f32 / src.height as f32, sigma, half, mode as u32 as f32, 0.0, 0.0, 0.0];
@@ -1008,7 +1026,7 @@ impl Renderer {
             contents: bytemuck::cast_slice(&verts),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let p = &self.pipelines[&(PipeKey::Blur, TARGET_FORMAT)];
+        let p = &self.pipelines[&(PipeKey::Blur, target_format())];
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blur"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {

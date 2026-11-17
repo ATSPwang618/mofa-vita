@@ -25,6 +25,8 @@ use memmap2::Mmap;
 mod archive_cache;
 
 pub const SECTOR: u64 = 0x800;
+/// Numbered files keep every physical seek inside the Vita newlib off_t limit.
+const VOLUME_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ArchiveLimits {
@@ -58,9 +60,30 @@ enum Storage {
     #[cfg(not(target_os = "vita"))]
     Mapped(Mmap),
     File(Mutex<File>),
+    Volumes(Vec<Mutex<File>>),
 }
 
 impl Storage {
+    fn read_at(file: &Mutex<File>, start: u64, dst: &mut [u8]) -> Result<()> {
+        let lock_wait = Scope::new(Metric::ArchiveLock);
+        let mut file = file.lock().map_err(|_| anyhow::anyhow!("archive file lock poisoned"))?;
+        lock_wait.finish(0, 0);
+        let started = std::time::Instant::now();
+        file.seek(SeekFrom::Start(start)).context("seeking archive entry")?;
+        file.read_exact(dst).context("short archive read")?;
+        crate::io_metrics::record_card_read(started.elapsed().as_micros() as u64, dst.len() as u64);
+        Ok(())
+    }
+
+    fn file_buffer(len: usize) -> Result<Vec<u8>> {
+        let allocate = Scope::new(Metric::ArchiveBufferZero);
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(len).context("allocating bounded archive entry")?;
+        bytes.resize(len, 0);
+        allocate.finish(len as u64, 0);
+        Ok(bytes)
+    }
+
     fn read_range(&self, start: u64, len: usize) -> Result<Cow<'_, [u8]>> {
         match self {
             #[cfg(not(target_os = "vita"))]
@@ -76,27 +99,25 @@ impl Storage {
                 ))
             }
             Self::File(file) => {
-                let allocate = Scope::new(Metric::ArchiveBufferZero);
-                let mut bytes = Vec::new();
-                bytes
-                    .try_reserve_exact(len)
-                    .context("allocating bounded archive entry")?;
-                bytes.resize(len, 0);
-                allocate.finish(len as u64, 0);
                 // The seek and complete read form one operation. File::try_clone
                 // would share its seek position on several supported platforms.
-                let lock_wait = Scope::new(Metric::ArchiveLock);
-                let mut file = file
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("archive file lock poisoned"))?;
-                lock_wait.finish(0, 0);
-                let started = std::time::Instant::now();
-                file.seek(SeekFrom::Start(start))
-                    .context("seeking archive entry")?;
-                file.read_exact(&mut bytes).context("short archive read")?;
-                // Card time excludes NX inflation and decode by construction.
-                crate::io_metrics::record_card_read(
-                    started.elapsed().as_micros() as u64, len as u64);
+                let mut bytes = Self::file_buffer(len)?;
+                Self::read_at(file, start, &mut bytes)?;
+                Ok(Cow::Owned(bytes))
+            }
+            Self::Volumes(volumes) => {
+                let mut bytes = Self::file_buffer(len)?;
+                let mut dst = bytes.as_mut_slice();
+                let mut position = start;
+                while !dst.is_empty() {
+                    let index = usize::try_from(position / VOLUME_BYTES).context("archive volume index overflow")?;
+                    let offset = position % VOLUME_BYTES;
+                    let take = dst.len().min((VOLUME_BYTES - offset) as usize);
+                    let file = volumes.get(index).context("archive volume is missing")?;
+                    Self::read_at(file, offset, &mut dst[..take])?;
+                    dst = &mut dst[take..];
+                    position += take as u64;
+                }
                 Ok(Cow::Owned(bytes))
             }
         }
@@ -159,19 +180,44 @@ impl Archive {
         let nam = std::fs::read(dir.join(format!("{base}.nam"))).ok();
         let file = File::open(dir.join(format!("{base}.mrg")))
             .with_context(|| format!("opening {base}.mrg"))?;
-        let mrg_len = file
+        let mut mrg_len = file
             .metadata()
             .with_context(|| format!("stat {base}.mrg"))?
             .len();
-        #[cfg(not(target_os = "vita"))]
-        let mrg = if _mapped {
-            // SAFETY: the game files are read-only inputs, never modified while mapped.
-            Storage::Mapped(unsafe { Mmap::map(&file)? })
-        } else {
-            Storage::File(Mutex::new(file))
+        let next_volume = |index| File::open(dir.join(format!("{base}.mrg.{index:03}")));
+        let mrg = match next_volume(1) {
+            Ok(second) => {
+                ensure!(mrg_len == VOLUME_BYTES, "nonfinal archive volume must fill its seek span");
+                let mut volumes = vec![Mutex::new(file)];
+                let mut current = second;
+                loop {
+                    let len = current.metadata()?.len();
+                    ensure!(len > 0 && len <= VOLUME_BYTES, "invalid archive volume length");
+                    mrg_len = mrg_len.checked_add(len).context("archive volume length overflow")?;
+                    volumes.push(Mutex::new(current));
+                    match next_volume(volumes.len()) {
+                        Ok(next) => {
+                            ensure!(len == VOLUME_BYTES && volumes.len() < 128,
+                                "nonfinal archive volume must fill its bounded seek span");
+                            current = next;
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                        Err(error) => return Err(error).context("opening archive volume"),
+                    }
+                }
+                Storage::Volumes(volumes)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                #[cfg(not(target_os = "vita"))]
+                if _mapped {
+                    // SAFETY: the game files are read-only inputs, never modified while mapped.
+                    Storage::Mapped(unsafe { Mmap::map(&file)? })
+                } else { Storage::File(Mutex::new(file)) }
+                #[cfg(target_os = "vita")]
+                Storage::File(Mutex::new(file))
+            }
+            Err(error) => return Err(error).context("opening archive volume"),
         };
-        #[cfg(target_os = "vita")]
-        let mrg = Storage::File(Mutex::new(file));
 
         let mut entries = Vec::new();
         for (i, e) in hed.as_chunks::<8>().0.iter().enumerate() {
@@ -488,7 +534,7 @@ mod range_tests {
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
-            for suffix in ["hed", "nam", "mrg"] { let _ = std::fs::remove_file(self.0.join(format!("ui.{suffix}"))); }
+            for suffix in ["hed", "nam", "mrg", "mrg.001"] { let _ = std::fs::remove_file(self.0.join(format!("ui.{suffix}"))); }
             let _ = std::fs::remove_dir(&self.0);
         }
     }

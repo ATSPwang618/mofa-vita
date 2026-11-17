@@ -21,6 +21,9 @@
  * entries with the same complete PS source contract as 29 (haze, soft, rule,
  * group mask, Fill and NoAlpha). Option bit37 gates their cache/compiler and
  * startup admission independently of capability bits54..56.
+ * IDs58/59 combine plain Normal and fixed Multiply with a shared UV mapping.
+ * Startup can select internal IDs60/61 (U8 sum) or 62/63 (U8 product rounds)
+ * for either input layout after a byte-exact differential (option bit44).
  * IDs64..87 specialize the same full source for PsOp1..24 through literal
  * KNIFE_PS_FULL_OP; option bit38 gates their cache/compiler/registration.
  * Their per-program readiness lives in capability bank1 bits0..23, without

@@ -85,7 +85,7 @@ pub(super) fn record(commands: &[Command], id: u64, mut active: Option<Rc<Native
     let enabled = knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_BOUNDS);
     for command in commands {
         match command {
-            Command::Begin { target, clear } => {
+            Command::Begin { target, clear, .. } => {
                 if !enabled { target.changed(); active = Some(target.clone()); continue; }
                 let bound = match clear {
                     Some(color) if color.iter().all(|v| *v == 0.0) => CoverageBound::Empty,

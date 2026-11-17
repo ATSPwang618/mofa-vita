@@ -58,10 +58,17 @@ struct PerfLog {
     before: crate::vita_audit::FrameProbe,
     classes: crate::vita_audit::FrameClasses,
     pending_class: Option<crate::vita_audit::SlowFrame>,
+    live_charge: Option<LiveChargeWindow>,
     class_started: Instant,
     worst: Option<crate::vita_audit::SlowFrame>,
     previous_console_us: u64,
     snapshot_us: u64,
+}
+
+struct LiveChargeWindow {
+    opening: bool,
+    start: Instant,
+    classes: crate::vita_audit::FrameClasses,
 }
 impl PerfLog {
     fn open() -> std::io::Result<Option<Self>> {
@@ -119,13 +126,15 @@ impl PerfLog {
         knife_perf::set_enabled(true);
         knife_platform_vita::audit::set_enabled(true);
         Ok(Some(Self { started: Instant::now(), window: Instant::now(), frames: Default::default(),
-            before: Default::default(), classes: Default::default(), pending_class: None,
+            before: Default::default(), classes: Default::default(), pending_class: None, live_charge: None,
             class_started: Instant::now(), worst: None, previous_console_us: 0, snapshot_us: 0 }))
     }
     fn begin_frame(&mut self) {
         let started = Instant::now();
         if let Some(previous) = self.pending_class.take() {
-            self.classes.record(previous, started.duration_since(self.class_started).as_micros() as u64);
+            let wall = started.duration_since(self.class_started).as_micros() as u64;
+            self.classes.record(previous, wall);
+            if let Some(window) = &mut self.live_charge { window.classes.record(previous, wall); }
         }
         self.class_started = started;
         self.before = crate::vita_audit::FrameProbe::capture();
@@ -149,6 +158,25 @@ impl PerfLog {
         self.snapshot_us += snapshot_started.elapsed().as_micros() as u64;
         let observed = crate::vita_audit::SlowFrame { frame, scene: game.scene_index,
             pc: game.current_pc(), work, update, render, probe };
+        if let Some(pc) = game.vita_charge_entry_sample() {
+            knife_platform_vita::audit::console(&format!(concat!(
+                "{{\"kind\":\"charge_entry_frame\",\"frame\":{},\"scene\":38,\"pc\":{},",
+                "\"work_us\":{},\"update_us\":{},\"render_us\":{},",
+                "\"atlas_wait_us\":{},\"atlas_wait_calls\":{},\"deferred_misses\":{},",
+                "\"draws\":{},\"scenes\":{},\"upload_bytes\":{},\"gpu_wait_us\":{}}}\n"),
+                frame, pc, work, update, render, probe.atlas_wait_us, probe.atlas_wait_calls, probe.misses, probe.executed_draws,
+                probe.scenes, probe.upload_bytes, probe.wait_us))?;
+        }
+        let opening = game.vita_live_charge_tick().map(|tick| tick < 48);
+        if opening != self.live_charge.as_ref().map(|window| window.opening) {
+            if let Some(mut old) = self.live_charge.take() {
+                let ms = self.class_started.duration_since(old.start).as_millis();
+                old.classes.emit_live_charge(frame, ms, old.opening)?;
+            }
+            self.live_charge = opening.map(|opening| LiveChargeWindow {
+                opening, start: self.class_started, classes: Default::default(),
+            });
+        }
         if self.worst.is_none_or(|w| work > w.work) { self.worst = Some(observed); }
         self.pending_class = Some(observed);
         if self.window.elapsed() < Duration::from_secs(5) { return Ok(true); }
@@ -197,8 +225,8 @@ impl PerfLog {
             "\"deferred_items\":{},\"deferred_item_us\":{},\"deferred_upload_us\":{},",
             "\"deferred_bake_us\":{},\"exec_us\":{},\"present_submit_us\":{},",
             "\"submitted_frames\":{},\"quads\":{},\"quads_small\":{},\"quads_mid\":{},",
-            "\"quads_large\":{},\"stage_repeats\":\"{}\",\"layer_changes\":\"{}\",",
-            "\"group_shapes\":\"{}\",\"pass_need\":\"{}\",\"pass_top\":\"{}\",",
+            "\"quads_large\":{},",
+            "\"pass_need\":\"{}\",\"pass_top\":\"{}\",",
             "\"jpeg_hw_candidates\":{},\"jpeg_hw_ok\":{},\"jpeg_fallback_profile\":{},",
             "\"jpeg_fallback_busy\":{},\"jpeg_fallback_budget\":{},\"jpeg_fallback_init\":{},",
             "\"jpeg_fallback_alloc\":{},\"jpeg_fallback_driver\":{},\"jpeg_fallback_contract\":{},",
@@ -232,8 +260,7 @@ impl PerfLog {
             gpu_timing.draw_cpu_us, gpu_timing.draw_gxm_us, gpu_timing.draw_calls,
             deferred_items, deferred_item_us, deferred_upload_us, deferred_bake_us,
             exec_us, present_us, submitted_frames, quads, small_quads, mid_quads, large_quads,
-            crate::game::Game::stage_repeat_summary(), crate::game::Game::layer_change_summary(),
-            crate::game::Game::group_shape_summary(), knife_render::pass_need_summary(), passes,
+            knife_render::pass_need_summary(), passes,
             codec.jpeg_hardware_candidates, codec.jpeg_hardware_ok, codec.jpeg_fallback_profile,
             codec.jpeg_fallback_busy, codec.jpeg_fallback_budget, codec.jpeg_fallback_init,
             codec.jpeg_fallback_alloc, codec.jpeg_fallback_driver, codec.jpeg_fallback_contract,
@@ -402,8 +429,18 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     }
     let assets_dir = PathBuf::from(ASSETS);
     let check_started = Instant::now();
-    match asset_check::check_assets(&assets_dir) {
-        Ok(report) => {
+    match asset_check::check_assets_with_audio(&assets_dir) {
+        Ok((report, banks)) => {
+            let counts = banks.as_ref().map_or([0, 0], |banks| banks.counts());
+            if let Some(banks) = banks {
+                knife_platform_vita::audio_banks::install(banks).context("mount audio banks")?;
+            }
+            if knife_perf::enabled() {
+                let layout = if counts == [0, 0] { "loose" } else { "mrg" };
+                let _ = knife_platform_vita::audit::console(&format!(
+                    "{{\"kind\":\"audio_bank_mount\",\"layout\":\"{layout}\",\"voice_members\":{},\"bgm_members\":{}}}\n",
+                    counts[0], counts[1]));
+            }
             log.event(&format!("ASSETS profile={} key-files={} read-bytes={} check-ms={:.3}",
                 "540p", report.files, report.read_bytes, check_started.elapsed().as_secs_f64() * 1000.));
             log.event("ASSETS verified Witch/EN+Chengkong");
@@ -463,17 +500,6 @@ fn run_game(log: &mut DevLog) -> Result<()> {
     let mut last = Instant::now();
     let mut last_logged_buttons = 0;
     let mut last_save_focus = None;
-    // Read once, never poll the storage card while playing. An explicit request
-    // captures one normal production Stage without advancing its clock in replay.
-    let mut gpu_replay = match std::fs::read_to_string(format!("{PERF_ROOT}/gpu-replay.txt")) {
-        Ok(text) => match text.trim().split_whitespace().collect::<Vec<_>>().as_slice() {
-            ["current"] => Some((None, 0usize)),
-            [scene, pc] => scene.parse::<usize>().ok().zip(pc.parse::<usize>().ok())
-                .map(|(scene, pc)| (Some(scene), pc)),
-            _ => None,
-        },
-        Err(_) => None,
-    };
     loop {
         watchdog::frame(frame + 1);
         watchdog::game(&game);
@@ -516,13 +542,6 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         let render_started = perf.as_ref().map(|_| Instant::now());
         watchdog::game(&game);
         watchdog::phase(watchdog::RENDER);
-        if gpu_replay.is_some_and(|(scene, pc)| scene.is_none_or(|s| game.scene_index == s)
-            && game.current_pc() >= pc && !ui.game_paused()) {
-            if let Err(error) = game.vita_gpu_replay_arm() {
-                let _ = knife_platform_vita::audit::console(&format!("{{\"kind\":\"gpu_replay_error\",\"error\":{}}}\n", quoted(&error.to_string())));
-            }
-            gpu_replay = None;
-        }
         game.render(&mut renderer, &mut |game, renderer, quads| {
             ui.draw(game, renderer, quads);
             input.draw_font_menu(game, renderer, quads);
@@ -530,39 +549,11 @@ fn run_game(log: &mut DevLog) -> Result<()> {
         });
         // Protect progress before next-frame input can leave/reset this fault.
         ui.protect_resource_checkpoint(&mut game);
-        let replay_capture = game.vita_gpu_replay_take_capture();
-        let replayed = replay_capture.is_some();
-        if let Some(capture) = replay_capture {
-            let report = capture.and_then(|frozen| crate::vita_gpu_replay::run(
-                &mut game, &mut renderer, frozen, |_, _| {
-                    watchdog::frame(frame + 1);
-                    watchdog::phase(watchdog::RENDER);
-                }));
-            match report {
-                Ok(report) => for line in report.json_lines() {
-                    let _ = knife_platform_vita::audit::console(&(line + "\n"));
-                },
-                Err(error) => {
-                    let _ = knife_platform_vita::audit::console(&format!("{{\"kind\":\"gpu_replay_error\",\"error\":{}}}\n", quoted(&format!("{error:#}"))));
-                },
-            }
-            // The diagnostic's wall time must not advance the story clock or be
-            // classified as a production redraw frame in the next window.
-            last = Instant::now();
-            if let Some(perf_log) = &mut perf {
-                perf_log.pending_class = None;
-                perf_log.window = Instant::now();
-                perf_log.frames = Default::default();
-                perf_log.classes = Default::default();
-                perf_log.worst = None;
-                perf_log.begin_frame();
-            }
-        }
         frame += 1;
         watchdog::phase(watchdog::CACHE_MAINTENANCE);
         game.vita_cache_maintenance(&renderer, frame);
         watchdog::phase(watchdog::PERF_LOG);
-        if let (false, Some(perf_log), Some(render_started)) = (replayed, &mut perf, render_started) {
+        if let (Some(perf_log), Some(render_started)) = (&mut perf, render_started) {
             let render_us = render_started.elapsed().as_micros() as u64;
             let work_us = now.elapsed().as_micros() as u64;
             match perf_log.record(frame, work_us, update_us, render_us, wall_us, &game, &renderer, &ui) {

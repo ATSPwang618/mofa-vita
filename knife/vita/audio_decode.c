@@ -9,6 +9,8 @@ struct KvAudioDecoder {
  OggOpusFile *opus;
  FILE *file;
  const uint8_t *memory;
+ void *range_context;
+ KvAudioReadAt read_at;
  uint32_t length, cursor, channels, cached, consumed;
  uint64_t frame, total;
  float pcm[KV_AUDIO_CHUNK_FRAMES * 2];
@@ -23,6 +25,12 @@ static int cb_read(void *source, unsigned char *out, int requested) {
  }
  uint32_t remaining=d->length-d->cursor;
  uint32_t count=(uint32_t)requested<remaining ? (uint32_t)requested : remaining;
+ if (d->read_at && count) {
+  int32_t actual=d->read_at(d->range_context,d->cursor,out,count);
+  if (actual<=0 || (uint32_t)actual>count) return -1;
+  d->cursor+=(uint32_t)actual;
+  return actual;
+ }
  if (count) memcpy(out,d->memory+d->cursor,count);
  d->cursor+=count;
  return (int)count;
@@ -128,6 +136,18 @@ int32_t kv_audio_open_memory(const uint8_t *bytes, uint32_t length, KvAudioDecod
  KvAudioDecoder *d=calloc(1,sizeof(*d));
  if (!d) return KV_AUDIO_MEMORY;
  d->memory=bytes;
+ d->length=length;
+ return finish_open(d,out);
+}
+int32_t kv_audio_open_range(void *context, KvAudioReadAt read_at, uint32_t length, KvAudioDecoder **out) {
+ if (!out) return KV_AUDIO_ARGUMENT;
+ *out=NULL;
+ if (!context || !read_at || !length) return KV_AUDIO_ARGUMENT;
+ if (length>KV_AUDIO_MAX_BYTES) return KV_AUDIO_RANGE;
+ KvAudioDecoder *d=calloc(1,sizeof(*d));
+ if (!d) return KV_AUDIO_MEMORY;
+ d->range_context=context;
+ d->read_at=read_at;
  d->length=length;
  return finish_open(d,out);
 }

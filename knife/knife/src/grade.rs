@@ -318,6 +318,20 @@ impl Bake {
         self.grade != 0 || self.tones()
     }
 
+    /// Offline tool output for the Witch native UNORM8 input chain. Row indexes
+    /// use the same integer weights as the runtime cache, with alpha left alone.
+    #[cfg(any(test, feature = "offline-grade-tool"))]
+    pub fn witch_vita_lut(&self) -> (bool, Vec<[u8; 3]>) {
+        let p = (self.grade != 0).then(|| params_entry(&WITCH_TABLE[self.grade as usize]));
+        let grey = p.as_ref().is_some_and(|p| p.grey);
+        let max = if grey { 255 * 256 } else { 255 };
+        let divisor = if grey { 256.0 } else { 1.0 };
+        (grey, (0..=max).map(|i| {
+            let c = [i as f32 / divisor; 3];
+            p.as_ref().map_or(c, |p| channels(p, c)).map(|x| unorm_byte(self.tone(x)))
+        }).collect())
+    }
+
     fn tones(&self) -> bool {
         self.bright != 1.0 || self.contrast != 1.0
     }

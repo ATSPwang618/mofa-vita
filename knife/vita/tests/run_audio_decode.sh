@@ -13,8 +13,10 @@ rustc --edition 2024 --test knife-platform-vita/src/audio_decode.rs \
   -C "link-arg=$out/audio_ffi.o" -l opusfile -l opus -l ogg -l m -o "$out/rust_test"
 KNIFE_AUDIO_FIXTURE_MONO="$out/mono.opus" KNIFE_AUDIO_FIXTURE_STEREO="$out/stereo.opus" "$out/rust_test"
 arm-vita-eabi-gcc -std=c11 -Wall -Wextra -Werror \
-  -I/opt/vitasdk/arm-vita-eabi/include/opus \
+  -Ivita/vendor/dependencies/include -Ivita/vendor/dependencies/include/opus \
   vita/audio_decode.c vita/tests/audio_decode_test.c \
+  -Lvita/vendor/dependencies/lib \
   -Wl,--wrap=calloc -Wl,--wrap=malloc -lopusfile -lopus -logg -lm -o "$out/audio_arm.elf"
 file "$out/audio_arm.elf"
 arm-vita-eabi-nm "$out/audio_arm.elf" | grep ' T kv_audio_open_file$'
+arm-vita-eabi-nm "$out/audio_arm.elf" | grep ' T kv_audio_open_range$'

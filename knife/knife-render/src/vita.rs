@@ -11,6 +11,9 @@ use std::{cell::{Cell, RefCell}, collections::{HashMap, HashSet}, rc::{Rc, Weak}
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 
+#[path = "vita_story_tiles.rs"]
+mod story_tiles;
+
 #[cfg(target_os = "vita")]
 use knife_platform_vita::gxm::{EffectBlend, EffectShader, Gxm, TextureFormat, TextureId};
 #[cfg(target_os = "vita")]
@@ -116,183 +119,29 @@ mod deferred_metrics {
     }
 }
 
-/// DEV tracing for the five menu buttons whose object/Quad records exist in
-/// game-runtime.log. This observes the recorded, baked and submitted boundaries;
-/// it neither reads GPU pixels nor claims the SDK accepted pixels correctly.
+// Bounded DEV upload receipt used by the compressed-texture smoke check.
 #[cfg(target_os = "vita")]
-mod menu_draw_diagnostic {
+mod compressed_upload_log {
     use super::*;
-    use std::{fmt, io::Write, sync::atomic::{AtomicU32, Ordering}};
+    use std::{io::Write, sync::atomic::{AtomicU32, Ordering}};
 
-    static RECORDED: AtomicU32 = AtomicU32::new(0);
-    static SUBMITTED: AtomicU32 = AtomicU32::new(0);
-    static COMPRESSED_UPLOADS: AtomicU32 = AtomicU32::new(0);
-    static CG_QUADS: AtomicU32 = AtomicU32::new(0);
-    static CG_SUBMITTED: AtomicU32 = AtomicU32::new(0);
-    static RESIDENCY_LOADS: AtomicU32 = AtomicU32::new(0);
-    static RESIDENCY_EVICTIONS: AtomicU32 = AtomicU32::new(0);
+    static UPLOADS: AtomicU32 = AtomicU32::new(0);
 
-    fn enabled() -> bool {
-        option_env!("KNIFE_VITA_DEV_DIAGNOSTICS") == Some("1")
-    }
-
-    pub(super) fn record(args: fmt::Arguments<'_>) {
-        // Close each append so the emulator host can observe the stage now.
+    pub(super) fn record(texture: &NativeTexture, info: GxtDescriptor) {
+        if option_env!("KNIFE_VITA_DEV_DIAGNOSTICS") != Some("1")
+            || UPLOADS.fetch_add(1, Ordering::Relaxed) >= 6
+        {
+            return;
+        }
         if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true)
             .open("ux0:data/knife-woh-dev/game-runtime.log")
         {
-            let _ = writeln!(file, "{args}");
+            let _ = writeln!(file,
+                "GXT_UPLOAD label={} physical={:?} backing={:?} format={:?} payload_bytes={} cdram_bytes={:?} resident_id={:?} source_srgb=false sampler_request=linear_clamp runtime_decode=false runtime_alter=false",
+                texture.deferred.as_ref().map_or("", |source| source.label.as_str()),
+                info.physical, info.backing, info.format, info.payload_bytes,
+                info.allocation_bytes(), texture.id.borrow());
             let _ = file.sync_all();
-        }
-    }
-
-    pub(super) fn texture(event: &str, texture: &NativeTexture, label: &str) {
-        if enabled() {
-            record(format_args!("GPU_OWNER event={event} native={:p} id={:?} physical={:?} bpp={} target={} deferred={} label={label:?}",
-                texture, texture.id.borrow(), texture.size, texture.bpp, texture.render_target,
-                texture.deferred.is_some()));
-        }
-    }
-
-    pub(super) fn residency(event: &str, texture: &NativeTexture, pinned: usize) {
-        if !enabled() { return; }
-        let counter = if event == "RELOAD" { &RESIDENCY_LOADS } else { &RESIDENCY_EVICTIONS };
-        let sequence = counter.fetch_add(1, Ordering::Relaxed) + 1;
-        if sequence <= 160 {
-            record(format_args!("CG_RESIDENCY event={event} sequence={sequence} epoch={} native={:p} label={:?} physical={:?} pinned={pinned} resident_bytes={}",
-                texture.device.epoch.get(), texture,
-                texture.deferred.as_ref().map(|source| source.label.as_str()), texture.size,
-                texture.device.resident_deferred_bytes.get()));
-        }
-    }
-
-    pub(super) fn residency_stats(device: &Device) {
-        if enabled() && device.epoch.get() % 120 == 0 {
-            record(format_args!("CG_RESIDENCY_STATS epoch={} reloads={} evictions={} resident_bytes={}",
-                device.epoch.get(), RESIDENCY_LOADS.load(Ordering::Relaxed),
-                RESIDENCY_EVICTIONS.load(Ordering::Relaxed), device.resident_deferred_bytes.get()));
-        }
-    }
-
-    pub(super) fn frame_pressure(commands: &[Command]) {
-        if !enabled() { return; }
-        let mut seen = HashSet::new();
-        let mut add = |texture: &Rc<NativeTexture>| {
-            if seen.insert(Rc::as_ptr(texture)) {
-                record(format_args!("GPU_FRAME_PIN native={:p} id={:?} physical={:?} native_refs={} label={:?}",
-                    &**texture, texture.id.borrow(), texture.size, Rc::strong_count(texture),
-                    texture.deferred.as_ref().map(|source| source.label.as_str())));
-            }
-        };
-        for command in commands {
-            match command {
-                Command::Begin { target, .. } => add(target),
-                Command::Copy { src, dst, .. } => { add(src); add(dst); }
-                Command::Draw { textures, .. } => textures.iter().flatten().for_each(&mut add),
-                Command::End | Command::GroupCut(_) => {}
-            }
-        }
-    }
-
-    fn is_menu(texture: &NativeTexture) -> bool {
-        texture.deferred.as_ref().is_some_and(|source| {
-            matches!(source.label.as_str(), "menu_btn_en" | "menu_btn_zc")
-        })
-    }
-
-    fn button(uvs: impl Iterator<Item = [f32; 2]>) -> Option<u32> {
-        let [mut x, mut y] = [f32::INFINITY; 2];
-        for uv in uvs { x = x.min(uv[0]); y = y.min(uv[1]); }
-        if (x * 1748.0 - 868.0).abs() > 1.0 { return None; }
-        // These are source atlas rows, not destination Y coordinates. In
-        // particular object 173 uses row 566, as recorded by Pen::spr.
-        [16.0, 126.0, 236.0, 566.0, 672.0].iter().position(|row| {
-            (y * 840.0 - row).abs() <= 1.0
-        }).map(|index| 170 + index as u32)
-    }
-
-    fn once(seen: &AtomicU32, object: u32, alpha: f32) -> Option<&'static str> {
-        if !alpha.is_finite() || alpha <= 0.0 { return None; }
-        let solid = alpha >= 0.999_99;
-        let bit = 1 << (object - 170 + if solid { 5 } else { 0 });
-        (seen.fetch_or(bit, Ordering::Relaxed) & bit == 0)
-            .then_some(if solid { "solid" } else { "fade" })
-    }
-
-    pub(super) fn quad(q: &Quad, target: &RenderTarget, vertices: &[Vertex], scale: [f32; 2]) {
-        if cg_once(&CG_QUADS, &q.tex.native, q.color[3]) {
-            let geometry: Vec<_> = vertices.iter().take(6).map(|v| (v.pos, v.uv)).collect();
-            record(format_args!("CG_RENDER QUAD label={:?} cache_epoch={} logical={:?} physical={:?} source_id={:?} target_id={:?} target_logical={:?} target_physical={:?} pos={:?} uv={:?} color={:?} shade={:?} blend={:?} clip={:?} soft={} rule={} vertices_len={} geometry={geometry:?}",
-                q.tex.native.deferred.as_ref().map(|s| s.label.as_str()),
-                q.tex.native.device.epoch.get(), [q.tex.width, q.tex.height], q.tex.native.size,
-                q.tex.native.id.borrow(), target.tex.native.id.borrow(),
-                [target.tex.width, target.tex.height], target.tex.native.size, q.pos, q.uv, q.color,
-                q.shade, q.blend, q.clip, q.soft.is_some(), q.rule.is_some(), vertices.len()));
-        }
-        if !enabled() || !is_menu(&q.tex.native) || [q.tex.width, q.tex.height] != [1748, 840] {
-            return;
-        }
-        let Some(object) = button(q.uv.iter().copied()) else { return; };
-        let Some(phase) = once(&RECORDED, object, q.color[3]) else { return; };
-        record(format_args!(
-            "MENU_RENDER QUAD object={object} phase={phase} cache_epoch={} source_logical={:?} source_physical={:?} source_resident={:?} source_rt={} source_srgb={} target_logical={:?} target_physical={:?} target_resident={:?} target_rt={} target_srgb={} scale={scale:?} pos={:?} uv={:?} color={:?} shade={:?} blend={:?} clip={:?} soft={} rule={} vertices_len={} vertices_first={:?}",
-            q.tex.native.device.epoch.get(), [q.tex.width, q.tex.height], q.tex.native.size,
-            q.tex.native.id.borrow(), q.tex.native.render_target, q.tex.native.srgb,
-            [target.tex.width, target.tex.height], target.tex.native.size,
-            target.tex.native.id.borrow(), target.tex.native.render_target, target.tex.native.srgb,
-            q.pos, q.uv, q.color, q.shade, q.blend, q.clip, q.soft.is_some(), q.rule.is_some(),
-            vertices.len(), &vertices[..vertices.len().min(18)]));
-    }
-
-    fn cg_once(seen: &AtomicU32, texture: &NativeTexture, alpha: f32) -> bool {
-        if !enabled() || !alpha.is_finite() || alpha <= 0.0 { return false; }
-        let Some(source) = texture.deferred.as_ref() else { return false; };
-        let Some(index) = ["img1227", "img2376", "img2326", "img2328"].iter()
-            .position(|label| source.label.eq_ignore_ascii_case(label)) else { return false; };
-        let phase = usize::from(alpha >= 0.999_99)
-            + 2 * usize::from(texture.device.epoch.get() >= 2100);
-        let bit = 1 << (index * 4 + phase);
-        seen.fetch_or(bit, Ordering::Relaxed) & bit == 0
-    }
-
-    pub(super) fn compressed_upload(texture: &NativeTexture, info: GxtDescriptor) {
-        if !enabled() || COMPRESSED_UPLOADS.fetch_add(1, Ordering::Relaxed) >= 6 { return; }
-        record(format_args!(
-            "GXT_UPLOAD label={} physical={:?} backing={:?} format={:?} payload_bytes={} cdram_bytes={:?} resident_id={:?} source_srgb=false sampler_request=linear_clamp runtime_decode=false runtime_alter=false",
-            texture.deferred.as_ref().map_or("", |source| source.label.as_str()),
-            info.physical, info.backing, info.format, info.payload_bytes,
-            info.allocation_bytes(), texture.id.borrow()));
-    }
-
-    pub(super) fn draw_begin(device: &Device, command_index: usize, vertices: &[Vertex],
-        shader: EffectShader, blend: EffectBlend, textures: &[Option<Rc<NativeTexture>>; 4],
-        ids: &[Option<TextureId>; 4], params: [f32; 8], target: Option<&NativeTexture>)
-        -> Option<(u32, &'static str)>
-    {
-        if !enabled() { return None; }
-        let source = textures[0].as_ref()?;
-        if cg_once(&CG_SUBMITTED, source, vertices.first().map_or(0.0, |v| v.color[3])) {
-            let geometry: Vec<_> = vertices.iter().take(6).map(|v| (v.pos, v.uv)).collect();
-            record(format_args!("CG_RENDER DRAW_BEGIN label={:?} cache_epoch={} command={command_index} source_ids={ids:?} source_physical={:?} source_rt={} source_srgb={} target_id={:?} target_physical={:?} shader={shader:?} blend={blend:?} params={params:?} vertices_len={} geometry={geometry:?}",
-                source.deferred.as_ref().map(|s| s.label.as_str()), device.epoch.get(),
-                source.size, source.render_target, source.srgb,
-                target.map(|t| t.id.borrow().clone()), target.map(|t| t.size), vertices.len()));
-        }
-        if !is_menu(source) { return None; }
-        let object = button(vertices.iter().map(|vertex| vertex.uv))?;
-        let phase = once(&SUBMITTED, object, vertices.first()?.color[3])?;
-        record(format_args!(
-            "MENU_RENDER DRAW_BEGIN object={object} phase={phase} cache_epoch={} command={command_index} source_ids={ids:?} source_physical={:?} source_rt={} source_srgb={} target_id={:?} target_physical={:?} target_rt={:?} target_srgb={:?} shader={shader:?} blend={blend:?} params={params:?} sampler_request=linear_clamp descriptor_readback=unobserved native_memblock_uid=unobserved vertices_len={} vertices_first={:?}",
-            device.epoch.get(), source.size, source.render_target, source.srgb,
-            target.map(|target| target.id.borrow().clone()), target.map(|target| target.size),
-            target.map(|target| target.render_target), target.map(|target| target.srgb),
-            vertices.len(), &vertices[..vertices.len().min(18)]));
-        Some((object, phase))
-    }
-
-    pub(super) fn draw_end(trace: Option<(u32, &'static str)>, result: &std::result::Result<(), String>) {
-        if let Some((object, phase)) = trace {
-            record(format_args!("MENU_RENDER DRAW_END object={object} phase={phase} result={result:?}"));
         }
     }
 }
@@ -419,6 +268,7 @@ struct NativeTexture {
     bpp: u32,
     srgb: bool,
     render_target: bool,
+    stage_target: Cell<bool>,
     deferred: Option<DeferredSource>,
     last_used: Cell<u64>,
     content_version: Cell<u64>,
@@ -569,6 +419,10 @@ struct DeferredSource {
     bytes: DeferredBytes,
     label: String,
     kind: DeferredKind,
+    opaque_interior: Cell<bool>,
+    stage_alpha_region: Cell<Option<LiveAlphaCoverage>>,
+    stage_alpha_region_verified: Cell<bool>,
+    transparent_draw: Cell<Option<transparent_draw::Proof>>,
 }
 
 enum DeferredKind {
@@ -636,8 +490,6 @@ impl NativeTexture {
 
 impl Drop for NativeTexture {
     fn drop(&mut self) {
-        #[cfg(target_os = "vita")]
-        menu_draw_diagnostic::texture("DROP", self, "");
         if let Some(id) = self.id.get_mut().take() {
             self.device.retire(&id);
             if self.deferred.is_some() && self.device.retirement_error.borrow().is_none() {
@@ -661,6 +513,14 @@ pub struct GpuTexture {
     pub width: u32,
     pub height: u32,
     sparse_coverage: Option<SparseCoveragePlan>,
+    story_tiles: Vec<StoryGxtTile>,
+}
+
+/// Normalized source-space rectangles. `crop` contains the DXT guard blocks.
+pub struct StoryGxtTile {
+    pub tex: TexRef,
+    pub interior: [f32; 4],
+    pub crop: [f32; 4],
 }
 
 pub type TexRef = Arc<GpuTexture>;
@@ -668,12 +528,37 @@ pub type TexRef = Arc<GpuTexture>;
 /// A coverage plan belongs to exact immutable asset bytes, admitted by Assets.
 /// It changes only source geometry, never the texture allocation or UV domain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SparseCoveragePlan { Img0436 }
+pub enum SparseCoveragePlan {
+    Img0436,
+    Live(LiveAlphaCoverage),
+    OpaqueMask(OpaqueGroupMask),
+}
+
+/// Index of an exact, hash-checked KIMG source in the live coverage table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiveAlphaCoverage(usize);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpaqueGroupMask(usize);
 
 impl GpuTexture {
+    pub fn with_story_tiles(mut tex: TexRef, tiles: Vec<StoryGxtTile>) -> TexRef {
+        let texture = Arc::get_mut(&mut tex).expect("attach story tiles before sharing a texture");
+        if !tiles.is_empty() && let Some(source) = &texture.native.deferred {
+            source.stage_alpha_region.set(None);
+            source.stage_alpha_region_verified.set(false);
+        }
+        texture.story_tiles = tiles;
+        tex
+    }
     pub fn with_sparse_coverage(mut tex: TexRef, plan: SparseCoveragePlan) -> TexRef {
-        Arc::get_mut(&mut tex).expect("set sparse coverage before sharing an uploaded texture")
-            .sparse_coverage = Some(plan);
+        let texture = Arc::get_mut(&mut tex).expect("set sparse coverage before sharing an uploaded texture");
+        texture.sparse_coverage = Some(plan);
+        if texture.story_tiles.is_empty()
+            && let (Some(source), SparseCoveragePlan::Live(id)) = (&texture.native.deferred, plan)
+        {
+            source.stage_alpha_region.set(Some(id));
+        }
         tex
     }
     /// Identity plus pixel mutations; residency reloads of immutable bytes do not change it.
@@ -860,6 +745,12 @@ impl CommandEncoder {
 mod blend_chain;
 #[path = "vita_sparse_coverage.rs"]
 mod sparse_coverage;
+#[path = "vita_stage_opaque.rs"]
+mod stage_opaque;
+#[path = "vita_stage_alpha_region.rs"]
+mod stage_alpha_region;
+#[path = "vita_transparent_draw.rs"]
+mod transparent_draw;
 
 // Uniform inputs must agree only where the selected shader actually reads a
 // shared uniform. RimText28 reads hx/steps per glyph and keeps only RGB24 shared.
@@ -885,6 +776,7 @@ enum Command {
     Begin {
         target: Rc<NativeTexture>,
         clear: Option<[f32; 4]>,
+        producer_clip: Option<[u32; 4]>,
     },
     End,
     /// CPU-only dependency proof; prevents cropped composites from coalescing.
@@ -1040,6 +932,10 @@ pub struct Quad {
 }
 
 impl Quad {
+    pub fn vita_group_mask_opaque(&self, target: [u32; 2], white: &TexRef) -> bool {
+        sparse_coverage::opaque_group_mask(self, target, white)
+    }
+
     /// Exact cache input, with float representations and source generations.
     /// Unlike a digest this can be compared without collision assumptions.
     /// The cache must also keep a live/weak source owner to reject pointer reuse.
@@ -1082,35 +978,6 @@ impl Quad {
         out
     }
 
-    pub fn render_signature(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        self.tex.render_identity().hash(&mut h);
-        [self.tex.width, self.tex.height].hash(&mut h);
-        self.tex.physical_size().hash(&mut h);
-        self.blend.hash(&mut h); self.shade.hash(&mut h); self.masked.hash(&mut h);
-        let floats = |values: &[f32], h: &mut std::collections::hash_map::DefaultHasher| {
-            for value in values { value.to_bits().hash(h); }
-        };
-        for p in self.pos { floats(&p, &mut h); }
-        for p in self.uv { floats(&p, &mut h); }
-        floats(&self.color, &mut h);
-        for p in self.haze { floats(&p, &mut h); }
-        self.clip.is_some().hash(&mut h);
-        if let Some(clip) = self.clip { for p in clip { floats(&p, &mut h); } }
-        self.soft.is_some().hash(&mut h);
-        if let Some(m) = self.soft {
-            floats(&m.inner, &mut h); floats(&m.pivot, &mut h);
-            floats(&[m.rot,m.radius,m.fill], &mut h); m.row.hash(&mut h); m.texels.hash(&mut h);
-        }
-        self.rule.is_some().hash(&mut h);
-        if let Some(rule) = &self.rule {
-            rule.tex.render_identity().hash(&mut h);
-            [rule.tex.width,rule.tex.height].hash(&mut h); rule.tex.physical_size().hash(&mut h);
-            floats(&[rule.progress,rule.soft], &mut h); rule.flip.hash(&mut h); rule.invert.hash(&mut h);
-        }
-        h.finish()
-    }
     pub fn scaled(mut self, s: f32) -> Self {
         let sc = |p: &mut [f32; 2]| *p = [p[0] * s, p[1] * s];
         self.pos.iter_mut().for_each(sc);
@@ -1236,10 +1103,10 @@ impl Renderer {
         let quad = Quad::rect(source.clone(), [0.0, 0.0, 960.0, 540.0], [1.0; 4])
             .with_uv_rect(uv[0], uv[1], uv[2], uv[3]);
         let reuse = self.vertex_reuse.borrow_mut().pop().unwrap_or_default();
-        let vertices = quad_vertices_reusing(&quad, [960.0, 540.0], [1.0; 2], reuse)?;
+        let vertices = quad_vertices_reusing(&quad, [960.0, 540.0], [1.0; 2], None, reuse)?;
         let work = executed_work::DrawWork::prepare(EffectShader::Sprite,EffectBlend::Opaque,
             [0.0;8],&vertices,target.tex.native.size,scene_kind(&target.tex.native));
-        let mut commands = [Command::Begin { target: target.tex.native.clone(), clear: None },
+        let mut commands = [Command::Begin { target: target.tex.native.clone(), clear: None, producer_clip: None },
             Command::Draw { work, vertices, shader: EffectShader::Sprite, blend: EffectBlend::Opaque,
                 textures: [Some(source.native.clone()), Some(self.white.native.clone()), None, Some(self.soft_lut.clone())],
                 params: [0.0; 8] }, Command::End];
@@ -1266,10 +1133,11 @@ impl Renderer {
             native: Rc::new(NativeTexture {
                 device: self.device.clone(), id: RefCell::new(Some(id)),
                 size: [width, height], bpp: 0, srgb: false, render_target: false,
+                stage_target: Cell::new(false),
                 deferred: None, last_used: Cell::new(0), content_version: Cell::new(0),
                 coverage: Cell::new(coverage::Stamp::unknown(0)), rebuild_us: Cell::new(0),
             }),
-            width, height, sparse_coverage: None,
+            width, height, sparse_coverage: None, story_tiles: Vec::new(),
         }))
     }
 
@@ -1379,8 +1247,6 @@ impl Renderer {
     ) -> Result<TexRef> {
         let tex = self.upload_raw(width, height, data, false)
             .with_context(|| format!("uploading {label}"))?;
-        #[cfg(target_os = "vita")]
-        menu_draw_diagnostic::texture("LABEL", &tex.native, label);
         Ok(tex)
     }
 
@@ -1398,8 +1264,6 @@ impl Renderer {
     ) -> Result<TexRef> {
         let tex = self.upload_raw(width, height, Upload::Rgba8(data), true)
             .with_context(|| format!("uploading baked {label} ({width}x{height} RGBA8)"))?;
-        #[cfg(target_os = "vita")]
-        menu_draw_diagnostic::texture("LABEL", &tex.native, label);
         Ok(tex)
     }
 
@@ -1685,7 +1549,9 @@ impl Renderer {
             device: self.device.clone(), id: RefCell::new(None), size: physical,
             bpp: if matches!(&kind, DeferredKind::GxtAltered { .. }) { 0 } else { 4 },
             srgb: false, render_target: false,
-            deferred: Some(DeferredSource { bytes, label: label.into(), kind }),
+            stage_target: Cell::new(false),
+            deferred: Some(DeferredSource { bytes, label: label.into(), kind, opaque_interior: Cell::new(false),
+                stage_alpha_region: Cell::new(None), stage_alpha_region_verified: Cell::new(false), transparent_draw: Cell::new(None) }),
             last_used: Cell::new(0), content_version: Cell::new(0),
             coverage: Cell::new(coverage::Stamp::unknown(0)), rebuild_us: Cell::new(0),
         });
@@ -1694,7 +1560,7 @@ impl Renderer {
         let mut cache = self.device.deferred.borrow_mut();
         cache.retain(|weak| weak.strong_count() != 0);
         cache.push(Rc::downgrade(&native));
-        Ok(Arc::new(GpuTexture { native, width: logical[0], height: logical[1], sparse_coverage: None }))
+        Ok(Arc::new(GpuTexture { native, width: logical[0], height: logical[1], sparse_coverage: None, story_tiles: Vec::new() }))
     }
 
     pub fn owns_texture(&self, tex: &GpuTexture) -> bool {
@@ -1781,6 +1647,53 @@ impl Renderer {
         self.device.call(|g| g.reclaim_retired(false))
     }
 
+    pub fn vita_wait_for_load(&self) -> Result<()> {
+        self.device.call(|g| g.reclaim_retired(true))
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_cdram_mapped_bytes(&self) -> Result<u32> {
+        self.device.call(|g| g.stats().map(|stats| stats.cdram_mapped_bytes))
+    }
+
+    /// After the old scene releases its owners, evict reloadable backings and
+    /// return empty native pages. Reusable scene/display targets stay allocated.
+    pub fn vita_release_load_residency(&self) -> Result<usize> {
+        let before = self.device.resident_deferred_bytes.get();
+        let resident = self.device.deferred.borrow().iter().filter_map(Weak::upgrade)
+            .filter(|texture| texture.id.borrow().is_some()).collect::<Vec<_>>();
+        for texture in resident {
+            evict_deferred(&self.device, &texture)?;
+        }
+        self.device.deferred.borrow_mut().retain(|texture| texture.strong_count() != 0);
+        self.device.call(|g| g.trim_texture_pages())?;
+        Ok(before - self.device.resident_deferred_bytes.get())
+    }
+
+    pub fn vita_texture_allocation_bytes(&self, texture: &TexRef) -> Result<usize> {
+        texture.native.allocation_bytes()
+    }
+
+    /// A preview has its own frame preparation so a failed thumbnail never
+    /// invalidates the main frame that was already presented.
+    pub fn vita_submit_preview(&mut self, mut encoder: CommandEncoder) -> Result<()> {
+        self.check_encoder(&encoder)?;
+        encoder.close_pass();
+        coverage::before_submit(&mut encoder.commands, encoder.coverage_id);
+        execute(&self.device, &encoder.commands)?;
+        coverage::finish(&encoder.commands, encoder.coverage_id, true);
+        Ok(())
+    }
+
+    /// Prepare a direct save thumbnail without recording a render pass.
+    pub fn vita_prepare_save_preview(&self, texture: &TexRef) -> Result<()> {
+        ensure!(self.owns_texture(texture), "preview belongs to another renderer");
+        prepare_deferred(&self.device, &[], Some(&texture.native), &mut |reserve, reason| {
+            if reason == FrameAdmissionReason::AllocationRetry { Ok(false) }
+            else { reserve().map(|_| true) }
+        })
+    }
+
     /// Admit a bounded optional render cache inside the existing native/JPEG
     /// limit. That limit already reserves the process's external CDRAM margin;
     /// this adds only a small internal allocation spare, not another 8 MiB.
@@ -1861,11 +1774,35 @@ impl Renderer {
     /// commands after batching. The clear starts a new pass, so no command can
     /// merge into the portion preceding `first`.
     pub fn try_draw_group_cached_producer(&mut self, encoder: &mut CommandEncoder,
-        target: &RenderTarget, quads: &[Quad]) -> Result<usize>
+        target: &RenderTarget, quads: &[Quad], clip: Option<[u32; 4]>) -> Result<usize>
     {
         encoder.close_pass();
         let first = encoder.commands.len();
         self.try_draw(encoder, target, Some([0.0; 4]), quads)?;
+        if let Some(clip) = clip {
+            // Close the optional producer before another caller can append
+            // unclipped draws to its last pass. The original full clear stays.
+            encoder.close_pass();
+            let mut clipped = false;
+            let mut saved = 0;
+            for command in &mut encoder.commands[first..] {
+                match command {
+                    Command::Begin { target: native, producer_clip, .. }
+                        if Rc::ptr_eq(native, &target.tex.native) => {
+                        *producer_clip = Some(clip);
+                        clipped = true;
+                    }
+                    Command::End => clipped = false,
+                    Command::Draw { work, vertices, .. } if clipped => {
+                        let old = work.pixels;
+                        work.clip_region(vertices, clip);
+                        saved += old.saturating_sub(work.pixels);
+                    }
+                    _ => {}
+                }
+            }
+            knife_perf::add(Metric::GroupMaskClip, 0, saved);
+        }
         Ok(encoder.commands[first..].iter().filter(|command|
             matches!(command, Command::Draw { .. })).count())
     }
@@ -1985,8 +1922,6 @@ impl Renderer {
         )
         .with_context(|| format!("creating render target {label}"))
         .context(FramePreparationError)?;
-        #[cfg(target_os = "vita")]
-        menu_draw_diagnostic::texture("LABEL", &tex.native, label);
         if label == "canvas" {
             tracing::info!(
                 logical_width = logical[0],
@@ -1998,6 +1933,7 @@ impl Renderer {
         }
         #[cfg(target_os = "vita")]
         target_labels::register(Rc::as_ptr(&tex.native) as usize, label);
+        tex.native.stage_target.set(matches!(label, "stage" | "stage ring"));
         Ok(RenderTarget { tex })
     }
 
@@ -2093,7 +2029,7 @@ impl Renderer {
             self.vertex_reuse.borrow_mut().pop().unwrap_or_default()
         } else { Vec::new() };
         let vertices = quad_vertices_reusing(&Quad::rect(source.tex.clone(), rect, [1.0; 4]),
-            size, [pw as f32 / size[0], ph as f32 / size[1]], reuse)?;
+            size, [pw as f32 / size[0], ph as f32 / size[1]], None, reuse)?;
         let same_target = encoder.open.as_ref().is_some_and(|open|
             Rc::ptr_eq(open, &target.tex.native));
         if !same_target { encoder.close_pass(); }
@@ -2103,7 +2039,7 @@ impl Renderer {
                 Some(self.white.native.clone()), Some(self.soft_lut.clone())],
             params: [0.0; 8] };
         if same_target { encoder.append([draw])?; }
-        else { encoder.append([Command::Begin { target: target.tex.native.clone(), clear: None }, draw])?; }
+        else { encoder.append([Command::Begin { target: target.tex.native.clone(), clear: None, producer_clip: None }, draw])?; }
         encoder.open = Some(target.tex.native.clone());
         Ok(())
     }
@@ -2129,65 +2065,69 @@ impl Renderer {
         let [tw, th] = [target.tex.width as f32, target.tex.height as f32];
         let scale = [pw as f32 / tw, ph as f32 / th];
         let fetch_enabled = knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FETCH);
-        let fetch_general = fetch_enabled && self.device.call(|g| g.shader_available(17))?;
-        let fetch_normal = fetch_enabled && self.device.call(|g| g.shader_available(18))?;
-        let fetch_hard_light = fetch_enabled && self.device.call(|g| g.shader_available(20))?;
-        let fetch_overlay = fetch_enabled && self.device.call(|g| g.shader_available(21))?;
-        let fetch_darken = fetch_enabled && self.device.call(|g| g.shader_available(25))?;
+        let capabilities = if knife_perf::optimizations::enabled(knife_perf::optimizations::SHADER_CAP_BATCH) {
+            Some(self.device.call(|g| g.shader_mask())?)
+        } else { None };
+        let available = |id: u32| -> Result<bool> {
+            if let Some(bits) = capabilities {
+                Ok(id < 108 && bits[(id / 64) as usize] & (1 << (id % 64)) != 0)
+            } else {
+                self.device.call(|g| g.shader_available(id))
+            }
+        };
+        let fetch_general = fetch_enabled && available(17)?;
+        let fetch_normal = fetch_enabled && available(18)?;
+        let fetch_hard_light = fetch_enabled && available(20)?;
+        let fetch_overlay = fetch_enabled && available(21)?;
+        let fetch_darken = fetch_enabled && available(25)?;
         let fetch_dodge_alpha = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_OP7)
-            && self.device.call(|g| g.shader_available(29))?;
+            && available(29)?;
         let plain_material_enabled = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_PLAIN_MATERIAL);
-        let fetch_plain_add = plain_material_enabled && self.device.call(|g| g.shader_available(30))?;
-        let fetch_plain_dodge = plain_material_enabled && self.device.call(|g| g.shader_available(31))?;
+        let fetch_plain_add = plain_material_enabled && available(30)?;
+        let fetch_plain_dodge = plain_material_enabled && available(31)?;
         let fetch_plain_op7 = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_PLAIN_OP7)
-            && self.device.call(|g| g.shader_available(48))?;
+            && available(48)?;
         let full_material_enabled = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_FULL_MATERIAL);
-        let fetch_full_add = full_material_enabled && self.device.call(|g| g.shader_available(54))?;
-        let fetch_full_dodge = full_material_enabled && self.device.call(|g| g.shader_available(55))?;
-        let fetch_full_overlay = full_material_enabled && self.device.call(|g| g.shader_available(56))?;
-        let fetch_plain_normal = fetch_enabled && self.device.call(|g| g.shader_available(23))?;
-        let operation_shaders = if fetch_enabled
-            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_ALL_OPERATIONS) {
-            self.device.call(|g| {
-                let mut shaders = [None; 24];
-                for (index, shader) in ALL_PS_SHADERS.into_iter().enumerate() {
-                    if g.shader_available(shader as u32)? { shaders[index] = Some(shader); }
-                }
-                Ok(shaders)
-            })?
-        } else { [None; 24] };
-        let half_shaders = if fetch_enabled
-            && knife_perf::optimizations::enabled(knife_perf::optimizations::HALF_COLOR) {
-            self.device.call(|g| {
-                let mut shaders = [None; 4];
-                for (index, shader) in [EffectShader::PsHalf1, EffectShader::PsHalf6,
-                    EffectShader::PsHalf7, EffectShader::PsHalf13].into_iter().enumerate() {
-                    if g.shader_available(shader as u32)? { shaders[index] = Some(shader); }
-                }
-                Ok(shaders)
-            })?
-        } else { [None; 4] };
+        let fetch_full_add = full_material_enabled && available(54)?;
+        let fetch_full_dodge = full_material_enabled && available(55)?;
+        let fetch_full_overlay = full_material_enabled && available(56)?;
+        let fetch_plain_normal = fetch_enabled && available(23)?;
+        let mut operation_shaders = [None; 24];
+        if fetch_enabled && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_ALL_OPERATIONS) {
+            for (index, shader) in ALL_PS_SHADERS.into_iter().enumerate() {
+                if available(shader as u32)? { operation_shaders[index] = Some(shader); }
+            }
+        }
+        let mut half_shaders = [None; 4];
+        if fetch_enabled && knife_perf::optimizations::enabled(knife_perf::optimizations::HALF_COLOR) {
+            for (index, shader) in [EffectShader::PsHalf1, EffectShader::PsHalf6,
+                EffectShader::PsHalf7, EffectShader::PsHalf13].into_iter().enumerate() {
+                if available(shader as u32)? { half_shaders[index] = Some(shader); }
+            }
+        }
         let blend_chain = fetch_enabled
             && knife_perf::optimizations::enabled(knife_perf::optimizations::BLEND_CHAIN)
-            && !target.tex.native.srgb && self.device.call(|g| g.shader_available(27))?;
-        let batched_rim = self.device.call(|g| g.shader_available(28))?;
-        let plain_sprite = self.device.call(|g| g.shader_available(22))?;
+            && !target.tex.native.srgb && available(27)?;
+        let batched_rim = available(28)?;
+        let plain_sprite = available(22)?;
+        let normal_multiply = plain_sprite && fetch_plain_normal && !target.tex.native.srgb
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_NORMAL_MULTIPLY);
+        let (normal_multiply_single, normal_multiply_dual) = if normal_multiply {
+            (available(EffectShader::PsNormalMultiply as u32)?,
+                available(EffectShader::PsNormalMultiplyDual as u32)?)
+        } else { (false, false) };
         let plain_forcealpha = knife_perf::optimizations::enabled(knife_perf::optimizations::PLAIN_FORCEALPHA)
-            && self.device.call(|g| g.shader_available(26))?;
-        let material_shaders = if fetch_enabled
-            && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_MATERIAL_VARIANTS) {
-            self.device.call(|g| {
-                let mut ready = [false; 17];
-                for (index, shader) in MATERIAL_PS_SHADERS.iter().enumerate() {
-                    ready[index] = g.shader_available(*shader as u32)?;
-                }
-                Ok(ready)
-            })?
-        } else { [false; 17] };
+            && available(26)?;
+        let mut material_shaders = [false; 17];
+        if fetch_enabled && knife_perf::optimizations::enabled(knife_perf::optimizations::PS_MATERIAL_VARIANTS) {
+            for (index, shader) in MATERIAL_PS_SHADERS.iter().enumerate() {
+                material_shaders[index] = available(*shader as u32)?;
+            }
+        }
         let base_ps_shader = |q: &Quad, op| {
             // The independently selected FP32 plain OP7 preserves the generic
             // operation exactly and wins over Half only for this material.
@@ -2247,7 +2187,45 @@ impl Renderer {
                 EffectShader::PlainForceAlpha
             } else { effect_shader(q.shade) }
         };
-        let has_ps = quads.iter().any(|q| matches!(q.blend, Blend::Ps(op)
+        // Keep the ordinary material/fallback for source-space distortion,
+        // wrapping UVs and shaders that would need one target copy per tile.
+        let expanded = quads.iter().any(|q| !q.tex.story_tiles.is_empty()).then(|| {
+            let mut expanded = Vec::with_capacity(quads.len());
+            for q in quads {
+                if q.tex.story_tiles.is_empty() {
+                    expanded.push(q.clone());
+                } else if q.haze.iter().any(|row| row[0] != 0.)
+                    || matches!(q.blend, Blend::Ps(_) if q.masked)
+                    || !matches!(q.shade, Shade::Sprite | Shade::NoAlpha | Shade::ForceAlpha | Shade::Fill)
+                    || !story_tiles::rectangular_uv(q.uv)
+                    || !q.pos.iter().flatten().all(|v| v.is_finite())
+                    || matches!(q.blend, Blend::Ps(op) if !ps18_direct(q) && ps_shader(q, op).is_none())
+                {
+                    knife_perf::add(Metric::StoryTileFallback, 0, 1);
+                    expanded.push(q.clone());
+                } else {
+                    let first = expanded.len();
+                    for tile in &q.tex.story_tiles {
+                        let Some((pos, uv)) = story_tiles::tile_quad(q.pos, q.uv, tile.interior, tile.crop, [tw, th])
+                            else { continue; };
+                        if q.clip.is_some_and(|clip| story_tiles::outside_clip(pos, clip)) {
+                            knife_perf::add(Metric::StoryTileClipReject, 0, 1);
+                            continue;
+                        }
+                        expanded.push(Quad { tex: tile.tex.clone(), pos, uv, ..q.clone() });
+                    }
+                    knife_perf::add(Metric::StoryTileDraw, 0, (expanded.len() - first) as u64);
+                }
+            }
+            expanded
+        });
+        let quads = expanded.as_deref().unwrap_or(quads);
+        ensure!(quads.len() <= MAX_FRAME_COMMANDS / 3, "too many visible story tiles for a Vita frame");
+        let viewport_reject = knife_perf::optimizations::enabled(knife_perf::optimizations::VIEWPORT_REJECT);
+        let transparent_draw_reject = target.tex.native.stage_target.get()
+            && knife_perf::optimizations::enabled(knife_perf::optimizations::TRANSPARENT_DRAW_REJECT);
+        let outside = |q: &Quad| viewport_reject && outside_viewport(q.pos, [tw, th]);
+        let has_ps = quads.iter().any(|q| !outside(q) && matches!(q.blend, Blend::Ps(op)
             if !ps18_direct(q) && ps_shader(q, op).is_none()));
         let backdrop = if has_ps {
             if !self.backdrops.contains_key(&[pw, ph]) {
@@ -2279,6 +2257,7 @@ impl Renderer {
             commands.push(Command::Begin {
                 target: target.tex.native.clone(),
                 clear,
+                producer_clip: None,
             });
             open = true;
         }
@@ -2320,12 +2299,54 @@ impl Renderer {
                     _ => { frame_metrics::LARGE_QUADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
                 }
             }
-            let reuse = if knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM) {
+            let compact = knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM);
+            let reuse = if compact {
                 self.vertex_reuse.borrow_mut().pop().unwrap_or_default()
             } else { Vec::new() };
-            let vertices = quad_vertices_reusing(q, [tw, th], scale, reuse)?;
-            #[cfg(target_os = "vita")]
-            menu_draw_diagnostic::quad(q, target, &vertices, scale);
+            let fetch_shader = match q.blend {
+                Blend::Ps(op) if !ps18_direct(q) => ps_shader(q, op),
+                _ => None,
+            };
+            let coverage_fetch = if target.tex.native.srgb { None } else { fetch_shader };
+            let vertices = quad_vertices_reusing(q, [tw, th], scale, coverage_fetch, reuse)?;
+            // The original texture, rule and geometry checks above still run.
+            // Reject only a separating viewport edge; intersecting quads keep
+            // the original UVs, ordering, interpolation and submit path.
+            if outside(q) {
+                if compact { self.vertex_reuse.borrow_mut().push(vertices); }
+                continue;
+            }
+            if transparent_draw_reject && !vertices.is_empty()
+                && transparent_draw::rejects(q, [tw, th], [pw, ph])
+            {
+                knife_perf::add(Metric::TransparentDrawReject, 0, 1);
+                if compact { self.vertex_reuse.borrow_mut().push(vertices); }
+                continue;
+            }
+            if (normal_multiply_single || normal_multiply_dual) && !vertices.is_empty()
+                && let Some(next) = quads.get(index + 1)
+                && blend_chain::normal_multiply(q, next)
+                && ps_shader(q, PsOp::Normal) == Some(EffectShader::PsPlain19)
+                && let same_sample = Rc::ptr_eq(&q.tex.native, &next.tex.native)
+                && ((same_sample && normal_multiply_single) || (!same_sample && normal_multiply_dual))
+            {
+                self.check_texture(&next.tex)?;
+                ensure!(!Rc::ptr_eq(&next.tex.native, &target.tex.native), "a draw cannot sample its active target");
+                if !open { commands.push(Command::Begin { target: target.tex.native.clone(), clear: None, producer_clip: None }); }
+                let [r, g, b, a] = next.color;
+                commands.push(Command::Draw {
+                    work: executed_work::DrawWork::pending(),
+                    vertices,
+                    shader: if same_sample { EffectShader::PsNormalMultiply } else { EffectShader::PsNormalMultiplyDual },
+                    blend: EffectBlend::Opaque,
+                    textures: [Some(q.tex.native.clone()), None,
+                        (!same_sample).then(|| next.tex.native.clone()), None],
+                    params: [19., 0., pw as f32, ph as f32, r, g, b, a],
+                });
+                open = true;
+                skip = true;
+                continue;
+            }
             if blend_chain && let Some(next) = quads.get(index+1)
                 && let (Blend::Ps(a),Blend::Ps(b)) = (q.blend,next.blend)
                 && let (Some(sa),Some(sb)) = (ps_shader(q,a),ps_shader(next,b))
@@ -2338,13 +2359,13 @@ impl Renderer {
                 // an optional optimization or a fully clipped intersection.
                 let compact = knife_perf::optimizations::enabled(knife_perf::optimizations::COMPACT_STREAM);
                 let reuse = if compact { self.vertex_reuse.borrow_mut().pop().unwrap_or_default() } else { Vec::new() };
-                let next_vertices = quad_vertices_reusing(next,[tw,th],scale,reuse)?;
+                let next_vertices = quad_vertices_reusing(next,[tw,th],scale,None,reuse)?;
                 let pair = blend_chain::pair(q,next,[sa,sb],[tw,th],[pw,ph],
                     &self.white.native,&self.soft_lut);
                 if compact { self.vertex_reuse.borrow_mut().push(next_vertices); }
                 if let Some(pair) = pair {
                     if compact { self.vertex_reuse.borrow_mut().push(vertices); }
-                    if !open { commands.push(Command::Begin {target:target.tex.native.clone(),clear:None}); }
+                    if !open { commands.push(Command::Begin {target:target.tex.native.clone(),clear:None,producer_clip:None}); }
                     commands.extend(pair);open = true;skip = true;continue;
                 }
             }
@@ -2353,10 +2374,9 @@ impl Renderer {
                 if vertices.is_empty() {
                     continue;
                 }
-                let fetch_shader = ps_shader(q, op);
                 let bd = if fetch_shader.is_some() {
                     if !open {
-                        commands.push(Command::Begin { target: target.tex.native.clone(), clear: None });
+                        commands.push(Command::Begin { target: target.tex.native.clone(), clear: None, producer_clip: None });
                     }
                     // Destination comes from the tile's native color register.
                     self.white.native.clone()
@@ -2365,7 +2385,7 @@ impl Renderer {
                     let bd = backdrop.as_ref().expect("prepared Ps backdrop");
                     commands.push(Command::Copy { metric: Metric::CopyPs,
                         src: target.tex.native.clone(), dst: bd.clone() });
-                    commands.push(Command::Begin { target: target.tex.native.clone(), clear: None });
+                    commands.push(Command::Begin { target: target.tex.native.clone(), clear: None, producer_clip: None });
                     bd.clone()
                 };
                 let (rule, progress, flags) = match &q.rule {
@@ -2405,6 +2425,7 @@ impl Renderer {
                     commands.push(Command::Begin {
                         target: target.tex.native.clone(),
                         clear: None,
+                        producer_clip: None,
                     });
                     open = true;
                 }
@@ -2630,7 +2651,7 @@ impl Renderer {
             (EffectShader::GroupComposite, effect_blend(blend), mask.tex.native.clone(),
                 self.white.native.clone(), [0.; 8])
         };
-        if !open { commands.push(Command::Begin { target: target.tex.native.clone(), clear: None }); }
+        if !open { commands.push(Command::Begin { target: target.tex.native.clone(), clear: None, producer_clip: None }); }
         if matches!(requested, CoverageBound::Rect { .. }) {
             commands.push(Command::GroupCut(coverage::GroupCut::new(
                 [pixel.tex.native.clone(), mask.tex.native.clone()], [1.0, 1.0, 1.0, alpha])));
@@ -2693,6 +2714,7 @@ impl Renderer {
             Command::Begin {
                 target: dst.tex.native.clone(),
                 clear: None,
+                producer_clip: None,
             },
             Command::Draw {
                 work: executed_work::DrawWork::pending(),
@@ -2777,6 +2799,7 @@ impl Renderer {
             Command::Begin {
                 target: dst.tex.native.clone(),
                 clear: None,
+                producer_clip: None,
             },
             Command::Draw {
                 work: executed_work::DrawWork::pending(),
@@ -2906,11 +2929,7 @@ impl Renderer {
         #[cfg(target_os = "vita")]
         let exec_start = std::time::Instant::now();
         coverage::before_submit(&mut encoder.commands, encoder.coverage_id);
-        if let Err(error) = execute_with_admission(&self.device, &encoder.commands, &mut admit) {
-            #[cfg(target_os = "vita")]
-            menu_draw_diagnostic::frame_pressure(&encoder.commands);
-            return Err(error);
-        }
+        execute_with_admission(&self.device, &encoder.commands, &mut admit)?;
         coverage::finish(&encoder.commands, encoder.coverage_id, true);
         #[cfg(target_os = "vita")]
         frame_metrics::add(&frame_metrics::EXEC_US, exec_start);
@@ -3018,17 +3037,17 @@ fn make_texture_inner(
             bpp,
             srgb,
             render_target,
+            stage_target: Cell::new(false),
             deferred: None,
             last_used: Cell::new(0), content_version: Cell::new(0),
             coverage: Cell::new(coverage::Stamp::unknown(0)), rebuild_us: Cell::new(0),
         });
-    #[cfg(target_os = "vita")]
-    menu_draw_diagnostic::texture("CREATE", &native, "");
     Ok(Arc::new(GpuTexture {
         native,
         width: logical[0],
         height: logical[1],
         sparse_coverage: None,
+        story_tiles: Vec::new(),
     }))
 }
 
@@ -3157,7 +3176,7 @@ fn reserve_cdram(
             }
             return Err(anyhow!(UnverifiedNativeHeadroom { peak, available }).context(TextureMemoryPressure));
         };
-        evict_deferred(device, &victim, pinned.len())?;
+        evict_deferred(device, &victim)?;
         available = device.call(|g| g.available_cdram()).context("querying native CDRAM allowance")?;
         if available < peak {
             device.call(|g| g.reclaim_retired(true))?;
@@ -3182,13 +3201,11 @@ fn evictable_deferred(device: &Device, pinned: &HashSet<*const NativeTexture>) -
     victims
 }
 
-fn evict_deferred(device: &Device, victim: &NativeTexture, _pinned_count: usize) -> Result<()> {
+fn evict_deferred(device: &Device, victim: &NativeTexture) -> Result<()> {
     let id = victim.id.borrow_mut().take();
     if let Some(id) = id {
         let evict = Scope::new(Metric::DeferredEvict);
         let bytes = victim.allocation_bytes()?;
-        #[cfg(target_os = "vita")]
-        menu_draw_diagnostic::residency("EVICT", victim, _pinned_count);
         device.retire(&id);
         // An uncertain native retirement poisons subsequent allocation;
         // never pretend that a failed release recovered this memory.
@@ -3220,7 +3237,7 @@ fn allocate_texture_with_recovery(device: &Device, pinned: &HashSet<*const Nativ
     // A persistent driver failure must not churn the complete cache or stall
     // the main thread indefinitely. Ordinary successful allocations skip this.
     for victim in evictable_deferred(device, pinned).into_iter().take(8) {
-        evict_deferred(device, &victim, pinned.len())?;
+        evict_deferred(device, &victim)?;
         device.call(|g| g.reclaim_retired(true)).context("retiring idle texture for allocation recovery")?;
         attempts += 1;
         match device.call(&mut allocate) {
@@ -3262,7 +3279,8 @@ fn admit_deferred_upload(device: &Device, allocation: usize,
 /// Pin the complete command list before issuing any game render pass. The LRU
 /// may evict idle atlas GPU storage even while its logical TexRef is still held.
 /// Native destroy waits for outstanding sampling, and a later frame can reload.
-fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmission<'_>) -> Result<()> {
+fn prepare_deferred(device: &Device, commands: &[Command], preview: Option<&Rc<NativeTexture>>,
+    admit: &mut FrameAdmission<'_>) -> Result<()> {
     let _prepare = Scope::new(Metric::DeferredPrepare);
     let mut required = Vec::new();
     let mut pinned = HashSet::new();
@@ -3271,6 +3289,7 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
             required.push(texture.clone());
         }
     };
+    if let Some(texture) = preview { add(texture); }
     for command in commands {
         match command {
             Command::Begin { target, .. } => add(target),
@@ -3292,8 +3311,6 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
     if required.is_empty() { return Ok(()); }
     let epoch = device.epoch.get().checked_add(1).context("deferred cache epoch overflow")?;
     device.epoch.set(epoch);
-    #[cfg(target_os = "vita")]
-    menu_draw_diagnostic::residency_stats(device);
     for (_, texture) in &required { texture.last_used.set(epoch); }
     if knife_perf::enabled() {
     for (allocation, texture) in &required {
@@ -3319,11 +3336,10 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
         if texture.id.borrow().is_none() {
             let rebuild_started = std::time::Instant::now();
             let source = texture.deferred.as_ref().context("deferred source missing")?;
-            #[cfg(target_os = "vita")]
-            menu_draw_diagnostic::residency("RELOAD", &texture, pinned.len());
             match &source.kind {
             DeferredKind::GxtAltered { logical, info, extract } => {
-                let id = source.bytes.with_bytes(Metric::GxtReload, &source.label, |bytes| {
+                source.stage_alpha_region_verified.set(false);
+                let (id, opaque, transparent, stage_alpha) = source.bytes.with_bytes(Metric::GxtReload, &source.label, |bytes| {
                     let view = extract(bytes).context("reading reloaded GXT envelope")?;
                     ensure!(view.logical == *logical && view.physical == texture.size,
                         "deferred GXT envelope dimensions changed for {}", source.label);
@@ -3339,14 +3355,21 @@ fn prepare_deferred(device: &Device, commands: &[Command], admit: &mut FrameAdmi
                             |g| g.create_gxt_texture(view.file, false, true)));
                     #[cfg(target_os = "vita")]
                     deferred_metrics::add(&deferred_metrics::UPLOAD_US, upload_start.elapsed());
-                    uploaded.with_context(|| format!("uploading GXT atlas {}", source.label))
+                    let id = uploaded.with_context(|| format!("uploading GXT atlas {}", source.label))?;
+                    Ok((id, stage_opaque::verifies_opaque_interior(bytes, &source.label, &gxt),
+                        transparent_draw::for_upload(bytes, &source.label, &gxt),
+                        source.stage_alpha_region.get().is_some_and(|proof|
+                            sparse_coverage::verify_stage_alpha_upload(proof, bytes, &gxt))))
                 })?;
                 texture.commit_residency(id)?;
+                source.opaque_interior.set(opaque);
+                source.transparent_draw.set(transparent);
+                source.stage_alpha_region_verified.set(stage_alpha);
                 let released = source.bytes.release_ready();
                 device.encoded_bytes.set(device.encoded_bytes.get().saturating_sub(released));
                 knife_perf::gauge_set(Gauge::EncodedBytes, device.encoded_bytes.get() as u64);
                 #[cfg(target_os = "vita")]
-                menu_draw_diagnostic::compressed_upload(&texture, *info);
+                compressed_upload_log::record(&texture, *info);
             }
             DeferredKind::Alter { .. } | DeferredKind::Image { .. } => {
             let cached = match &source.kind {
@@ -3496,19 +3519,14 @@ mod pass_metrics {
         };
         &mut table[index]
     }
-    /// One recorded quad, so a pass that is expensive because it draws many quads can
-    /// be told apart from one that is a single full-screen blit.
-    pub fn count_draw(label: &str) {
-        let Ok(mut table) = TABLE.lock() else { return };
-        entry(&mut table, label).3 += 1;
-    }
-    /// One pass and the time the CPU blocked for it in GXM.
-    pub fn record(label: &str, us: u64) {
-        if us == 0 { return; }
+    /// Record one submission boundary and the draw count, if known.
+    pub fn record(label: &str, us: u64, draws: u64) {
+        if us == 0 && draws == 0 { return; }
         let Ok(mut table) = TABLE.lock() else { return };
         let row = entry(&mut table, label);
         row.1 += us;
-        row.2 += 1;
+        row.2 += u64::from(us != 0);
+        row.3 += draws;
     }
     /// "label:total_ms:passes:draws" for the most expensive labels.
     pub fn snapshot(top: usize) -> String {
@@ -3538,7 +3556,7 @@ fn scene_kind(target: &NativeTexture) -> u32 {
 }
 
 fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut FrameAdmission<'_>) -> Result<()> {
-    prepare_deferred(device, commands, admit).context(FramePreparationError)?;
+    prepare_deferred(device, commands, None, admit).context(FramePreparationError)?;
     // Preparation may submit nested bake batches. Reserve this complete batch
     // afterwards, including the final display clear and six present vertices.
     let mut basic_quads = 2usize;
@@ -3560,16 +3578,23 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
     #[cfg(not(target_os = "vita"))]
     let _ = &finish_flags;
     let mut begin_index = 0usize;
+    let reject_occluded = knife_perf::optimizations::enabled(knife_perf::optimizations::STAGE_OPAQUE_COVER);
+    let crop_stage_alpha = knife_perf::optimizations::enabled(knife_perf::optimizations::STAGE_ALPHA_REGION);
     device.call(|g| {
         let mut open = false;
+        let mut clipped = false;
+        let mut hidden_stage_paints = None;
+        let mut stage_alpha_regions = false;
         #[cfg(target_os = "vita")]
-        let mut diagnostic_target: Option<&NativeTexture> = None;
+        let mut current_pass_label: Option<String> = None;
+        #[cfg(target_os = "vita")]
+        let mut pass_draws = 0u64;
         #[cfg(target_os = "vita")]
         let mut last_pass_label: Option<String> = None;
         for (_command_index, command) in commands.iter().enumerate() {
             let outcome = (|| match command {
                 Command::GroupCut(_) => Ok(()),
-                Command::Begin { target, clear } => {
+                Command::Begin { target, clear, producer_clip } => {
                     if open {
                         return Err("encoder attempted nested GXM render passes".into());
                     }
@@ -3595,20 +3620,43 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     g.plan_scene(Some(&id), &reads, kind)?;
                     // Legacy mode drains here. Async mode supplies an explicit
                     // GPU scene dependency and preserves each arena until completion.
-                    let wait_start = std::time::Instant::now();
+                    #[cfg(target_os = "vita")]
+                    let wait_start = last_pass_label.as_ref().map(|_| std::time::Instant::now());
                     let finish_before = { let _ = finish_flags.get(begin_index); true };
                     begin_index += 1;
                     let result = g.begin_target_flags(&id, *clear, finish_before);
                     #[cfg(target_os = "vita")]
+                    let result = result.map_err(|error| {
+                        let label = target_labels::get(Rc::as_ptr(target) as usize).unwrap_or_default();
+                        format!("begin target {label:?} {}x{}: {error}", target.size[0], target.size[1])
+                    });
+                    #[cfg(target_os = "vita")]
                     if result.is_ok()
-                        && let Some(name) = last_pass_label.as_deref()
+                        && let (Some(name), Some(started)) = (last_pass_label.as_deref(), wait_start)
                     {
-                        pass_metrics::record(name, wait_start.elapsed().as_micros() as u64);
+                        pass_metrics::record(name, started.elapsed().as_micros() as u64, 0);
                     }
                     if result.is_ok() {
                         open = true;
+                        stage_alpha_regions = crop_stage_alpha && target.stage_target.get()
+                            && !target.srgb && producer_clip.is_none();
+                        hidden_stage_paints = if reject_occluded && target.stage_target.get()
+                            && !target.srgb && producer_clip.is_none()
+                        {
+                            stage_opaque::hidden_paints(commands, _command_index, target.size)
+                        } else { None };
+                        if let Some(hidden) = &hidden_stage_paints {
+                            knife_perf::add(Metric::StageOpaqueCover, 0, hidden.len() as u64);
+                        }
+                        if let Some(clip) = producer_clip {
+                            g.set_producer_clip(Some(*clip))?;
+                            clipped = true;
+                        }
                         #[cfg(target_os = "vita")]
-                        { diagnostic_target = Some(target); }
+                        if knife_perf::enabled() {
+                            current_pass_label = target_labels::get(Rc::as_ptr(target) as usize);
+                            pass_draws = 0;
+                        }
                     }
                     result
                 }
@@ -3617,21 +3665,21 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                         return Err("encoder attempted to end a closed GXM pass".into());
                     }
                     // An end failure leaves native teardown responsible for partial state.
+                    if clipped {
+                        g.set_producer_clip(None)?;
+                        clipped = false;
+                    }
                     open = false;
                     #[cfg(target_os = "vita")]
-                    let ending = diagnostic_target
-                        .and_then(|target| target_labels::get(target as *const NativeTexture as usize));
-                    #[cfg(target_os = "vita")]
-                    let end_start = std::time::Instant::now();
+                    let end_start = current_pass_label.as_ref().map(|_| std::time::Instant::now());
                     let ended = g.end_target();
                     #[cfg(target_os = "vita")]
                     {
                         // EndScene submission time; later waits are CPU boundaries, not GPU time.
-                        if let Some(name) = &ending {
-                            pass_metrics::record(name, end_start.elapsed().as_micros() as u64);
+                        if let (Some(name), Some(started)) = (&current_pass_label, end_start) {
+                            pass_metrics::record(name, started.elapsed().as_micros() as u64, pass_draws);
                         }
-                        last_pass_label = ending;
-                        diagnostic_target = None;
+                        last_pass_label = current_pass_label.take();
                     }
                     ended
                 }
@@ -3643,13 +3691,11 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     textures,
                     params,
                 } => {
-                    #[cfg(target_os = "vita")]
-                    if let Some(name) = diagnostic_target.and_then(|target|
-                        target_labels::get(target as *const NativeTexture as usize)) {
-                        pass_metrics::count_draw(&name);
-                    }
                     if !open {
                         return Err("encoder attempted a draw outside a GXM pass".into());
+                    }
+                    if hidden_stage_paints.as_ref().is_some_and(|range| range.contains(&_command_index)) {
+                        return Ok(());
                     }
                     let mut ids = [None, None, None, None];
                     for (i, texture) in textures.iter().enumerate() {
@@ -3657,9 +3703,28 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                             ids[i] = Some(texture.resident_id().map_err(|e| e.to_string())?);
                         }
                     }
-                    #[cfg(target_os = "vita")]
-                    let diagnostic_draw = menu_draw_diagnostic::draw_begin(device, _command_index,
-                        vertices, *shader, *blend, textures, &ids, *params, diagnostic_target);
+                    if stage_alpha_regions && let Some(source) = textures[0].as_deref()
+                        && let Some(proof) = sparse_coverage::stage_alpha_region_source(source)
+                        && let Some(plan) = stage_alpha_region::for_draw(proof, vertices, *work, *shader, *blend, params)
+                    {
+                        for &bounds in &plan.rectangles[..plan.count] {
+                            g.set_producer_clip(Some(bounds))?;
+                            clipped = true;
+                            let drawn = g.draw_effect(vertices, *shader, *blend,
+                                std::array::from_fn(|i| ids[i].as_ref()), *params);
+                            let restored = g.set_producer_clip(None);
+                            if restored.is_ok() { clipped = false; }
+                            drawn?;
+                            restored?;
+                            let mut piece = *work;
+                            piece.clip_region(vertices, bounds);
+                            executed_work::record_success(piece);
+                            #[cfg(target_os = "vita")]
+                            if current_pass_label.is_some() { pass_draws += 1; }
+                        }
+                        knife_perf::add(Metric::StageAlphaRegion, plan.saved_pixels, plan.count as u64);
+                        return Ok(());
+                    }
                     let result = g.draw_effect(
                         vertices,
                         *shader,
@@ -3669,9 +3734,11 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
                     );
                     if result.is_ok() {
                         executed_work::record_success(*work);
+                        #[cfg(target_os = "vita")]
+                        if current_pass_label.is_some() {
+                            pass_draws += 1;
+                        }
                     }
-                    #[cfg(target_os = "vita")]
-                    menu_draw_diagnostic::draw_end(diagnostic_draw, &result);
                     result
                 }
                 Command::Copy { src, dst, metric } => {
@@ -3698,6 +3765,7 @@ fn execute_with_admission(device: &Device, commands: &[Command], admit: &mut Fra
             })();
             if let Err(error) = outcome {
                 if open {
+                    if clipped { let _ = g.set_producer_clip(None); }
                     if let Err(cleanup) = g.end_target() {
                         return Err(format!("{error}; ending failed pass: {cleanup}"));
                     }
@@ -3741,17 +3809,19 @@ fn effect_blend(blend: Blend) -> EffectBlend {
 
 #[cfg(test)]
 fn quad_vertices(q: &Quad, size: [f32; 2], scale: [f32; 2]) -> Result<Vec<Vertex>> {
-    quad_vertices_reusing(q, size, scale, Vec::new())
+    quad_vertices_reusing(q, size, scale, None, Vec::new())
 }
 
-fn quad_vertices_reusing(q: &Quad, size: [f32; 2], scale: [f32; 2], reuse: Vec<Vertex>) -> Result<Vec<Vertex>> {
+fn quad_vertices_reusing(q: &Quad, size: [f32; 2], scale: [f32; 2],
+    fetch: Option<EffectShader>, reuse: Vec<Vertex>) -> Result<Vec<Vertex>> {
     let build = Scope::new(Metric::QuadBuild);
-    let result = quad_vertices_inner(q,size,scale,reuse);
+    let result = quad_vertices_inner(q,size,scale,fetch,reuse);
     build.finish(result.as_ref().map_or(0, |v| (v.len()*std::mem::size_of::<Vertex>()) as u64),0);
     result
 }
 
-fn quad_vertices_inner(q: &Quad, [tw, th]: [f32; 2], scale: [f32; 2], mut vertices: Vec<Vertex>) -> Result<Vec<Vertex>> {
+fn quad_vertices_inner(q: &Quad, [tw, th]: [f32; 2], scale: [f32; 2],
+    fetch: Option<EffectShader>, mut vertices: Vec<Vertex>) -> Result<Vec<Vertex>> {
     ensure!(
         q.pos
             .iter()
@@ -3797,27 +3867,33 @@ fn quad_vertices_inner(q: &Quad, [tw, th]: [f32; 2], scale: [f32; 2], mut vertic
         soft,
     };
     vertices.clear();
-    if knife_perf::optimizations::enabled(knife_perf::optimizations::SPARSE_COVERAGE)
-        && q.tex.sparse_coverage.is_some()
+    if let Some(plan) = q.tex.sparse_coverage
+        && plan.enabled()
     {
-        if let Some(rectangles) = sparse_coverage::rectangles(q) {
-            vertices.try_reserve(rectangles.len() * 6)
-                .context("reserving sparse quad vertices")?;
-            let [w, h] = sparse_coverage::IMG0436_PHYSICAL.map(|v| v as f32);
+        if let Some(rectangles) = sparse_coverage::rectangles(q, plan, scale, fetch)
+            && vertices.try_reserve(rectangles.len() * 6).is_ok()
+        {
+            let [w, h] = q.tex.physical_size().map(|v| v as f32);
+            let point = match plan {
+                SparseCoveragePlan::Img0436 => sparse_coverage::point,
+                SparseCoveragePlan::Live(_) => sparse_coverage::axis_aligned_point,
+                SparseCoveragePlan::OpaqueMask(_) => unreachable!("opacity-only source"),
+            };
             for &[x0, y0, x1, y1] in rectangles {
                 let uv = [[f32::from(x0) / w, f32::from(y0) / h],
                     [f32::from(x1) / w, f32::from(y0) / h],
                     [f32::from(x1) / w, f32::from(y1) / h],
                     [f32::from(x0) / w, f32::from(y1) / h]];
-                let p = uv.map(|uv| mk(sparse_coverage::point(q, uv)));
+                let p = uv.map(|uv| mk(point(q, uv)));
                 vertices.extend_from_slice(&[p[0], p[1], p[2], p[0], p[2], p[3]]);
             }
-            ensure!(vertices.iter().all(|v| v.pos.iter().chain(v.uv.iter()).all(|x| x.is_finite())),
-                "sparse interpolation overflowed its native coordinates");
-            knife_perf::add(Metric::SparseCoverageHit,
-                (vertices.len() * std::mem::size_of::<Vertex>()) as u64, vertices.len() as u64);
-            knife_perf::add(Metric::SparseCoverageTiles, 0, rectangles.len() as u64);
-            return Ok(vertices);
+            if vertices.iter().all(|v| v.pos.iter().chain(v.uv.iter()).all(|x| x.is_finite())) {
+                knife_perf::add(Metric::SparseCoverageHit,
+                    (vertices.len() * std::mem::size_of::<Vertex>()) as u64, vertices.len() as u64);
+                knife_perf::add(Metric::SparseCoverageTiles, 0, rectangles.len() as u64);
+                return Ok(vertices);
+            }
+            vertices.clear();
         }
         knife_perf::add(Metric::SparseCoverageFallback, 0, 1);
     }
@@ -3903,6 +3979,12 @@ fn group_owner_coverage(encoder: &CommandEncoder, pixel: &RenderTarget, mask: &R
         _ if matches!(owner_bound, CoverageBound::Unknown) => CoverageBound::Unknown,
         _ => coverage::intersection(requested, owner_bound),
     }
+}
+
+fn outside_viewport(corners: [[f32; 2]; 4], size: [f32; 2]) -> bool {
+    corners.iter().flatten().all(|x| x.is_finite()) && size.into_iter().enumerate().any(|(axis, end)| {
+        corners.iter().all(|p| p[axis] < 0.0) || corners.iter().all(|p| p[axis] > end)
+    })
 }
 
 fn group_composite_coverage(requested: CoverageBound, blend: Blend) -> CoverageBound {

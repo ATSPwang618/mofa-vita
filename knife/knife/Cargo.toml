@@ -63,5 +63,6 @@ gilrs = "0.11.2"
 # Debug command-line options (screenshots, scripted input, scene / slot / screen at startup); not
 # part of the normal build.
 debug = []
+offline-grade-tool = []
 # Final direct-GXM Vita game; selected explicitly by the packaging script.
 vita-gxm = []

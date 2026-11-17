@@ -1,9 +1,152 @@
 """Validate production KIMG/KATL/GXT metadata without decoding image pixels."""
+import re
 import struct
 import zlib
+from contextlib import ExitStack
 
 CAP = 32 * 1024 * 1024
 GRANULE = 256 * 1024
+VOLUME_BYTES = 1024 * 1024 * 1024
+STORY = ('jallpac', 'jallpachd', 'allpacml', 'allpachdml')
+STORY_KEY = re.compile(r'KQ([0-9A-F]{5})([0-9A-F]{2})([012])([0-9A-F]{8})([0-9A-F]{8})\.NXZ')
+
+
+def volume_name(base, index):
+    return f'{base}.mrg.{index:03}' if index else f'{base}.mrg'
+
+
+class ArchiveVolumes:
+    """Python verification counterpart of Archive's bounded Vita seeks."""
+    def __init__(self, asset, base, count):
+        self.stack = ExitStack()
+        self.paths = [asset(volume_name(base, i)) for i in range(count)]
+        self.size = sum(p.stat().st_size for p in self.paths)
+        self.position = 0
+
+    def __enter__(self):
+        with ExitStack() as stack:
+            self.files = [stack.enter_context(p.open('rb')) for p in self.paths]
+            self.stack = stack.pop_all()
+        return self
+
+    def __exit__(self, *args):
+        self.stack.__exit__(*args)
+
+    def seek(self, pos, whence=0):
+        if whence == 2:
+            pos += self.size
+        elif whence != 0:
+            raise ValueError('unsupported archive seek')
+        self.position = pos
+        return pos
+
+    def read(self, size):
+        if len(self.files) == 1:
+            file = self.files[0]
+            file.seek(self.position)
+            data = file.read(size)
+            self.position += len(data)
+            return data
+        end = self.position + size
+        blocks = []
+        while self.position < end:
+            index, offset = divmod(self.position, VOLUME_BYTES)
+            self.files[index].seek(offset)
+            count = min(VOLUME_BYTES - offset, end - self.position)
+            block = self.files[index].read(count)
+            if len(block) != count:
+                raise ValueError('short read in numbered story volume')
+            blocks.append(block)
+            self.position += count
+        return b''.join(blocks)
+
+
+def story_extension_rows(archive, rows, names, source, extent, original_count):
+    """Validate every added KIMG and that a tiled variant owns its exact grid."""
+    require(0 < original_count < len(rows) - 2, 'story variant ordinal boundary')
+    require(rows[-1] == (0xffffffff, 0xffff, 0xffff), 'story variant HED terminator')
+    require(len(names) == len(rows) * 32, 'story variant NAM length')
+
+    def name(i):
+        return names[i * 32:(i + 1) * 32].split(b'\x00')[0].split(b'\r')[0].decode('ascii')
+
+    def entry(i):
+        sector, count, _ = rows[i]
+        require(count and count * 2048 <= CAP and (sector + count) * 2048 <= extent,
+                f'{archive}:{i}: story data outside MRG')
+        source.seek(sector * 2048)
+        return source.read(count * 2048)
+
+    def checked_gxt(data, logical, descriptor=None):
+        info = image_info(data)
+        require(info['codec'] == 9 and info['format'] in ('dxt1', 'dxt5')
+                and info['logical'] == list(logical)
+                and info['physical'][0] * info['physical'][1] <= 960 * 1080
+                and info['gpu_payload_bytes'] <= 2 * 1024 * 1024
+                and struct.unpack_from('<I', data, 80)[0] == 0xa0000000
+                and not any(data[info['envelope_bytes']:]), 'story GXT format or padding')
+        if descriptor is not None:
+            size, fmt, payload = descriptor
+            require(info['physical'] == size
+                    and fmt == (0x85000000 if info['format'] == 'dxt1' else 0x87000000)
+                    and payload == info['gpu_payload_bytes'], 'story tile descriptor mismatch')
+
+    def raw_nx(data):
+        if data[:4] not in (b'NXCX', b'NXGX'):
+            return data
+        n, compressed = struct.unpack_from('<II', data, 4)
+        require(0 < n <= CAP and compressed + 16 <= len(data), 'story NX bounds')
+        decoder = zlib.decompressobj(31 if data[:4] == b'NXGX' else 15)
+        raw = decoder.decompress(data[16:16 + compressed], n + 1)
+        require(len(raw) == n and decoder.eof and not decoder.unused_data
+                and not decoder.unconsumed_tail, 'story NX stream')
+        return raw
+
+    i = original_count
+    end = len(rows) - 2
+    require(name(end) == 'KQ_VARIANTS.NXZ' and rows[end][1:] == (0, 0), 'story variant directory marker')
+    seen = set()
+    while i < end:
+        key = name(i)
+        match = STORY_KEY.fullmatch(key)
+        require(match is not None and key not in seen, f'{archive}:{i}: invalid/duplicate story variant')
+        seen.add(key)
+        base, grade, language = (int(match[j], 16) for j in range(1, 4))
+        require(base < original_count and grade <= 82 and not name(base).startswith('KQ'), 'story variant base ordinal')
+        original = image_info(raw_nx(entry(base)))
+        logical = original['logical']
+        if language:
+            logical[1] //= 2
+
+        data = raw_nx(entry(i))
+        if data[:4] == b'KIMG':
+            checked_gxt(data, logical)
+            i += 1
+            continue
+        require(data[:4] == b'KQTL' and len(data) >= 52, 'story grid header')
+        version, lw, lh, w, h, columns, lines = struct.unpack_from('<7I', data, 4)
+        count = columns * lines
+        length = 32 + (count + 1) * 20
+        valid_length = len(data) == length or (
+            len(data) == (length + 2047) // 2048 * 2048 and not any(data[length:]))
+        require(version == 1 and [lw, lh] == logical and 0 < w <= lw and 0 < h <= lh
+                and columns == (w + 503) // 504 and lines == (h + 503) // 504
+                and count <= 256 and valid_length
+                and i + count + 1 < end, f'{archive}:{i}: story grid dimensions or entry range')
+        for slot in range(count + 1):
+            ref, pw, ph, fmt, size = struct.unpack_from('<5I', data, 32 + 20 * slot)
+            require(ref == i + 1 + slot and name(ref) == f'KQT{i:07X}{slot:03X}.NXZ', 'story grid payload ordinal')
+            if slot == 0:
+                require(pw <= w and ph <= h, 'story grid fallback dimensions')
+                expected_logical = logical
+            else:
+                x, y = ((slot - 1) % columns) * 504, ((slot - 1) // columns) * 504
+                expected_logical = [min(w, x + 508) - max(0, x - 4),
+                                    min(h, y + 508) - max(0, y - 4)]
+                require([pw, ph] == expected_logical, 'story grid guard dimensions')
+            checked_gxt(raw_nx(entry(ref)), expected_logical, ([pw, ph], fmt, size))
+        i += count + 2
+    require(i == end and seen, 'incomplete story variant table')
 
 
 def check_story_rgba_budget(asset, manifest):
@@ -14,15 +157,34 @@ def check_story_rgba_budget(asset, manifest):
     require(policy.get('schema') == 'knife-offline-story-memory-budget-v1'
             and policy.get('rgba_allocation_cap') == 1024 * 1024, 'unknown offline RGBA budget policy')
     checked = protected = maximum = 0
+    extensions = manifest.get('story_gxt_variants')
+    volumes = manifest.get('story_archive_volumes', {})
+    require(set(volumes) <= set(STORY) and all(type(n) is int and 2 <= n <= 128 for n in volumes.values()),
+            'invalid story volume directory')
+    if extensions is not None:
+        require(extensions.get('schema') == 'knife-story-gxt-variants-v1', 'unknown story variant policy')
+        extensions = extensions['original_entries']
+        require(extensions and set(extensions) <= set(STORY), 'invalid story variant archives')
+    else:
+        extensions = {}
     for archive in manifest['archives']:
         base = archive['name']
-        if base not in ('jallpac', 'jallpachd', 'allpacml', 'allpachdml'):
+        if base not in STORY:
             continue
         names = asset(base + '.nam').read_bytes()
         cache = {}
-        with asset(base + '.mrg').open('rb') as source:
+        count_volumes = volumes.get(base, 1)
+        with ArchiveVolumes(asset, base, count_volumes) as source:
+            if count_volumes > 1:
+                sizes = [p.stat().st_size for p in source.paths]
+                require(sizes[:-1] == [VOLUME_BYTES] * (count_volumes - 1)
+                        and 0 < sizes[-1] <= VOLUME_BYTES, 'invalid story volume size')
             extent = source.seek(0, 2)
-            for index, row in enumerate(struct.iter_unpack('<IHH', asset(base + '.hed').read_bytes())):
+            rows = list(struct.iter_unpack('<IHH', asset(base + '.hed').read_bytes()))
+            if base in extensions:
+                story_extension_rows(base, rows, names, source, extent, extensions[base])
+                rows = rows[:extensions[base]]
+            for index, row in enumerate(rows):
                 sector, count, _ = row
                 if sector == 0xffffffff:
                     break

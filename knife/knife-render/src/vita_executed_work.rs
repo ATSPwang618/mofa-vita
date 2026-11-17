@@ -27,7 +27,8 @@ impl DrawWork {
         target_size: [u32;2], target_role: u32) -> Self {
         let id = shader as u32;
         let direct = params[7] == -18.0;
-        let ps = matches!(id,14|17..=21|23|25|27|29..=31|48..=52|54..=56|64..=107) || direct;
+        let normal_multiply = matches!(id, 58 | 59);
+        let ps = matches!(id,14|17..=21|23|25|27|29..=31|48..=52|54..=56|64..=107) || direct || normal_multiply;
         let op = |v: f32| if v.is_finite() && v.fract() == 0.0 && (1.0..=24.0).contains(&v) { v as u8 } else { 0 };
         let ops = if ps { [op(params[0]), if id == 27 { op(params[1]) } else { 0 }] } else { [0;2] };
         let op_count = u8::from(ops[0] != 0) + u8::from(ops[1] != 0);
@@ -37,7 +38,7 @@ impl DrawWork {
         if matches!(id,0..=3|6|7|9|14|16..=21|23|25|29..=31|48..=52|54..=56|64..=107)
             && vertices.iter().any(|v|v.haze.iter().flatten().any(|x|*x!=0.0)) { flags |= 1; }
         if vertices.iter().any(|v|v.soft[2][0]>0.0) { flags |= 4; }
-        if ps && !direct && id != 27 {
+        if ps && !direct && id != 27 && !normal_multiply {
             if params[4]>=0.0 { flags |= 2; }
             if params[7]==1.0 { flags |= 8; }
             if params[1]==1.0 { flags |= 16; }
@@ -48,14 +49,14 @@ impl DrawWork {
             if id==3 { flags |= 16; }
             if id==1 { flags |= 32; }
         }
-        let role = if matches!(id,10|53) {3} else if matches!(id,15|19) || (ps && params[7]==1.0) {2}
+        let role = if matches!(id,10|53) {3} else if matches!(id,15|19) || (ps && !normal_multiply && params[7]==1.0) {2}
             else if target_role==2 {0} else if target_role==3 || blend==EffectBlend::MaskAlpha {1} else {OTHER_ROLE};
-        let selection = if direct {5} else if id==27 {4} else if id==53 {6} else if id==10 {7}
+        let selection = if direct {5} else if id==27 || normal_multiply {4} else if id==53 {6} else if id==10 {7}
             else if ps && id==14 {1} else if ps && id==17 {2} else if ps {3} else {0};
         let program = if id == 27 && ops == [7,7] {57} else {id.min(254) as u8};
         Self { ops, op_count, flags, role, program, selection,
             target_role: target_role.min(15) as u8, target_size,
-            source_draws: u32::from(op_count.max(1)), pixels: area(vertices,target_size) }
+            source_draws: if normal_multiply {2} else {u32::from(op_count.max(1))}, pixels: area(vertices,target_size) }
     }
     pub fn merge(&mut self, rhs: Self) {
         debug_assert_eq!((self.ops,self.program,self.target_size,self.target_role),
@@ -65,6 +66,12 @@ impl DrawWork {
         self.pixels = self.pixels.saturating_add(rhs.pixels);
     }
     pub fn refresh_geometry(&mut self, vertices: &[Vertex]) { self.pixels = area(vertices,self.target_size); }
+    pub fn clip_region(&mut self, vertices: &[Vertex], [x, y, right, bottom]: [u32; 4]) {
+        let [w, h] = self.target_size.map(f64::from);
+        let clip = [2. * f64::from(x) / w - 1., 1. - 2. * f64::from(bottom) / h,
+            2. * f64::from(right) / w - 1., 1. - 2. * f64::from(y) / h];
+        self.pixels = area_in(vertices, self.target_size, clip);
+    }
     fn key(self) -> u32 {
         u32::from(self.ops[0]) | u32::from(self.ops[1])<<5 | u32::from(self.flags)<<10
             | u32::from(self.program)<<16 | u32::from(self.target_role)<<24
@@ -76,12 +83,16 @@ impl DrawWork {
 /// Clip every submitted triangle independently to the physical target. Sum
 /// overlaps separately to preserve duplicated work in merged draw geometry.
 fn area(vertices: &[Vertex], [w,h]: [u32;2]) -> u64 {
+    area_in(vertices, [w, h], [-1., -1., 1., 1.])
+}
+
+fn area_in(vertices: &[Vertex], [w,h]: [u32;2], [left, bottom, right, top]: [f64;4]) -> u64 {
     let mut total=0.0f64;
     for triangle in vertices.chunks_exact(3) {
         let mut a=[[0.0f64;2]; 8]; let mut n=3;
         for (dst,src) in a.iter_mut().zip(triangle) { *dst=[f64::from(src.pos[0]),f64::from(src.pos[1])]; }
         if a[..3].iter().flatten().any(|v|!v.is_finite()) { continue; }
-        for (axis,edge,greater) in [(0,-1.0,true),(0,1.0,false),(1,-1.0,true),(1,1.0,false)] {
+        for (axis,edge,greater) in [(0,left,true),(0,right,false),(1,bottom,true),(1,top,false)] {
             if n==0 { break; }
             let mut b=[[0.0;2];8]; let mut count=0;
             let inside=|p:[f64;2]| if greater {p[axis]>=edge} else {p[axis]<=edge};

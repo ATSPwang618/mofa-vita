@@ -2511,7 +2511,7 @@ fn stage_signature_tracks_render_inputs_and_successful_pixel_mutations() {
     let (r, _) = setup();
     let tex = r.create_writable(4, 4, false, "signature pixels");
     let original = Quad::rect(tex.clone(), [0., 0., 4., 4.], [1.; 4]);
-    let signature = original.render_signature();
+    let signature = original.render_key();
     let exact_key = original.render_key();
     let cases: Vec<(&str, Box<dyn Fn(&mut Quad)>)> = vec![
         ("uv", Box::new(|q| q.uv[2][0] = 0.9)),
@@ -2525,25 +2525,25 @@ fn stage_signature_tracks_render_inputs_and_successful_pixel_mutations() {
     ];
     for (name, mutate) in cases {
         let mut changed = original.clone(); mutate(&mut changed);
-        assert_ne!(signature, changed.render_signature(), "{name}");
+        assert_ne!(signature, changed.render_key(), "{name}");
         assert_ne!(exact_key, changed.render_key(), "exact {name}");
     }
     let mut ruled = original.clone();
     ruled.rule = Some(RuleMask::new(r.white.clone(), 0.5));
-    let ruled_signature = ruled.render_signature();
+    let ruled_signature = ruled.render_key();
     let ruled_key = ruled.render_key();
     ruled.rule.as_mut().unwrap().soft = 7.;
-    assert_ne!(ruled_signature, ruled.render_signature());
+    assert_ne!(ruled_signature, ruled.render_key());
     assert_ne!(ruled_key, ruled.render_key());
     ruled.rule.as_mut().unwrap().soft = 128.;
     ruled.rule.as_mut().unwrap().flip = 1;
-    assert_ne!(ruled_signature, ruled.render_signature());
+    assert_ne!(ruled_signature, ruled.render_key());
     assert_ne!(ruled_key, ruled.render_key());
     assert!(r.try_write_region(&tex, [4, 0, 1, 1], 4, &[255; 4]).is_err());
-    assert_eq!(signature, original.render_signature(), "rejected update changes no pixels");
+    assert_eq!(signature, original.render_key(), "rejected update changes no pixels");
     assert_eq!(exact_key, original.render_key(), "rejected update changes no exact key");
     r.try_write_region(&tex, [0, 0, 1, 1], 4, &[255; 4]).unwrap();
-    assert_ne!(signature, original.render_signature(), "same handle, new pixels");
+    assert_ne!(signature, original.render_key(), "same handle, new pixels");
     assert_ne!(exact_key, original.render_key(), "same handle, new pixel generation");
 }
 
@@ -2777,7 +2777,7 @@ fn stage_prefix_build_and_hit_preserve_clear_and_destination_dependent_suffix_or
         (Shade::NoAlpha, Blend::Opaque, [1.; 4]));
     assert_eq!(second[0].tex.physical_size(), stage.tex.physical_size());
     let cached = second[0].tex.clone();
-    assert!(enc.commands.iter().any(|c| matches!(c, Command::Begin { target, clear: Some(c) }
+    assert!(enc.commands.iter().any(|c| matches!(c, Command::Begin { target, clear: Some(c), .. }
         if Rc::ptr_eq(target, &cached.native) && *c == clear)));
     let producer = enc.commands.iter().filter_map(|c| match c {
         Command::Draw { shader, .. } => Some(*shader), _ => None,
@@ -2846,7 +2846,7 @@ fn stage_prefix_cached_version_source_generation_and_clear_changes_invalidate() 
 }
 
 #[test]
-fn stage_prefix_live_target_aliases_nonopaque_alpha_and_unsupported_blends_bypass() {
+fn stage_prefix_accepts_live_suffix_but_rejects_unsafe_prefixes() {
     let (mut r, _) = setup();
     let stage = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix alias stage");
     let other = r.create_scene_target(CANVAS_W, CANVAS_H, "prefix live source");
@@ -2864,9 +2864,14 @@ fn stage_prefix_live_target_aliases_nonopaque_alpha_and_unsupported_blends_bypas
             }
             let original = quads.iter().map(Quad::render_key).collect::<Vec<_>>();
             let mut enc = r.encoder();
-            assert!(!cache.apply(&mut r, &mut enc, &stage, clear, &mut quads));
-            assert!(enc.commands.is_empty() && cache.bytes() == 0);
-            assert_eq!(quads.iter().map(Quad::render_key).collect::<Vec<_>>(), original);
+            let reused = cache.apply(&mut r, &mut enc, &stage, clear, &mut quads);
+            if kind == 1 && shift == 1. {
+                assert!(reused && cache.bytes() > 0);
+                assert_eq!(quads[1..].iter().map(Quad::render_key).collect::<Vec<_>>(), original[2..]);
+            } else {
+                assert!(!reused && enc.commands.is_empty() && cache.bytes() == 0);
+                assert_eq!(quads.iter().map(Quad::render_key).collect::<Vec<_>>(), original);
+            }
         }
     }
 }
@@ -2946,7 +2951,7 @@ fn quantized_graph(commands:&[Command], state:&mut HashMap<usize,QuantizedSurfac
     let mut target=None;
     for c in commands {
         match c {
-            Command::Begin {target:t,clear}=>{
+            Command::Begin {target:t,clear,..}=>{
                 let id=Rc::as_ptr(t)as usize;target=Some(id);
                 if let Some(clear)=clear {state.insert(id,QuantizedSurface::Clear(clear.map(f32::to_bits)));}
             }
@@ -3031,7 +3036,7 @@ fn retained_group_batch_preserves_every_rgba8_node_and_dynamic_pair_while_reduci
         quantized_graph(&old.commands,&mut old_state);
         let mut new=r.encoder();
         let frame=group_batch_frame(&r,phase);
-        assert!(group_batch::render(&mut r,&mut new,&stage,&mut pair,&scratch,&mut cache,[0.,0.,0.,1.],frame,|_,_|{}));
+        assert!(group_batch::render(&mut r,&mut new,&stage,&mut pair,&scratch,&mut cache,[0.,0.,0.,1.],frame,false));
         assert_eq!(r.vita_target_passes(&new,&stage).unwrap(),1);
         let old_draws=old.commands.iter().filter(|c|matches!(c,Command::Draw {..})).count();
         let new_draws=new.commands.iter().filter(|c|matches!(c,Command::Draw {..})).count();
@@ -3067,7 +3072,7 @@ fn retained_group_batch_rejects_alias_inheritance_tail_and_admission_before_prod
             _=>{let available=r.vita_cache_headroom().unwrap();control.borrow_mut().external_cdram_bytes=available-1024*1024;},
         }
         let mut enc=r.encoder();
-        assert!(!group_batch::render(&mut r,&mut enc,&stage,&mut pair,&scratch,&mut cache,[0.,0.,0.,1.],frame,|_,_|{}));
+        assert!(!group_batch::render(&mut r,&mut enc,&stage,&mut pair,&scratch,&mut cache,[0.,0.,0.,1.],frame,false));
         assert!(enc.commands.is_empty(),"rejected optional path records no half-produced frame");
         control.borrow_mut().shader_capabilities=(1<<15)|(1<<19)|(1<<23);
         control.borrow_mut().external_cdram_bytes=0;
@@ -3087,7 +3092,7 @@ fn retained_group_batch_reports_the_specific_rejection_reason() {
     let before=knife_perf::get(knife_perf::Metric::GroupBatchRejectStructure);
     let mut enc=r.encoder();
     assert!(!group_batch::render(&mut r,&mut enc,&stage,&mut pair,&scratch,
-        &mut group_cache::Cache::default(),[0.,0.,0.,1.],frame,|_,_|{}));
+        &mut group_cache::Cache::default(),[0.,0.,0.,1.],frame,false));
     let delta=knife_perf::get(knife_perf::Metric::GroupBatchRejectStructure).delta(before);
     assert_eq!(delta.calls,1);
     knife_perf::set_enabled(false);
@@ -3127,7 +3132,7 @@ fn scene_plan_contains_all_unique_draw_inputs_and_copy_source() {
     let src = r.create_target(2, 2, "planned source");
     let aux = r.create_target(2, 2, "planned aux");
     let mut encoder = r.encoder();
-    encoder.commands.push(Command::Begin { target: dst.tex.native.clone(), clear: None });
+    encoder.commands.push(Command::Begin { target: dst.tex.native.clone(), clear: None, producer_clip: None });
     encoder.commands.push(Command::Draw { work: executed_work::DrawWork::pending(), vertices: vec![Vertex { pos: [0.0; 2], uv: [0.0; 2], color: [1.0; 4], haze: [[0.0; 4]; 2], soft: [[0.0; 4]; 3] }; 6], shader: EffectShader::Sprite,
         blend: EffectBlend::Alpha, textures: [Some(src.tex.native.clone()), Some(aux.tex.native.clone()), Some(src.tex.native.clone()), None], params: [0.0; 8] });
     encoder.commands.push(Command::End);

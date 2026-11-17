@@ -148,6 +148,7 @@ typedef struct BatchSlot { Block vertices; uint32_t used, first_sequence, last_s
 #define KV_OPT_PS_CHAIN_OP7      (UINT64_C(1) << 40)
 #define KV_OPT_PS_GROUP_MATERIAL (UINT64_C(1) << 42)
 #define KV_OPT_PS_MATERIAL_VARIANTS (UINT64_C(1) << 41)
+#define KV_OPT_PS_NORMAL_MULTIPLY (UINT64_C(1) << 44)
 enum { BATCH_SLOTS = 2, BATCH_MAX_BYTES = 4 * 1024 * 1024 };
 #ifdef KV_GXM_DEV_DIAGNOSTICS
 static void native_trace(const char *stage, const Block *block) {
@@ -183,7 +184,7 @@ struct KvGxmTexture {
     SceGxmColorSurface surface;
     uint32_t width, height, pitch, bpp, srgb, storage;
     uint32_t target_scenes, target_driver_bytes;
-    int ready, rendered, retiring;
+    int ready, rendered, retiring, attachment_reclaimed;
     uint32_t last_use, last_read, last_write;
     uint64_t rename_identity;
 };
@@ -587,6 +588,13 @@ int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t capacity) {
 int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader) {
     if (!active(g)) return KV_STATE;
     return shader_capability_ready(g, shader);
+}
+
+int32_t kv_gxm_shader_mask(KvGxm *g, uint64_t out[2]) {
+    if (!active(g) || !out) return KV_STATE;
+    out[0] = g->shader_capabilities;
+    out[1] = g->shader_capabilities_high;
+    return 0;
 }
 
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,

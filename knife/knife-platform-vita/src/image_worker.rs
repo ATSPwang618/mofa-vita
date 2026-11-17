@@ -56,6 +56,7 @@ struct State<J, R> {
     next_id: u64,
     stopped: bool,
     stats: WorkerStats,
+    prefetch_allowed: bool,
 }
 
 struct Shared<J, R> {
@@ -104,7 +105,7 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
             state: Mutex::new(State {
                 pending: VecDeque::new(), ready: VecDeque::new(), active: None,
                 context: 0, window: Vec::new(), needed:None, failures:HashMap::new(), claimed: HashMap::new(), next_id: 0,
-                stopped: false, stats: WorkerStats::default(),
+                stopped: false, stats: WorkerStats::default(), prefetch_allowed: true,
             }),
             wake: Condvar::new(),
         });
@@ -114,7 +115,8 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
                 run.lock().stats.threads_started = 1;
                 loop {
                     let mut state = run.lock();
-                    while !state.stopped && (state.pending.is_empty() || state.ready.len() >= ready_limit) {
+                    while !state.stopped && (state.pending.is_empty() || state.ready.len() >= ready_limit
+                        || (!state.prefetch_allowed && state.pending.front().is_some_and(|job| state.needed.as_ref() != Some(&job.key)))) {
                         state = run.wake.wait(state).unwrap_or_else(|e| e.into_inner());
                     }
                     if state.stopped { break; }
@@ -156,7 +158,15 @@ impl<J: Send + 'static, R: Send + 'static> BoundedWorker<J, R> {
     /// Change language/context or the small ordered working window. Dropped
     /// in-flight work is allowed to finish, but its stale pixels are discarded.
     pub fn retain_window(&self, context: u64, keys: &[String])->bool {
+        self.retain_prefetch_window(context, keys, true)
+    }
+
+    pub fn retain_prefetch_window(&self, context: u64, keys: &[String], prefetch_allowed: bool) -> bool {
         let Some(mut state)=self.shared.try_lock()else{return false};
+        if state.prefetch_allowed != prefetch_allowed {
+            state.prefetch_allowed = prefetch_allowed;
+            self.shared.wake.notify_all();
+        }
         let mut window = Vec::with_capacity(keys.len().min(WINDOW_LIMIT));
         for key in keys {
             if window.len() == WINDOW_LIMIT { break; }
@@ -395,8 +405,12 @@ mod tests {
         release.send(()).unwrap();
         assert_eq!(seen.recv_timeout(Duration::from_secs(3)).unwrap(), 2);
         release.send(()).unwrap();
-        until(|| worker.stats().ready == 1);
-        assert_eq!(worker.try_take().unwrap(), ("strip".into(), 2));
+        let mut result = None;
+        until(|| {
+            result = worker.try_take();
+            result.is_some()
+        });
+        assert_eq!(result, Some(("strip".into(), 2)));
     }
 
     #[test]

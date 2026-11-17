@@ -470,7 +470,7 @@ impl Ui {
         if let (Some((x, y)), Some(t)) = (thumb_at, thumb) {
             let (kx, ky) = (W / 640.0, H / 448.0);
             let (w, h) = (100.0 * 0.82667 * kx, 53.0 * 1.0859 * ky);
-            out.push(Quad::rect(t, [x * kx, y * ky, w, h], [1.0, 1.0, 1.0, ja * a]));
+            out.push(t.quad([x * kx, y * ky, w, h], [1.0, 1.0, 1.0, ja * a]));
         }
         pen.scale(SX, SY);
         pen.alpha(a);

@@ -39,6 +39,15 @@ impl StreamResolver {
         let original = self.root.join(rel);
         let ogg_rel = Path::new(rel).with_extension("ogg");
         let ogg = self.root.join(&ogg_rel);
+        #[cfg(target_os = "vita")]
+        if knife_platform_vita::audio_banks::packed_path(&ogg) {
+            use knife_platform_vita::audio_banks::entry;
+            let found = if entry(&ogg).is_some() { Some(ogg) }
+                else if original != ogg && entry(&original).is_some() { Some(original) }
+                else { None };
+            knife_perf::add(if found.is_some() { Metric::StreamIndexHit } else { Metric::StreamIndexMiss }, 0, 0);
+            return found;
+        }
         if accelerated {
             if let Some(index) = &self.index {
                 let found = if ogg_rel.to_str().is_some_and(|p| index.contains(p)) { Some(ogg.clone()) }

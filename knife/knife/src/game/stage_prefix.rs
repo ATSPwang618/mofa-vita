@@ -46,22 +46,33 @@ impl Cache {
     pub(super) fn apply(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
         template: &RenderTarget, clear: [f32; 4], quads: &mut Vec<Quad>) -> bool
     {
+        self.apply_to_run(r, enc, template, clear, quads, false)
+    }
+
+    pub(super) fn apply_to_run(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
+        template: &RenderTarget, clear: [f32; 4], quads: &mut Vec<Quad>, group_follows: bool) -> bool
+    {
         self.clock = self.clock.saturating_add(1);
-        let allowed = clear[3] == 1.0 && quads.len() <= 64 && quads.iter().all(|q|
-            preserves_opaque_alpha(q) && q.rule.is_none() && !q.masked
-            && (q.tex.vita_immutable_stage_source() || Arc::ptr_eq(&q.tex, &r.white)));
-        if !allowed {
+        if clear[3] != 1.0 || quads.len() > 64
+            || quads.iter().any(|q| Arc::ptr_eq(&q.tex, &template.tex))
+        {
             self.clear();
             knife_perf::add(Metric::StagePrefixBypass, 0, 1);
             return false;
         }
         let keys: Vec<Vec<u64>> = quads.iter().map(Quad::render_key).collect();
-        let count = common_prefix(&self.previous, &keys);
+        // Only draws entering the cached surface have to prove an opaque
+        // alpha and immutable inputs. A moving or masked suffix still reads
+        // the same destination and executes in its original order.
+        let count = quads[..common_prefix(&self.previous, &keys)].iter().take_while(|q|
+            preserves_opaque_alpha(q) && q.rule.is_none() && !q.masked
+            && (q.tex.vita_immutable_stage_source() || Arc::ptr_eq(&q.tex, &r.white)))
+            .count();
         self.previous = keys.clone();
         // A stable complete stage already has the cheaper existing whole-stage
         // cache. Caching two ordinary sprites would add bandwidth for little gain.
-        if count < 2 || count == quads.len()
-            || !quads[..count].iter().any(|q| matches!(q.blend, Blend::Ps(_))) {
+        if count < 2 || (!group_follows && count == quads.len())
+            || (count < 4 && !quads[..count].iter().any(|q| matches!(q.blend, Blend::Ps(_)))) {
             // A changed scene must not keep an obsolete optional target while
             // admission loads its new source working set.
             self.entry = None;

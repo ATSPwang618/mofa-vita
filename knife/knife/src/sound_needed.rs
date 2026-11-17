@@ -1,7 +1,7 @@
 //! One CPU sound decoder, independent of image demand. Speculation only fills
 //! the existing PCM cache; a real script barrier pins at most 16 MiB until play.
 use super::*;
-use std::{io::Read, time::{Duration, Instant}};
+use std::time::{Duration, Instant};
 use knife_platform_vita::image_worker::{BoundedWorker, WorkerPoll};
 
 const ENCODED_LIMIT: usize = 8 * knife_perf::memory_budget::MIB;
@@ -16,11 +16,7 @@ pub(super) struct DecodedSound { key: String, result: Result<Arc<Pcm>> }
 pub(super) struct Demand { key: String, started: Instant }
 
 fn bounded_stream(path: &Path) -> Result<Pcm> {
-    let file = std::fs::File::open(path)?;
-    anyhow::ensure!(file.metadata()?.len() <= ENCODED_LIMIT as u64, "sound encoded source exceeds 8 MiB");
-    let mut bytes = Vec::new();
-    file.take(ENCODED_LIMIT as u64 + 1).read_to_end(&mut bytes)?;
-    anyhow::ensure!(bytes.len() <= ENCODED_LIMIT, "sound encoded source grew past budget");
+    let bytes = knife_platform_vita::audio_banks::read_encoded(path, ENCODED_LIMIT)?;
     if bytes.starts_with(b"OggS") {
         // Bound the exact packet table the unchanged codec will build. No
         // payload, gain, pre-skip, EOS or sample conversion semantics change.

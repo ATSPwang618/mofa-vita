@@ -45,6 +45,21 @@ impl Game {
             for (queued, _, _) in &self.se_delayed {
                 if matches!(queued.kind, 1 | 4) && let Some(name) = &queued.name { names.push(name.clone()); }
             }
+            if self.vita_charge_script() && (1047..=charge_scene::COMMAND + 1).contains(&self.pc) {
+                // Warm the exact authored effects before their long clusters
+                // of motion opcodes. Delayed slots still execute at their
+                // original ticks, through the same PCM demand barrier.
+                let first = if self.pc <= charge_scene::FADE { 1190 } else { 1239 };
+                let end = if first == 1190 { 1192 } else { 1243 };
+                for command in self.script.commands.get(first..end).unwrap_or_default() {
+                    let name = match command.name.as_str() {
+                        "SEPL" => command.arg(2),
+                        "SEAC" => command.arg(1),
+                        _ => None,
+                    };
+                    if let Some(name) = name { names.push(name.into()); }
+                }
+            }
             let end = (self.pc + 24).min(self.script.commands.len());
             for command in self.script.commands.get(self.pc..end).unwrap_or_default() {
                 let name = match command.name.as_str() { "SEPL" => command.arg(2), "SEAC" => command.arg(1), _ => None };

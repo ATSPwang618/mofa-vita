@@ -87,11 +87,14 @@ impl Cache {
         self.entries.iter().any(|e| identity(&e.target) == id)
     }
 
-    fn key(pair: &[RenderTarget; 2], kind: usize, quads: &[Quad]) -> Vec<u64> {
+    fn key(pair: &[RenderTarget; 2], kind: usize, quads: &[Quad], clip: Option<[u32; 4]>,
+        opaque: bool) -> Vec<u64> {
         let physical = pair[kind].tex.physical_size();
         let mut key = vec![kind as u64, u64::from(pair[kind].tex.width),
             u64::from(pair[kind].tex.height), u64::from(physical[0]),
-            u64::from(physical[1]), quads.len() as u64];
+            u64::from(physical[1]), if opaque { u64::MAX } else { quads.len() as u64 }];
+        if opaque { return key; }
+        key.extend(clip.unwrap_or([0; 4]).map(u64::from));
         for q in quads {
             let input = q.render_key(); key.push(input.len() as u64); key.extend(input);
         }
@@ -102,23 +105,30 @@ impl Cache {
     /// optional allocation leaves the original group stream recordable.
     /// Retained output surfaces use the same six-entry/12-MiB cache allowance.
     pub(super) fn prepare_retained(&mut self, r: &Renderer, enc: &CommandEncoder,
-        pair: &[RenderTarget; 2], producers: &[[Vec<Quad>; 2]], upcoming: &[Quad]) -> bool
+        pair: &[RenderTarget; 2], producers: &[[Vec<Quad>; 2]], upcoming: &[Quad],
+        clips: &[Option<[u32; 4]>], opaque_masks: &[bool]) -> Option<Vec<[Vec<u64>; 2]>>
     {
         self.finish_retained();
         if pair[0].tex.physical_size() != pair[1].tex.physical_size()
             || pair[0].tex.width != pair[1].tex.width || pair[0].tex.height != pair[1].tex.height {
-            return false;
+            return None;
         }
-        let mut keys: [Vec<Vec<u64>>; 2] = [Vec::new(), Vec::new()];
-        for group in producers { for k in 0..2 {
-            let key = Self::key(pair, k, &group[k]);
-            if !keys[k].contains(&key) { keys[k].push(key); }
-        } }
-        let needed = keys.iter().map(Vec::len).sum::<usize>();
-        let Ok(bytes) = r.vita_target_allocation_bytes(&pair[0]) else { return false; };
+        let keys: Vec<_> = producers.iter().zip(clips).zip(opaque_masks)
+            .map(|((group, clip), &opaque)| [
+                Self::key(pair, 0, &group[0], *clip, false),
+                Self::key(pair, 1, &group[1], None, opaque),
+            ]).collect();
+        let mut unique: [Vec<&Vec<u64>>; 2] = [Vec::new(), Vec::new()];
+        for pair in &keys {
+            for (k, key) in pair.iter().enumerate() {
+                if !unique[k].contains(&key) { unique[k].push(key); }
+            }
+        }
+        let needed = unique.iter().map(Vec::len).sum::<usize>();
+        let bytes = r.vita_target_allocation_bytes(&pair[0]).ok()?;
         if needed > memory_budget::GPU_GROUP_ENTRIES
             || needed.checked_mul(bytes).is_none_or(|n| n > memory_budget::GPU_GROUP_BYTES) {
-            return false;
+            return None;
         }
         let available = |entries: &[Entry], k: usize| {
             let mut ids = HashSet::new(); ids.insert(identity(&pair[k]));
@@ -129,36 +139,36 @@ impl Cache {
         };
         // Make room in the existing budget, preferring obsolete result keys.
         loop {
-            let missing = (0..2).map(|k| keys[k].len().saturating_sub(available(&self.entries, k)))
+            let missing = (0..2).map(|k| unique[k].len().saturating_sub(available(&self.entries, k)))
                 .sum::<usize>();
             if self.entries.len() + missing <= memory_budget::GPU_GROUP_ENTRIES { break; }
             let victim = self.entries.iter().enumerate().filter(|(_, e)| {
                 let k = e.key[0] as usize;
                 identity(&e.target) != identity(&pair[k])
-                    && available(&self.entries, k) > keys[k].len()
-            }).min_by_key(|(_, e)| (keys[e.key[0] as usize].contains(&e.key), e.last_use))
+                    && available(&self.entries, k) > unique[k].len()
+            }).min_by_key(|(_, e)| (unique[e.key[0] as usize].contains(&&e.key), e.last_use))
                 .map(|(i, _)| i);
-            let Some(victim) = victim else { return false; };
+            let victim = victim?;
             self.remove(victim);
         }
         for k in 0..2 {
-            let missing = keys[k].len().saturating_sub(available(&self.entries, k));
+            let missing = unique[k].len().saturating_sub(available(&self.entries, k));
             for _ in 0..missing {
                 if !r.vita_prepare_cache_allocation(enc, upcoming, bytes).unwrap_or(false) {
-                    self.finish_retained(); return false;
+                    self.finish_retained(); return None;
                 }
                 let Ok(target) = r.try_create_scene_target(pair[k].tex.width, pair[k].tex.height,
                     if k == 0 { "group pixel" } else { "group mask" }) else {
-                    self.finish_retained(); return false;
+                    self.finish_retained(); return None;
                 };
                 if target.tex.physical_size() != pair[k].tex.physical_size() {
-                    self.finish_retained(); return false;
+                    self.finish_retained(); return None;
                 }
                 self.spares.push((k, target, bytes));
             }
         }
         self.publish_bytes();
-        true
+        Some(keys)
     }
 
     pub(super) fn retain_pair(&mut self, pair: &[RenderTarget; 2]) {
@@ -181,6 +191,14 @@ impl Cache {
     pub(super) fn draw(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
         pair: &mut [RenderTarget; 2], kind: usize, fresh: bool, quads: &[Quad], allowed: bool)
     {
+        self.draw_with_clip(r, enc, pair, kind, fresh, quads, allowed, None, false, None);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn draw_with_clip(&mut self, r: &mut Renderer, enc: &mut CommandEncoder,
+        pair: &mut [RenderTarget; 2], kind: usize, fresh: bool, quads: &[Quad], allowed: bool,
+        clip: Option<[u32; 4]>, opaque: bool, key: Option<Vec<u64>>)
+    {
         self.clock = self.clock.saturating_add(1);
         if !fresh || !allowed {
             knife_perf::add(Metric::GroupCacheBypass, 0, quads.len() as u64);
@@ -189,7 +207,7 @@ impl Cache {
             self.publish_bytes();
             return;
         }
-        let key = Self::key(pair, kind, quads);
+        let key = key.unwrap_or_else(|| Self::key(pair, kind, quads, clip, opaque));
         if let Some(e) = self.entries.iter_mut().find(|e| e.key == key
             && e.version == e.target.tex.render_identity()
             && e.dependencies.iter().all(|d| d.upgrade().is_some()))
@@ -199,6 +217,7 @@ impl Cache {
             pair[kind] = clone_target(&e.target);
             knife_perf::add(Metric::GroupCacheHit, e.bytes as u64, kind as u64);
             knife_perf::add(Metric::GroupCacheDrawSaved, e.bytes as u64, e.effect_draws as u64);
+            if opaque { knife_perf::add(Metric::GroupOpaqueMask, 0, 1); }
             return;
         }
         knife_perf::add(Metric::GroupCacheMiss, 0, kind as u64);
@@ -240,11 +259,19 @@ impl Cache {
             "preflight reserved every retained group owner");
         if let Some(target) = replacement { pair[kind] = target; }
         self.invalidate(identity(&pair[kind]));
-        let effect_draws = r.try_draw_group_cached_producer(enc, &pair[kind], quads)
-            .expect("recording cached group producer");
+        let effect_draws = if opaque {
+            // The stage consumes only the mask alpha. A materialized all-one
+            // alpha surface also preserves inherited alpha on later writes.
+            r.draw(enc, &pair[kind], Some([1.; 4]), &[]);
+            knife_perf::add(Metric::GroupOpaqueMask, 0, 0);
+            0
+        } else {
+            r.try_draw_group_cached_producer(enc, &pair[kind], quads, clip)
+                .expect("recording cached group producer")
+        };
         // No extra copy: this exact freshly rendered surface becomes the entry.
         // Weak sources reject pointer reuse without pinning obsolete animations.
-        let dependencies = quads.iter().flat_map(|q| std::iter::once(Arc::downgrade(&q.tex))
+        let dependencies = (if opaque { &[][..] } else { quads }).iter().flat_map(|q| std::iter::once(Arc::downgrade(&q.tex))
             .chain(q.rule.as_ref().map(|m| Arc::downgrade(&m.tex)))).collect();
         self.entries.push(Entry { key, dependencies, target: clone_target(&pair[kind]),
             version: pair[kind].tex.render_identity(), bytes, last_use: self.clock,

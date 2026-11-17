@@ -232,10 +232,28 @@ impl Ui {
         }
         self.w.save.shown = self.w.save.page;
         self.reload_slots(game);
+        #[cfg(target_os = "vita")]
+        self.ws_prepare_focused_preview(game, r);
     }
 
     fn ws_used(&self, n: usize) -> bool {
         self.file.record(n).is_some()
+    }
+
+    #[cfg(target_os = "vita")]
+    fn ws_prepare_focused_preview(&self, game: &mut Game, r: &Renderer) {
+        let save = &self.w.save;
+        if save.tabrow || !matches!(save.st, 0 | 1 | 2 | 17 | 18) || save.page != save.shown
+            || !(0..20).contains(&save.slot) || save.page < 0
+        {
+            return;
+        }
+        let slot = (20 * save.page + save.slot) as usize;
+        if self.ws_used(slot)
+            && let Some(data) = self.slots.get(slot).and_then(Option::as_ref)
+        {
+            game.vita_focus_save_preview(r, slot, data, !save.save);
+        }
     }
 
     /// sub_31F30(page): the line under the slots follows `page` and the cursor.
@@ -712,6 +730,8 @@ impl Ui {
 
     /// sub_302A0.
     pub(in crate::ui) fn ws_draw(&mut self, game: &mut Game, r: &Renderer, out: &mut Vec<Quad>) {
+        #[cfg(target_os = "vita")]
+        self.ws_prepare_focused_preview(game, r);
         let s = &self.w.save;
         let a = s.a;
         let mut pen = super::Pen::default();
@@ -782,10 +802,11 @@ impl Ui {
             pen.alpha(a);
             let thumb = self.w.tex.get(416);
             match (data, self.ws_used(n)) {
-                (Some(d), true) => match game.preview(n, d) {
+                (Some(d), true) => match game.preview(n, d,
+                    shown == self.w.save.page && k as i32 == self.w.save.slot && !self.w.save.tabrow) {
                     Some(t) => {
                         let k = [W / 640.0, H / 448.0];
-                        out.push(Quad::rect(t, [x * k[0], y * k[1], 100.0 * 0.827 * k[0], 53.0 * 1.092 * k[1]], [1.0, 1.0, 1.0, a]));
+                        out.push(t.quad([x * k[0], y * k[1], 100.0 * 0.827 * k[0], 53.0 * 1.092 * k[1]], [1.0, 1.0, 1.0, a]));
                         self.w.save.drawn[n] = true;
                     }
                     None => {
@@ -842,7 +863,7 @@ impl Ui {
             }
             self.w.objs.place(SLOT_OBJ + k as i32, x, y, a);
         }
-        if st != 5 && a > 0.0 && st >= 2 {
+        if st != 5 && a > 0.0 && st >= 1 {
             self.ws_draw_line(game, r, out, pane_y, a);
         }
     }

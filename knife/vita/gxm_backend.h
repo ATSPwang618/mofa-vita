@@ -39,6 +39,7 @@ typedef struct KvGxmStats {
 int32_t kv_gxm_create(KvGxm **out, char *error, uint32_t error_capacity);
 /* Optional runtime program passed compiler output/metadata checks at startup. */
 int32_t kv_gxm_shader_available(KvGxm *g, uint32_t shader);
+int32_t kv_gxm_shader_mask(KvGxm *g, uint64_t out[2]);
 /* Exact startup-patched, cost-admitted material pair; no compilation on draw. */
 int32_t kv_gxm_chain_pair_available(KvGxm *g, uint32_t first, uint32_t second);
 int32_t kv_gxm_texture_create(KvGxm *g, const uint8_t *rgba, uint32_t width,
@@ -70,6 +71,8 @@ int32_t kv_gxm_texture_update(KvGxm *g, KvGxmTexture *texture, uint32_t x,
 /* finish_before: 1 drains the GPU before starting (needed when this pass samples a
    target written earlier in the same frame); 0 skips the driver round trip. */
 int32_t kv_gxm_begin_target(KvGxm *g, KvGxmTexture *texture, const float *clear, int32_t finish_before);
+/* Half-open physical bounds inside the open offscreen target; NULL restores full. */
+int32_t kv_gxm_set_producer_clip(KvGxm *g, const uint32_t bounds[4]);
 int32_t kv_gxm_end_target(KvGxm *g);
 /* After a completed bake, release RT/DEV-sync attachments while retaining the
    sampled texture and its pixels. No active scene or displayed DEV target. */
@@ -99,6 +102,7 @@ int32_t kv_gxm_scene_plan(KvGxm *g, KvGxmTexture *target,
 int32_t kv_gxm_texture_charge(uint32_t payload_bytes, uint32_t *out);
 /* Explicit memory-pressure reclamation; wait=0 only polls completed owners. */
 int32_t kv_gxm_reclaim(KvGxm *g, uint32_t wait);
+int32_t kv_gxm_trim_texture_pages(KvGxm *g);
 int32_t kv_gxm_begin(KvGxm *g, const float clear[4]);
 /* rect={x,y,width,height}; uv={left,top,right,bottom}; texture=NULL uses white. */
 int32_t kv_gxm_draw_quad(KvGxm *g, const KvGxmTexture *texture,

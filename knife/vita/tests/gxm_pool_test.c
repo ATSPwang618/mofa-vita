@@ -61,7 +61,7 @@ static void fragmentation(void) {
     int intact=1;for(unsigned i=0;i<65536;++i) if(((uint8_t*)glyph.base)[i]!=0x39) intact=0;
     EXPECT(intact && "portrait replacement must preserve live glyphs");
     EXPECT(block_free(&g,&next)==0 && block_free(&g,&glyph)==0);
-    EXPECT(pool_trim(&g,0)==0 && !g.texture_pages);
+    EXPECT(kv_gxm_trim_texture_pages(&g)==0 && !g.texture_pages);
     EXPECT(g.stats.cdram_mapped_bytes==initial && !g.closing);
 }
 static void small_textures(void) {

@@ -7,6 +7,7 @@ use std::{ffi::{c_char, c_void, CStr}, marker::PhantomData, ptr::NonNull, rc::Rc
 unsafe extern "C" {
     fn kv_gxm_create(out: *mut *mut c_void, error: *mut c_char, capacity: u32) -> i32;
     fn kv_gxm_shader_available(g: *mut c_void, shader: u32) -> i32;
+    fn kv_gxm_shader_mask(g: *mut c_void, out: *mut u64) -> i32;
     fn kv_gxm_chain_pair_available(g: *mut c_void, first: u32, second: u32) -> i32;
     fn kv_gxm_set_blur_weights(g: *mut c_void, sigma: f32, half_taps: u32,
         weights: *const f32, count: u32) -> i32;
@@ -25,6 +26,7 @@ unsafe extern "C" {
     fn kv_gxm_texture_update(g: *mut c_void, texture: *mut c_void, x: u32, y: u32,
         width: u32, height: u32, data: *const u8, stride: u32) -> i32;
     fn kv_gxm_begin_target(g: *mut c_void, texture: *mut c_void, clear: *const f32, finish_before: i32) -> i32;
+    fn kv_gxm_set_producer_clip(g: *mut c_void, bounds: *const u32) -> i32;
     fn kv_gxm_end_target(g: *mut c_void) -> i32;
     fn kv_gxm_texture_seal(g: *mut c_void, texture: *mut c_void) -> i32;
     fn kv_gxm_draw_effect(g: *mut c_void, vertices: *const Vertex, count: u32,
@@ -37,6 +39,7 @@ unsafe extern "C" {
         reads: *const *const c_void, count: u32, kind: u32) -> i32;
     fn kv_gxm_texture_charge(payload_bytes: u32, out: *mut u32) -> i32;
     fn kv_gxm_reclaim(g: *mut c_void, wait: u32) -> i32;
+    fn kv_gxm_trim_texture_pages(g: *mut c_void) -> i32;
     fn kv_gxm_begin(g: *mut c_void, clear: *const f32) -> i32;
     fn kv_gxm_draw_quad(g: *mut c_void, texture: *const c_void, rect: *const f32,
         uv: *const f32, color: *const f32, alpha: u32) -> i32;
@@ -146,6 +149,8 @@ pub enum EffectShader {
     BlurWeights = 53,
     /// Complete PS source contract, with only the operation dispatcher removed.
     PsFull1 = 54, PsFull6 = 55, PsFull13 = 56,
+    PsNormalMultiply = 58,
+    PsNormalMultiplyDual = 59,
     // Fixed-operation full-material shaders; capability bank 1.
     PsAll1 = 64,
     PsAll2 = 65,
@@ -323,6 +328,12 @@ impl Gxm {
         self.check(status)?;
         Ok(status != 0)
     }
+    pub fn shader_mask(&self) -> Result<[u64; 2], String> {
+        let mut mask = [0_u64; 2];
+        let status = unsafe { kv_gxm_shader_mask(self.raw()?, mask.as_mut_ptr()) };
+        self.check(status)?;
+        Ok(mask)
+    }
     /// Startup admitted the exact compile-time material variant and its cost.
     pub fn chain_pair_available(&self, first: u32, second: u32) -> Result<bool, String> {
         let status = unsafe { kv_gxm_chain_pair_available(self.raw()?, first, second) };
@@ -360,6 +371,9 @@ impl Gxm {
     /// memory pressure. Ordinary frame submission only polls at batch begin.
     pub fn reclaim_retired(&mut self, wait: bool) -> Result<(), String> {
         self.check(unsafe { kv_gxm_reclaim(self.raw()?, u32::from(wait)) })
+    }
+    pub fn trim_texture_pages(&mut self) -> Result<(), String> {
+        self.check(unsafe { kv_gxm_trim_texture_pages(self.raw()?) })
     }
     pub fn begin(&mut self, clear: [f32; 4]) -> Result<(), String> {
         // SAFETY: fixed four-float input lives through the synchronous call.
@@ -461,6 +475,12 @@ impl Gxm {
         let status = unsafe { kv_gxm_end_target(self.raw()?) };
         if status < 0 { self.closing = true; }
         self.check(status)
+    }
+    pub fn set_producer_clip(&mut self, bounds: Option<[u32; 4]>) -> Result<(), String> {
+        // SAFETY: the optional bounds live through this call. C validates the
+        // active target and the coordinates before touching GXM clip state.
+        self.check(unsafe { kv_gxm_set_producer_clip(self.raw()?,
+            bounds.as_ref().map_or(std::ptr::null(), |v| v.as_ptr())) })
     }
     /// Complete the bake and release its framebuffer attachments, keeping the
     /// owned sampled texture alive. The native owner retains failed teardown.

@@ -1,0 +1,61 @@
+// Runtime-only candidate for the encoded UCHAR4 target. It is linked and
+// compared against PS19 + GXM Multiply on the current GPU before use.
+struct FragmentInput {
+    float2 uv : TEXCOORD0;
+    float4 color : TEXCOORD1;
+};
+struct TargetUniforms { float4 params; float4 params2; };
+uniform TargetUniforms tu;
+uniform sampler2D tex0 : TEXUNIT0;
+#ifdef KNIFE_NORMAL_MULTIPLY_DUAL
+uniform sampler2D tex2 : TEXUNIT2;
+#endif
+
+unsigned char4 pack_rgba8(float4 value) {
+    return unsigned char4(floor(clamp(value, float4(0.0, 0.0, 0.0, 0.0),
+        float4(1.0, 1.0, 1.0, 1.0)) * 255.0 + 0.5));
+}
+
+__nativecolor __regformat unsigned char4 fs_ps_normal_multiply(FragmentInput i,
+    __regformat unsigned char4 destination : FRAGCOLOR) : COLOR {
+    const float4 t = tex2D(tex0, i.uv);
+    const float a = t.a * i.color.a;
+#ifndef KNIFE_NORMAL_MULTIPLY_DUAL
+    if (a <= 0.0) { return destination; }
+#endif
+
+    const float4 d = float4(destination) / 255.0;
+    const float3 backdrop = d.rgb * d.a;
+    const float3 normal = backdrop + a * (t.rgb * i.color.rgb - backdrop);
+#ifdef KNIFE_NORMAL_MULTIPLY_DUAL
+    unsigned char4 stored = destination;
+    if (a > 0.0) { stored = pack_rgba8(float4(normal, 1.0)); }
+#else
+    const unsigned char4 stored = pack_rgba8(float4(normal, 1.0));
+#endif
+    // PlainSprite exports premultiplied colour through its F16x4 COLOR ABI.
+    // GXM Multiply uses DST_COLOR / ONE_MINUS_SRC_ALPHA for RGB and retains
+    // destination alpha. The probe also tests the fixed blend's final rounding.
+#ifdef KNIFE_NORMAL_MULTIPLY_DUAL
+    const float4 multiply_texel = tex2D(tex2, i.uv);
+#else
+    const float4 multiply_texel = t;
+#endif
+    const float multiply_alpha = multiply_texel.a * tu.params2.a;
+    const float4 source = float4(half4(multiply_texel.rgb * tu.params2.rgb * multiply_alpha, multiply_alpha));
+#ifdef KNIFE_NORMAL_MULTIPLY_PACKED
+    const float4 s8 = float4(pack_rgba8(source));
+    const float3 d8 = float3(stored.rgb);
+    const float inv_a8 = 255.0 - s8.a;
+#if KNIFE_NORMAL_MULTIPLY_PACKED == 1
+    const float3 color8 = floor(d8 * (s8.rgb + inv_a8) / 255.0 + 0.5);
+#else
+    const float3 color8 = floor(d8 * s8.rgb / 255.0 + 0.5) + floor(d8 * inv_a8 / 255.0 + 0.5);
+#endif
+    return unsigned char4(float4(min(color8, 255.0), float(stored.a)));
+#else
+    const float4 n = float4(stored) / 255.0;
+    const float3 color = source.rgb * n.rgb + n.rgb * (1.0 - source.a);
+    return pack_rgba8(float4(color, n.a));
+#endif
+}

@@ -19,6 +19,7 @@ struct KvEffects {
     float blur_weights[33];
     uint32_t blur_sigma_bits, blur_half_taps, blur_weight_count;
     uint32_t chain_admitted; /* 16 existing pairs + 7/7; independent of capability IDs. */
+    uint32_t normal_multiply_program[2]; /* Public 58/59 -> private byte-exact program. */
     uint32_t used;
     /* Index cursor for the open scene: the vertex stream is bound once per scene and
        each draw only advances this, as the reference Vita renderer does. */
@@ -36,6 +37,7 @@ enum { EFFECT_SHADER_SLOT_BYTES = sizeof(SceGxmShaderPatcherId) + sizeof(const S
 _Static_assert(EFFECT_TABLE_ADDED_BYTES == 14608, "all-operation Vita program table growth");
 #endif
 static int effect_chain_variant(uint32_t shader) { return (shader >= 32 && shader < 48) || shader == 57; }
+static int effect_normal_multiply(uint32_t shader) { return shader >= 58 && shader <= 63; }
 static int effect_full_material_shader(uint32_t shader) { return shader >= 54 && shader <= 56; }
 static int effect_all_operation_shader(uint32_t shader) { return shader >= 64 && shader <= 87; }
 static int effect_full_source_shader(uint32_t shader) { return shader == 29 || effect_full_material_shader(shader) || effect_all_operation_shader(shader); }
@@ -43,13 +45,17 @@ static int effect_candidate_enabled(uint32_t shader, uint64_t options) {
     if (material_shader(shader)) return material_enabled(shader,options);
     if (shader == 48) return (options & KV_OPT_PS_PLAIN_OP7) != 0;
     if (shader == 57) return (options & (KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7)) == (KV_OPT_PS_PLAIN_OP7 | KV_OPT_PS_CHAIN_OP7);
+    if (effect_normal_multiply(shader)) {
+        const uint64_t required = KV_OPT_PS_NORMAL_MULTIPLY | (UINT64_C(1) << 4);
+        return (options & required) == required;
+    }
     if (shader >= 49 && shader <= 52) return (options & KV_OPT_HALF_COLOR) != 0;
     if (effect_full_material_shader(shader)) return (options & KV_OPT_PS_FULL_MATERIAL) != 0;
     if (effect_all_operation_shader(shader)) return (options & KV_OPT_PS_ALL_OPERATIONS) != 0;
     return 1;
 }
 static int effect_fetch_shader(uint32_t shader) {
-    return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 27 || shader == 29 || shader == 30 || shader == 31 || effect_chain_variant(shader) || (shader >= 48 && shader <= 52) || effect_full_material_shader(shader) || effect_all_operation_shader(shader) || material_shader(shader);
+    return (shader >= 17 && shader <= 21) || shader == 23 || shader == 25 || shader == 27 || shader == 29 || shader == 30 || shader == 31 || effect_chain_variant(shader) || (shader >= 48 && shader <= 52) || effect_normal_multiply(shader) || effect_full_material_shader(shader) || effect_all_operation_shader(shader) || material_shader(shader);
 }
 static int effect_ps_shader(uint32_t shader) { return shader == 14 || effect_fetch_shader(shader); }
 static const SceGxmProgram *legacy_effect_source(uint32_t shader) {
@@ -251,7 +257,8 @@ static int effects_initialize(KvGxm *g) {
             if (!fs) continue;
             status = sceGxmProgramCheck(fs); ++g->stats.program_checks;
             if (status >= 0) status = sceGxmShaderPatcherRegisterProgram(e->patcher, fs, &e->ids[i]);
-        } else if (status >= 0 && optional && !effect_chain_variant(i)) shader_capability_set(g, i, 1);
+        } else if (status >= 0 && optional && !effect_chain_variant(i) && !effect_normal_multiply(i))
+            shader_capability_set(g, i, 1);
         if (status < 0) return fail(g, "effects program registration", status);
         e->source[i] = fs;
         CHECK(g, effects_sampler_metadata(g, i, fs));
@@ -343,7 +350,7 @@ static int effects_sampler_metadata(KvGxm *g, uint32_t shader, const SceGxmProgr
         const SceGxmProgramParameter *p = sceGxmProgramFindParameterByName(fs, samplers[unit]);
         if (p && (sceGxmProgramParameterGetCategory(p) != SCE_GXM_PARAMETER_CATEGORY_SAMPLER
             || sceGxmProgramParameterGetResourceIndex(p) != unit)) {
-            if (material_shader(shader) || effect_full_source_shader(shader) || effect_chain_variant(shader) || (shader >= 48 && shader <= 53)) {
+            if (material_shader(shader) || effect_full_source_shader(shader) || effect_chain_variant(shader) || (shader >= 48 && shader <= 53) || effect_normal_multiply(shader)) {
                 g->effects->optional_status[shader] = KV_BAD_ARGUMENT;
                 return disable_optional_shader(g, shader);
             }
@@ -430,6 +437,7 @@ int32_t kv_gxm_chain_pair_available(KvGxm *g, uint32_t first, uint32_t second) {
     if (pair == 16 && !effect_candidate_enabled(57, kv_render_options())) return 0;
     return g->effects && pair>=0 && (g->effects->chain_admitted & (1U << pair)) ? 1 : 0;
 }
+static int normal_multiply_admit(KvGxm *g);
 static int effects_optional_initialize(KvGxm *g) {
     int status_by_shader[67] = {0};
     const uint32_t optional[67] = {15, 17, 18, 19, 20, 21, 22, 23, 25, 26, 28, 29, 30, 31,
@@ -585,7 +593,7 @@ static int effects_optional_initialize(KvGxm *g) {
         "\"selection\":\"first_ready_and_source_compatible;14=destination_snapshot\"}\n");
     if (routes_length > 0 && (size_t)routes_length < sizeof(routes))
         (void)kv_perf_console(routes, (uint32_t)routes_length);
-    return 0;
+    return normal_multiply_admit(g);
 }
 static int effects_destroy(KvGxm *g) {
     KvEffects *e = g->effects;
@@ -621,14 +629,46 @@ static int texture_target_destroy(KvGxm *g, KvGxmTexture *t) {
     if (t->sync) { CHECK(g, sceGxmSyncObjectDestroy(t->sync)); t->sync = NULL; }
     return 0;
 }
+/* The driver has a render-target object limit separate from CDRAM. A
+   completed preview or text target can remain a valid sampled texture
+   without its render attachment. If it is drawn into again, ensure below
+   recreates the attachment without reallocating or clearing its pixels. */
+static int reclaim_idle_target_attachment(KvGxm *g, const KvGxmTexture *requested) {
+    if (!async_submission(g) || !g->completion || g->scene_open) return 0;
+    const uint32_t complete = completed_sequence(g);
+    KvGxmTexture *idle = NULL;
+    for (KvGxmTexture *candidate = g->textures; candidate; candidate = candidate->next) {
+        if (candidate == requested || !candidate->target || candidate->sync
+            || candidate->last_use > complete || candidate->last_write > complete
+            || candidate->width > 1024 || candidate->height > 256) continue;
+#ifdef KV_GXM_DEV_DIAGNOSTICS
+        if (candidate == g->diagnostic_scanout) continue;
+#endif
+        if (!idle || candidate->last_write < idle->last_write) idle = candidate;
+    }
+    if (!idle) return 0;
+    const uint32_t capacity = idle->target_scenes, bytes = idle->target_driver_bytes;
+    const int status = texture_target_destroy(g, idle);
+    if (status < 0) { g->closing = 1; return fail(g, "retiring idle render attachment", status); }
+    idle->attachment_reclaimed = 1;
+    target_capacity_log(idle->width, idle->height, capacity, 0, bytes, 0,
+        "native_idle_attachment_reclaimed");
+    return 1;
+}
 static int texture_target_ensure(KvGxm *g, KvGxmTexture *t) {
     if (t->target) return 0;
     const char *stage = "effects render target";
     const uint32_t requested=target_scene_capacity();
     uint32_t selected=requested;
+    int reclaimed = 0;
     int result;
 retry_target:
     result=target_create_capacity(g,t->width,t->height,selected,&t->target,&t->target_driver_bytes);
+    if (result == (int)SCE_GXM_ERROR_OUT_OF_RENDER_TARGETS && !reclaimed) {
+        reclaimed = reclaim_idle_target_attachment(g, t);
+        if (reclaimed < 0) return reclaimed;
+        if (reclaimed > 0) goto retry_target;
+    }
     if(result>=0) t->target_scenes=selected;
 #define TARGET_STEP(label, expression) do { if (result >= 0) { stage = label; result = (expression); } } while (0)
     /* Offscreen passes are serialized by Finish before sampling/reuse. A
@@ -653,8 +693,7 @@ retry_target:
         }
         return fail(g, stage, result);
     }
-    if(requested>1) target_capacity_log(t->width,t->height,requested,selected,
-        t->target_driver_bytes,0,"native_target_created");
+    t->attachment_reclaimed = 0;
     return 0;
 }
 static int tiled_target_layout(uint32_t width,uint32_t height,uint32_t *bytes,uint32_t *padding) {
@@ -985,9 +1024,21 @@ static int effect_scene(KvGxm *g, KvGxmTexture *t) {
     return 0;
 }
 int32_t kv_gxm_begin_target(KvGxm *g, KvGxmTexture *t, const float *clear, int32_t finish_before) {
-    if (!active(g) || g->scene_open || !texture_owned(g, t) || !t->target) return KV_STATE;
+    if (!active(g) || g->scene_open || !texture_owned(g, t)) return KV_STATE;
     const uint64_t begin_start = kv_probe_now();
     if (clear) for (uint32_t i = 0; i < 4; ++i) if (!isfinite(clear[i])) return KV_BAD_ARGUMENT;
+    if (!t->target) {
+        if (!t->attachment_reclaimed) return fail(g, "begin target without render attachment", KV_STATE);
+        int status = texture_target_ensure(g, t);
+        if (status == (int)SCE_GXM_ERROR_OUT_OF_RENDER_TARGETS && async_submission(g) && !g->closing) {
+            // A reader in the preceding pass can be the only remaining
+            // reclaimable attachment. Wait once at this pressure boundary.
+            CHECK(g, wait_submitted(g, KV_PERF_BATCH_WAIT));
+            status = texture_target_ensure(g, t);
+        }
+        if (status < 0 && !g->closing) return fail(g, "begin target attachment restore", status);
+        if (status < 0) return status;
+    }
     CHECK(g, effects_ensure(g));
     CHECK(g, ensure_batch(g));
     /* The caller knows the frame's pass dependencies and asks for a drain only when this
@@ -1012,6 +1063,17 @@ int32_t kv_gxm_begin_target(KvGxm *g, KvGxmTexture *t, const float *clear, int32
         &kv_gxm_timing_counters.begin_target_calls, begin_start);
     return 0;
 }
+int32_t kv_gxm_set_producer_clip(KvGxm *g, const uint32_t bounds[4]) {
+    if (!active(g) || !g->scene_open || !g->current_target) return KV_STATE;
+    const uint32_t w = g->current_target->width, h = g->current_target->height;
+    const uint32_t full[4] = {0, 0, w, h};
+    if (!bounds) bounds = full;
+    if (bounds[0] >= bounds[2] || bounds[1] >= bounds[3] ||
+        bounds[2] > w || bounds[3] > h) return KV_BAD_ARGUMENT;
+    sceGxmSetRegionClip(g->context, SCE_GXM_REGION_CLIP_OUTSIDE,
+        bounds[0], bounds[1], bounds[2] - 1, bounds[3] - 1);
+    return 0;
+}
 int32_t kv_gxm_end_target(KvGxm *g) {
     if (!active(g) || !g->scene_open || !g->current_target) return KV_STATE;
     const uint64_t end_start = kv_probe_now();
@@ -1034,7 +1096,7 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
     if (!v || !params || !count || count % 3 || count > EFFECT_VERTICES
         || shader >= EFFECT_PUBLIC_SHADERS || blend >= EFFECT_BLENDS || shader == 24
         || (shader >= 32 && shader < 48)
-        || (shader >= 57 && shader <= 63)
+        || shader == 57 || (shader >= 60 && shader <= 63)
         || (effect_fetch_shader(shader) && blend != 5)
         || ((shader == 18 || shader == 19 || shader == 23) && params[0] != 19.0f)
         || (shader == 20 && params[0] != 11.0f)
@@ -1073,12 +1135,20 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
     if (shader == 27 && (!chain_ps_op(params[0]) || !chain_ps_op(params[1])
         || ((params[0] == 7 || params[1] == 7) && params[0] != params[1])
         || params[4] != -1 || params[5] != 0 || params[6] != 0 || params[7] != 0)) return KV_BAD_ARGUMENT;
+    if (effect_normal_multiply(shader)) {
+        if (params[0] != 19 || params[1] != 0) return KV_BAD_ARGUMENT;
+        for (uint32_t i = 4; i < 8; ++i)
+            if (params[i] < 0 || params[i] > 1) return KV_BAD_ARGUMENT;
+    }
     for (uint32_t i = 0; i < count; ++i) {
         /* The struct has only floats and its ABI is asserted, but pointer
            arithmetic may not legally walk across distinct struct members. */
         float floats[28];
         memcpy(floats, &v[i], sizeof(floats));
         for (uint32_t j = 0; j < 28; ++j) if (!isfinite(floats[j])) return KV_BAD_ARGUMENT;
+        if (effect_normal_multiply(shader) && (v[i].color[3] != 1 || v[i].color[0] < 0 || v[i].color[0] > 1
+            || v[i].color[1] < 0 || v[i].color[1] > 1 || v[i].color[2] < 0 || v[i].color[2] > 1))
+            return KV_BAD_ARGUMENT;
         for (uint32_t row = 0; row < 2; ++row)
             for (uint32_t j = 0; j < 4; ++j)
                 if (!((shader == 27 && row == 0 && j < 2) || (shader == 28 && (row == 0 || j < 3)))
@@ -1117,10 +1187,10 @@ static int effect_inputs(const KvEffectVertex *v, uint32_t count, uint32_t shade
         || v[0].haze[1][2] < 0 || v[0].haze[1][2] > 1)) return KV_BAD_ARGUMENT;
     if ((shader == 9 || (shader == 8 && params[2] > 0.5f))
         && !packed_integer(params[1],8,2047)) return KV_BAD_ARGUMENT;
-    if (effect_ps_shader(shader) && (!packed_integer(params[0],1,24)
+    if (effect_ps_shader(shader) && !effect_normal_multiply(shader) && (!packed_integer(params[0],1,24)
         || (params[4] >= 0 && !packed_integer(params[5],8,2047)))) return KV_BAD_ARGUMENT;
     /* tex2 is either a rule or a same-layout group mask, never both. */
-    if (effect_ps_shader(shader) && (!packed_integer(params[7],0,1)
+    if (effect_ps_shader(shader) && !effect_normal_multiply(shader) && (!packed_integer(params[7],0,1)
         || (params[7] == 1 && (params[4] >= 0 || params[6] != 0)))) return KV_BAD_ARGUMENT;
     if ((shader == 9 || effect_ps_shader(shader)) && (params[2] <= 0 || params[3] <= 0)) return KV_BAD_ARGUMENT;
     if ((shader == 10 || shader == 53) && (!packed_integer(params[3],0,shader == 53 ? 16.0f : 2147483520.0f)
@@ -1171,7 +1241,7 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
        generic fallback first, but this native guard keeps the public C entry
        safe for direct callers and for a compiler/cache rejection. */
     if (!effect_candidate_enabled(shader, kv_render_options())) return KV_STATE;
-    if (((shader >= 48 && shader <= 52) || shader == 30 || shader == 31 || effect_full_material_shader(shader) || effect_all_operation_shader(shader) || material_shader(shader))
+    if (((shader >= 48 && shader <= 52) || shader == 30 || shader == 31 || effect_normal_multiply(shader) || effect_full_material_shader(shader) || effect_all_operation_shader(shader) || material_shader(shader))
         && (!g->effects || !shader_capability_ready(g, shader))) return KV_STATE;
     if (shader == 27) {
         const int pair = chain_pair_index((uint32_t)params[0], (uint32_t)params[1]);
@@ -1179,12 +1249,20 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
         shader = chain_shader_id((uint32_t)pair);
         if (!effect_candidate_enabled(shader, kv_render_options())) return KV_STATE;
     }
+    if (effect_normal_multiply(shader) && (!input[0] || input[1] || input[3]
+        || (input[2] != NULL) != (shader == 59))) return KV_BAD_ARGUMENT;
+    const uint32_t sampler_mask = shader == 58 ? 1 : shader == 59 ? 5 : 15;
+    if (effect_normal_multiply(shader)) {
+        const uint32_t program = g->effects->normal_multiply_program[shader - 58];
+        if (!effect_normal_multiply(program) || (program % 2) != (shader % 2)) return KV_STATE;
+        shader = program;
+    }
     const KvGxmTexture *textures[4];
     for (uint32_t i = 0; i < 4; ++i) {
         textures[i] = input[i] ? input[i] : g->white;
         if (!texture_owned(g, textures[i]) || textures[i] == g->current_target) return KV_BAD_ARGUMENT;
     }
-    for (uint32_t i = 0; i < 4; ++i) CHECK(g, require_scene_read(g, textures[i]));
+    for (uint32_t i = 0; i < 4; ++i) if (sampler_mask & (1U << i)) CHECK(g, require_scene_read(g, textures[i]));
     CHECK(g, effects_ensure(g));
     KvEffects *e = g->effects;
     if (shader == 53) {
@@ -1208,7 +1286,7 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
         : layout == EFFECT_STREAM_CONSTANT ? e->constant_vertex
         : layout == EFFECT_STREAM_ZERO ? e->compact_vertex : e->vertex);
     sceGxmSetFragmentProgram(g->context, e->fragment[shader][blend][output_mode(g)]);
-    for (uint32_t i = 0; i < 4; ++i)
+    for (uint32_t i = 0; i < 4; ++i) if (sampler_mask & (1U << i))
         CHECK(g, sceGxmSetFragmentTexture(g->context, i, &textures[i]->descriptor));
     kv_perf_end(KV_PERF_DRAW_BIND, phase, 0, 0);
     phase = kv_perf_begin();
@@ -1246,7 +1324,7 @@ static int32_t draw_effect_inner(KvGxm *g, const KvEffectVertex *vertices, uint3
     kv_gxm_timing_counters.draw_cpu_us += kv_probe_now() - cpu_start;
     const uint64_t gxm_start = kv_probe_now();
     phase = kv_perf_begin();
-    for (uint32_t i = 0; i < 4; ++i) texture_use(g, textures[i]);
+    for (uint32_t i = 0; i < 4; ++i) if (sampler_mask & (1U << i)) texture_use(g, textures[i]);
     const int draw_result = sceGxmDraw(g->context, SCE_GXM_PRIMITIVE_TRIANGLES, SCE_GXM_INDEX_FORMAT_U16, e->indices.base, count);
     kv_perf_end(KV_PERF_DRAW_SUBMIT, phase, 0, draw_result < 0);
     CHECK(g, draw_result);
@@ -1383,4 +1461,223 @@ int32_t kv_gxm_texture_read(KvGxm *g, const KvGxmTexture *texture, uint8_t *data
             texture->width * texture->bpp);
     kv_perf_end(KV_PERF_READBACK, copy_started, (uint64_t)texture->width * texture->height * texture->bpp, 0);
     return 0;
+}
+
+enum { NORMAL_MULTIPLY_PROBE_SIZE = 64, NORMAL_MULTIPLY_PROBE_BYTES = 64 * 64 * 4 };
+enum NormalMultiplyProbePass {
+    NORMAL_MULTIPLY_REFERENCE, NORMAL_MULTIPLY_NORMAL, NORMAL_MULTIPLY_COMBINED
+};
+
+typedef struct NormalMultiplyDiff {
+    uint32_t tested, different, maximum;
+} NormalMultiplyDiff;
+
+typedef struct NormalMultiplyTrial {
+    uint32_t program;
+    int registered, status;
+    NormalMultiplyDiff diff, normal;
+} NormalMultiplyTrial;
+
+static void normal_multiply_compare(NormalMultiplyDiff *diff, const uint8_t actual[4], const uint8_t model[4]) {
+    uint32_t maximum = 0;
+    for (unsigned c = 0; c < 4; ++c) {
+        const int delta = (int)model[c] - (int)actual[c];
+        const uint32_t absolute = (uint32_t)abs(delta);
+        if (absolute > maximum) maximum = absolute;
+    }
+    ++diff->tested;
+    diff->different += maximum != 0;
+    if (maximum > diff->maximum) diff->maximum = maximum;
+}
+
+static int normal_multiply_exact(const NormalMultiplyTrial *trial, uint32_t expected) {
+    return expected != 0 && trial->registered && trial->status >= 0
+        && trial->diff.tested == expected && trial->diff.different == 0
+        && trial->normal.tested == expected && trial->normal.different == 0;
+}
+
+static int normal_multiply_probe_draw(KvGxm *g, KvGxmTexture *target, const KvGxmTexture *background,
+    const KvGxmTexture *first, const KvGxmTexture *second, const float normal[4], const float multiply[4],
+    float shift, uint32_t shader, enum NormalMultiplyProbePass pass, uint8_t *pixels) {
+    const KvGxmTexture *reads[4] = { background, first, second, g->white };
+    const KvGxmTexture *textures[4] = { first, NULL, NULL, NULL };
+    const float size = NORMAL_MULTIPLY_PROBE_SIZE;
+    CHECK(g, kv_gxm_scene_plan(g, target, reads, 4, KV_SCENE_OTHER));
+    CHECK(g, kv_gxm_begin_target(g, target, NULL, 0));
+    if (!(kv_render_options() & KV_OPT_BATCH_ARENA)) g->quads = 0;
+    int status = kv_gxm_draw_quad(g, background, (float[]){0, 0, WIDTH, CONTENT_H},
+        (float[]){0, 0, 1, 1}, (float[]){1, 1, 1, 1}, 0);
+    const float positions[4][2] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
+    const uint32_t corners[6] = {0, 1, 2, 0, 2, 3};
+    KvEffectVertex vertices[6] = {0};
+    for (unsigned i = 0; i < 6; ++i) {
+        memcpy(vertices[i].position, positions[corners[i]], sizeof(vertices[i].position));
+        memcpy(vertices[i].color, normal, sizeof(vertices[i].color));
+        vertices[i].uv[0] = (vertices[i].position[0] + 1.0f) * 0.5f + shift;
+        vertices[i].uv[1] = (1.0f - vertices[i].position[1]) * 0.5f + shift;
+    }
+    if (status >= 0 && pass == NORMAL_MULTIPLY_COMBINED) {
+        if (shader == 59) textures[2] = second;
+        status = kv_gxm_draw_effect(g, vertices, 6, shader, 5, textures,
+            (float[]){19, 0, size, size, multiply[0], multiply[1], multiply[2], multiply[3]});
+    } else if (status >= 0) {
+        status = kv_gxm_draw_effect(g, vertices, 6, 23, 5, textures, (float[]){19, 0, size, size, -1, 0, 0, 0});
+        if (status >= 0 && pass == NORMAL_MULTIPLY_REFERENCE) {
+            for (unsigned i = 0; i < 6; ++i)
+                memcpy(vertices[i].color, multiply, sizeof(vertices[i].color));
+            textures[0] = second;
+            status = kv_gxm_draw_effect(g, vertices, 6, 22, 3, textures, (float[8]){0});
+        }
+    }
+    const int end = kv_gxm_end_target(g);
+    if (end < 0) return end;
+    if (status >= 0) return kv_gxm_texture_read(g, target, pixels, NORMAL_MULTIPLY_PROBE_BYTES);
+    // Earlier draws in a rejected trial may still reference its patched
+    // program. Complete this scene before startup releases any trial owner.
+    if (async_submission(g)) CHECK(g, wait_submitted(g, KV_PERF_FINISH_READBACK));
+    else perf_finish(g->context, KV_PERF_FINISH_READBACK);
+    return status;
+}
+
+/* The hardware's fixed-function blend precision is an admission condition.
+   Vary both colours and alpha, including fully transparent source texels,
+   translucent destinations, exact texel centres and fractional UV phases. */
+static int normal_multiply_probe(KvGxm *g, uint32_t shader, NormalMultiplyTrial trials[3],
+    uint32_t *expected) {
+    const uint32_t size = NORMAL_MULTIPLY_PROBE_SIZE, bytes = NORMAL_MULTIPLY_PROBE_BYTES;
+    uint8_t *buffer = malloc(3 * bytes);
+    if (!buffer) return KV_ALLOC;
+    uint8_t *reference = buffer, *normal_store = buffer + bytes;
+    uint8_t *candidate = buffer + 2 * bytes;
+    KvGxmTexture *background = NULL, *first = NULL, *second = NULL, *target = NULL;
+    for (uint32_t y = 0; y < size; ++y) for (uint32_t x = 0; x < size; ++x) {
+        const size_t p = (y * size + x) * 4;
+        reference[p] = (uint8_t)(x * 13 + y * 17);
+        reference[p + 1] = (uint8_t)(x * 39 + y * 5 + 63);
+        reference[p + 2] = (uint8_t)(x * 7 + y * 49 + 129);
+        reference[p + 3] = (uint8_t)(x * 59 + y * 31);
+        candidate[p] = (uint8_t)(x * 63 + y * 29);
+        candidate[p + 1] = (uint8_t)(x * 17 + y * 23 + 61);
+        candidate[p + 2] = (uint8_t)(x * 9 + y * 47 + 217);
+        candidate[p + 3] = x % 8 == 0 ? 0 : x % 8 == 1 ? 255 : (uint8_t)(x * 57 + y * 19);
+    }
+    int status = texture_create_ex(g, reference, size, size, size * 4, 0, 0, 0, 0, 0, &background);
+    if (status >= 0) status = texture_create_ex(g, candidate, size, size, size * 4, 0, 0, 1, 0, 0, &first);
+    if (status >= 0 && shader == 59) {
+        // Distinct colour and alpha, including opacity wherever the first source is clear.
+        for (uint32_t p = 0; p < bytes; p += 4) {
+            candidate[p] ^= 0xa7;
+            candidate[p + 1] ^= 0x4f;
+            candidate[p + 2] ^= 0xe5;
+            candidate[p + 3] ^= 0xff;
+        }
+        status = texture_create_ex(g, candidate, size, size, size * 4, 0, 0, 1, 0, 0, &second);
+    }
+    if (status >= 0) status = texture_create_ex(g, NULL, size, size, 0, 0, 0, 0, 1, 0, &target);
+    const float tints[][2][4] = {
+        {{1, 1, 1, 1}, {1, 1, 1, 0}},
+        {{1, 1, 1, 1}, {1, 1, 1, 64.0f / 255}},
+        {{1, 1, 1, 1}, {1, 1, 1, 1}},
+        {{0.5f, 0.79f, 0.24f, 1}, {0.24f, 0.5f, 0.79f, 0.6f}},
+        {{0.21f, 0.87f, 0.51f, 1}, {1, 0.75f, 0.25f, 128.0f / 255}},
+    };
+    const float neutral_multiply[4] = {1, 1, 1, 0};
+    *expected = sizeof(tints) / sizeof(*tints) * size * size;
+    // The public capability is private to this creation call until the trial
+    // finishes. Each draw uses the same bind and uniform path as the game.
+    const unsigned slot = shader - 58;
+    shader_capability_set(g, shader, 1);
+    uint32_t nonopaque = 0, opaque = 0;
+    for (unsigned i = 0; status >= 0 && i < sizeof(tints) / sizeof(*tints); ++i) {
+        const float shift = i % 2 ? 0.37f / size : 0.0f;
+        const KvGxmTexture *multiply_source = second ? second : first;
+        status = normal_multiply_probe_draw(g, target, background, first, multiply_source,
+            tints[i][0], tints[i][1], shift, shader, NORMAL_MULTIPLY_REFERENCE, reference);
+        if (status >= 0) status = normal_multiply_probe_draw(g, target, background, first, multiply_source,
+            tints[i][0], tints[i][1], shift, shader, NORMAL_MULTIPLY_NORMAL, normal_store);
+        if (status < 0) break;
+        for (uint32_t p = 0; p < bytes; p += 4) {
+            if (reference[p + 3] == 255) ++opaque; else ++nonopaque;
+        }
+        for (unsigned t = 0; t < 3; ++t) {
+            NormalMultiplyTrial *trial = &trials[t];
+            // A mismatch already proves ineligibility.
+            if (trial->status < 0 || trial->diff.different != 0 || trial->normal.different != 0) continue;
+            g->effects->normal_multiply_program[slot] = trial->program;
+            trial->status = normal_multiply_probe_draw(g, target, background, first, multiply_source,
+                tints[i][0], tints[i][1], shift, shader, NORMAL_MULTIPLY_COMBINED, candidate);
+            if (g->closing) { status = trial->status < 0 ? trial->status : KV_STATE; break; }
+            if (trial->status < 0) continue;
+            for (uint32_t p = 0; p < bytes; p += 4)
+                normal_multiply_compare(&trial->diff, reference + p, candidate + p);
+            if (trial->diff.different != 0) continue;
+            // The first reference's zero Multiply alpha already supplies a
+            // neutral candidate. Exercise nonzero-tint phases separately.
+            if (tints[i][1][3] != 0) trial->status = normal_multiply_probe_draw(g, target, background,
+                first, multiply_source, tints[i][0], neutral_multiply, shift, shader, NORMAL_MULTIPLY_COMBINED, candidate);
+            if (g->closing) { status = trial->status < 0 ? trial->status : KV_STATE; break; }
+            if (trial->status >= 0) for (uint32_t p = 0; p < bytes; p += 4)
+                normal_multiply_compare(&trial->normal, normal_store + p, candidate + p);
+        }
+    }
+    shader_capability_set(g, shader, 0);
+    g->effects->normal_multiply_program[slot] = 0;
+    KvGxmTexture *textures[] = { target, second, first, background };
+    for (unsigned i = 0; i < sizeof(textures) / sizeof(*textures) && !g->closing; ++i) if (textures[i]) {
+        const int released = kv_gxm_texture_destroy(g, textures[i]);
+        if (released < 0) { g->closing = 1; status = released; }
+    }
+    free(buffer);
+    if (status >= 0 && (!nonopaque || opaque < *expected / 2)) status = KV_STATE;
+    return status;
+}
+
+static int normal_multiply_admit_variant(KvGxm *g, uint32_t shader) {
+    NormalMultiplyTrial trials[3] = {{.program = shader + 2}, {.program = shader + 4}, {.program = shader}};
+    int status = KV_STATE;
+    uint32_t expected = 0, selected = 0;
+    int ready = 0;
+    const int reference_ready = shader_capability_ready(g, 23) && shader_capability_ready(g, 22);
+    for (unsigned t = 0; t < 3; ++t) {
+        NormalMultiplyTrial *trial = &trials[t];
+        trial->registered = g->effects && g->effects->ids[trial->program];
+        trial->status = trial->registered && reference_ready ? effects_program_mode(g, trial->program, 5, 0) : KV_STATE;
+        ready |= trial->status >= 0;
+    }
+    if (ready) status = normal_multiply_probe(g, shader, trials, &expected);
+    for (unsigned t = 0; status >= 0 && t < 3; ++t) {
+        if (normal_multiply_exact(&trials[t], expected)) { selected = trials[t].program; break; }
+    }
+    char line[640];
+    for (unsigned t = 0; t < 3; ++t) {
+        const NormalMultiplyTrial *trial = &trials[t];
+        const int exact = status >= 0 && normal_multiply_exact(trial, expected);
+        const int probe_status = trial->status < 0 ? trial->status : exact ? 0 : KV_STATE;
+        const int length = snprintf(line, sizeof(line),
+            "{\"kind\":\"ps_normal_multiply_probe\",\"program\":%u,\"native_program\":%u,\"registered\":%u,\"status\":%d,"
+            "\"expected_pixels\":%u,\"compared_pixels\":%u,\"mismatched_pixels\":%u,\"max_channel_delta\":%u,"
+            "\"normal_compared_pixels\":%u,\"normal_mismatched_pixels\":%u,\"normal_max_channel_delta\":%u,"
+            "\"matched\":%u,\"admitted\":%u}\n",
+            shader, trial->program, trial->registered, probe_status, expected, trial->diff.tested,
+            trial->diff.different, trial->diff.maximum,
+            trial->normal.tested, trial->normal.different, trial->normal.maximum,
+            exact, selected == trial->program);
+        if (length > 0 && (size_t)length < sizeof(line)) (void)kv_perf_console(line, (uint32_t)length);
+    }
+    if (g->closing) return status;
+    for (unsigned t = 0; t < 3; ++t) {
+        if (trials[t].registered && trials[t].program != selected)
+            CHECK(g, disable_optional_shader(g, trials[t].program));
+    }
+    if (selected) {
+        g->effects->normal_multiply_program[shader - 58] = selected;
+        shader_capability_set(g, shader, 1);
+    }
+    return 0;
+}
+
+static int normal_multiply_admit(KvGxm *g) {
+    if (!effect_candidate_enabled(58, kv_render_options())) return 0;
+    CHECK(g, normal_multiply_admit_variant(g, 58));
+    return normal_multiply_admit_variant(g, 59);
 }

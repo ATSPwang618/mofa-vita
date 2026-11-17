@@ -158,53 +158,6 @@ impl Ring {
     }
 }
 
-/// Diagnostic hashes are split by cause; cache correctness uses exact keys above.
-#[derive(Default)]
-pub(super) struct Changes { previous: Vec<[u64; 4]> }
-impl Changes {
-    pub fn observe(&mut self, quads: &[&Quad]) {
-        if !knife_perf::enabled() { self.previous.clear(); return; }
-        use std::hash::{Hash, Hasher};
-        fn hash(values: &[u32]) -> u64 {
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            values.hash(&mut h); h.finish()
-        }
-        let now: Vec<[u64; 4]> = quads.iter().map(|q| {
-            let mut geometry = std::collections::hash_map::DefaultHasher::new();
-            for p in q.pos.into_iter().chain(q.uv) { p.map(f32::to_bits).hash(&mut geometry); }
-            q.clip.is_some().hash(&mut geometry);
-            if let Some(clip) = q.clip { for p in clip { p.map(f32::to_bits).hash(&mut geometry); } }
-            let mut texture = std::collections::hash_map::DefaultHasher::new();
-            q.tex.render_identity().hash(&mut texture);
-            if let Some(rule) = &q.rule { rule.tex.render_identity().hash(&mut texture); }
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            q.blend.hash(&mut h); q.shade.hash(&mut h); q.masked.hash(&mut h);
-            for p in q.haze { p.map(f32::to_bits).hash(&mut h); }
-            q.soft.is_some().hash(&mut h);
-            if let Some(m) = q.soft {
-                m.inner.map(f32::to_bits).hash(&mut h); m.pivot.map(f32::to_bits).hash(&mut h);
-                [m.rot,m.radius,m.fill].map(f32::to_bits).hash(&mut h);
-                m.row.hash(&mut h); m.texels.hash(&mut h);
-            }
-            q.rule.is_some().hash(&mut h);
-            if let Some(m) = &q.rule {
-                [m.progress,m.soft].map(f32::to_bits).hash(&mut h);
-                m.flip.hash(&mut h); m.invert.hash(&mut h);
-            }
-            [geometry.finish(), hash(&q.color.map(f32::to_bits)), h.finish(), texture.finish()]
-        }).collect();
-        if self.previous.len() == now.len() {
-            let metrics = [Metric::StageInputGeometryChanged, Metric::StageInputColorChanged,
-                Metric::StageInputMaterialChanged, Metric::StageInputTextureChanged];
-            for (i, metric) in metrics.into_iter().enumerate() {
-                let count = self.previous.iter().zip(&now).filter(|(a,b)| a[i] != b[i]).count();
-                if count != 0 { knife_perf::add(metric, 0, count as u64); }
-            }
-        }
-        self.previous = now;
-    }
-}
-
 pub(super) fn ring_gauge(stage: &Ring, canvas: &Ring) {
     knife_perf::gauge_set(Gauge::TargetRingBytes, (stage.bytes() + canvas.bytes()) as u64);
 }

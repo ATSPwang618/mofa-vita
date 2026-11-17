@@ -29,7 +29,7 @@ use knife_core::{
 use knife_render::{Renderer, TexRef, Upload};
 #[cfg(target_os = "vita")]
 use knife_render::ByteView;
-#[cfg(target_os = "vita")]
+#[cfg(any(target_os = "vita", test))]
 #[path = "atlas_cache.rs"]
 mod atlas_cache;
 #[cfg(any(target_os = "vita", test))]
@@ -52,6 +52,9 @@ pub use sound_needed::SoundNeeded;
 #[cfg(any(target_os = "vita", test))]
 #[path = "sparse_source.rs"]
 mod sparse_source;
+#[cfg(any(target_os = "vita", test, debug_assertions))]
+#[path = "story_gxt.rs"]
+mod story_gxt;
 #[cfg(target_os="vita")]
 pub use image_needed::ImageNeeded;
 
@@ -107,7 +110,10 @@ pub enum Pixels {
     GxtNative {
         encoded: ByteView, source: ByteView, archive: Arc<Archive>, index: usize, first_use:bool,
         logical: [u32; 2], physical: [u32; 2],
+        live_coverage: Option<knife_render::SparseCoveragePlan>,
     },
+    #[cfg(target_os = "vita")]
+    StoryTiles(story_gxt::TiledImage, Arc<Archive>),
 }
 
 #[cfg(target_os = "vita")]
@@ -138,7 +144,7 @@ impl Pixels {
         let (width, height, bpp, altered, bytes) = match self {
             Self::Scaled(pixels, _) => return pixels.vita_upload_layout(),
             Self::Reloadable(pixels, _) => return pixels.vita_upload_layout(),
-            Self::GxtNative { .. } => anyhow::bail!("GXT block upload uses deferred allocation"),
+            Self::GxtNative { .. } | Self::StoryTiles(..) => anyhow::bail!("GXT block upload uses deferred allocation"),
             Self::Bntx(texture, _) => (
                 texture.width, texture.height,
                 if texture.format == TexFormat::R8Unorm { 1 } else { 4 },
@@ -404,6 +410,8 @@ pub struct Assets {
     /// Witch on the Holy Night's allpachdml (archive 11): the HD pictures of more than one language
     pub allpachdml: Option<Arc<Archive>>,
     pub allpaccg: Option<Arc<Archive>>,
+    #[cfg(target_os = "vita")]
+    save_thumbs: Option<Arc<Archive>>,
     pub allui: Arc<Archive>,
     pub tables: ExeTables,
     image_index: HashMap<String, usize>,
@@ -584,6 +592,9 @@ impl Assets {
             allpachd: Archive::open(romfs, hd).ok().map(Arc::new),
             allpachdml: if build == Build::Witch { Archive::open(romfs, "allpachdml").ok().map(Arc::new) } else { None },
             allpaccg: if build == Build::Witch { None } else { Archive::open(romfs, &w("allpaccg")).ok().map(Arc::new) },
+             #[cfg(target_os = "vita")]
+             save_thumbs: (build == Build::Witch).then(|| Archive::open_file(romfs, "savethumb").ok())
+                 .flatten().map(Arc::new),
             allui,
             tables,
             image_index,
@@ -645,6 +656,18 @@ impl Assets {
                         let pixels = Self::decode_source(&source_cache,&archives,&job.name,job.grade,job.strip,
                             Some((PREFETCH_ENCODED_CAP,PREFETCH_RGBA_CAP)),true);
                         return Some(Decoded {demanded:job.demanded,key:job.key,name:job.name,strip:job.strip,pixels});
+                    }
+                    if let Some((archive, index, _)) = Self::native_preview_locator(&archives, &job.name, job.grade, job.strip) {
+                        let pixels = archive.read_bounded(index, PREFETCH_ENCODED_CAP)
+                            .and_then(|bytes| Self::prebaked_story_gxt(ByteView::owned(bytes), archive, index, &job.name));
+                        return Some(Decoded { demanded:job.demanded,key:job.key,name:job.name,strip:job.strip,pixels });
+                    }
+                    if let Some((archive, index)) = Self::primary_image_locator(&archives, &job.name)
+                        && let Some(variant) = Self::story_variant(&archive, index, job.grade, job.strip)
+                    {
+                        let pixels = archive.read_bounded(variant, PREFETCH_ENCODED_CAP)
+                            .and_then(|bytes| Self::prebaked_story_gxt(ByteView::owned(bytes), archive, variant, &job.name));
+                        return Some(Decoded { demanded:job.demanded,key:job.key,name:job.name,strip:job.strip,pixels });
                     }
                     let (data, archive, index) = Self::image_data_limit(&archives, &job.name,
                         Some(PREFETCH_ENCODED_CAP))?;
@@ -841,11 +864,12 @@ impl Assets {
     /// allpac (archive 9), then allpacml (10), then the others; allpac and allpacml come first here for
     /// `image_bytes`' thumbnails.
     fn image_archives(&self) -> Vec<Arc<Archive>> {
-        [Some(&self.allpac), self.allpacml.as_ref(), self.allpaccg.as_ref(), Some(&self.allui), self.allpachd.as_ref()]
+        let story = [Some(&self.allpac), self.allpacml.as_ref(), self.allpaccg.as_ref(), Some(&self.allui), self.allpachd.as_ref()]
             .into_iter()
-            .flatten()
-            .cloned()
-            .collect()
+            .flatten();
+        #[cfg(target_os = "vita")]
+        let story = story.chain(self.save_thumbs.iter());
+        story.cloned().collect()
     }
 
     /// Witch on the Holy Night's HD lookup (jp_A90C0(name, 1)): jallpachd's list (jd_18C0514 = 2), then
@@ -897,6 +921,19 @@ impl Assets {
         } else {
             archives.iter().find_map(|a| a.find_stem(name).map(|i| (a.clone(), i)))
         }
+    }
+
+    /// The variant belongs to the original winning ordinal, even if a lower-priority
+    /// archive has the same name. The last entry acts as a cheap legacy-pack gate.
+    #[cfg(any(target_os = "vita", debug_assertions))]
+    fn story_variant(archive: &Archive, index: usize, grade: Bake, strip: Option<(usize, usize)>) -> Option<usize> {
+        if !matches!(archive.name.as_str(), "jallpac" | "jallpachd" | "allpacml" | "allpachdml")
+            || !archive.entries().last().is_some_and(|entry| entry.name == "KQ_VARIANTS.NXZ")
+        {
+            return None;
+        }
+        let stem = story_gxt::variant_stem(index, grade.grade, grade.bright, grade.contrast, grade.raw, strip)?;
+        archive.find_stem(&stem)
     }
 
     fn image_data_limit(archives: &[Arc<Archive>], name: &str, cap: Option<usize>) -> Option<(Vec<u8>, Arc<Archive>, usize)> {
@@ -1036,12 +1073,12 @@ impl Assets {
     /// No header/card read, wait, clone of payload, or eviction happens here.
     /// A 2 MiB scratch margin and the 48 MiB recovery target stay untouched.
     #[cfg(target_os = "vita")]
-    pub fn vita_warm_ui_sources(&self, heap_headroom:usize) {
+    pub fn vita_warm_ui_sources(&self, heap_headroom: usize, allow_warm: bool) {
         use knife_perf::memory_budget::{CPU_TARGET_HEADROOM,MIB};
         let floor=CPU_TARGET_HEADROOM+2*MIB;
         if heap_headroom<floor {return;}
         self.cpu_cache_pressure.set(false);
-        if !knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {return;}
+        if !allow_warm || !knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {return;}
         let mut available=heap_headroom-floor;
         for name in [self.ui_atlas("DISP_PARTS"),"NOISE_PARTS".into()] {
             let Some(index)=self.allui.find_stem(&name) else {continue;};
@@ -1161,20 +1198,36 @@ impl Assets {
     /// One speculative upload per update, before motion/rendering. Real demand
     /// joins an active decode through image_graded instead of starting a duplicate.
     #[cfg(target_os = "vita")]
-    pub fn prefetch_window(&mut self, r: &Renderer, wanted: &[(String, Bake)], preview: &[(String, Bake)]) {
+    pub fn prefetch_window(&mut self, r: &Renderer, wanted: &[(String, Bake)], preview: &[(String, Bake)],
+        story_priority: Option<(usize, bool)>,
+    ) {
         let keys: Vec<_> = wanted.iter().take(32)
             .map(|(name, bake)| Self::image_key(name, *bake).2).collect();
         self.image_skipped.retain(|key| keys.contains(key));
+        let allow_prefetch = story_priority.is_none_or(|(_, audio_safe)| audio_safe && !self.cpu_cache_pressure.get());
         if let Some(worker) = &self.image_worker {
-            if !worker.retain_window(self.image_context, &keys) {return;}
+            if !worker.retain_prefetch_window(self.image_context, &keys, allow_prefetch) {return;}
         }
-        if !self.cpu_cache_pressure.get()
+        if !allow_prefetch { return; }
+        let story_ready = story_priority.is_none_or(|(count, _)| wanted.iter().take(count)
+            .all(|(name, bake)| self.image_cached(name, *bake)));
+        if story_ready && !self.cpu_cache_pressure.get()
             && knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS) {
             let archives = self.image_archives();
-            for (name,bake) in wanted.iter().take(32) {
-                if self.image_cached(name,*bake)
-                    && let Some((archive,index)) = Self::primary_image_locator(&archives,&Self::image_key(name,*bake).0) {
-                    self.atlas_cache.request(archive,index);
+            for (name,bake) in wanted.iter().take(story_priority.map_or(32, |(count, _)| count)) {
+                let (resolved, grade, _) = Self::image_key(name,*bake);
+                if !resolved.starts_with(THUMB) && self.image_cached(name,*bake)
+                    && let Some((archive,index)) = Self::primary_image_locator(&archives,&resolved) {
+                    let selected = Self::story_variant(&archive, index, grade, self.strip(&resolved)).unwrap_or(index);
+                    if story_priority.is_some() {
+                        // One idle archive read, without evicting another source. Use
+                        // HED sizes here to avoid a synchronous NX header read.
+                        let entry = &archive.entries()[selected];
+                        let bytes = 2048 * usize::from(entry.unpacked_sectors.max(entry.stored_sectors));
+                        if self.atlas_cache.prewarm_if_room(archive, selected, bytes) != 0 { break; }
+                    } else {
+                        self.atlas_cache.request(archive,selected);
+                    }
                 }
             }
             // DISP/NOISE warming is admission-checked at maintenance instead
@@ -1209,6 +1262,31 @@ impl Assets {
         }
     }
 
+    /// Use the same variant and strip resolution as a real image request. The
+    /// atlas worker owns bytes; this window does not register/upload textures.
+    #[cfg(target_os = "vita")]
+    pub fn prepare_transition_sources<'a>(&self, immediate: &[(String, Bake)],
+        later: impl IntoIterator<Item = &'a (String, Bake)>, allow_read: bool, allow_later: bool,
+    ) {
+        let archives = self.image_archives();
+        let resolve = |(name, bake): &(String, Bake)| {
+            let (resolved, grade, _) = Self::image_key(name, *bake);
+            if resolved.starts_with(THUMB) { return None; }
+            let (archive, original) = Self::primary_image_locator(&archives, &resolved)?;
+            let index = Self::story_variant(&archive, original, grade, self.strip(&resolved)).unwrap_or(original);
+            Some((archive, index))
+        };
+        let (selected, immediate_count) = atlas_cache::select_transition_sources(immediate.iter().filter_map(resolve),
+            later.into_iter().filter_map(resolve));
+        self.atlas_cache.transition_window(&selected, immediate_count,
+            allow_read && !self.cpu_cache_pressure.get(), allow_later);
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn clear_transition_sources(&self) {
+        self.atlas_cache.clear_transition_window();
+    }
+
     #[cfg(target_os = "vita")]
     pub fn image_performance(&self) -> (ImagePerf, knife_platform_vita::image_worker::WorkerStats) {
         (self.image_perf, self.image_worker.as_ref().map(|worker| worker.stats()).unwrap_or_default())
@@ -1228,16 +1306,36 @@ impl Assets {
     /// optional/prefetch callers retain their Option wrapper above.
     fn try_finish_image_sized(&mut self, r: &Renderer, key: String, name: &str, pixels: Result<Pixels>, hd: bool) -> Result<Arc<Image>> {
         let pixels = pixels.with_context(|| format!("decoding image {name}"))?;
+        #[cfg(target_os = "vita")]
+        if name.starts_with(THUMB) {
+            let used = self.images.iter().filter(|(key, _)| key.starts_with(THUMB))
+                .filter_map(|(_, image)| image.as_ref()).try_fold(0usize, |total, image|
+                    r.vita_texture_allocation_bytes(&image.tex).map(|bytes| total + bytes))?;
+            // Allow an entire PoT BC3 backing when only the physical size is
+            // available. The registration below keeps the actual block size.
+            let bytes = match &pixels {
+                Pixels::GxtNative { physical: [w, h], .. } => w.next_power_of_two().max(4) * h.next_power_of_two().max(4),
+                Pixels::StoryTiles(..) => anyhow::bail!("save thumbnail unexpectedly resolved to a story tile grid"),
+                _ => {
+                    let (w, h, bpp, _) = pixels.vita_upload_layout()?;
+                    w.next_multiple_of(8) * h * bpp
+                }
+            };
+            let charge = usize::try_from(knife_platform_vita::gxm::Gxm::texture_charge(bytes)
+                .map_err(anyhow::Error::msg)?)?;
+            anyhow::ensure!(used + charge <= knife_perf::memory_budget::GPU_PREVIEW_SOURCE_BYTES,
+                "save thumbnail input exceeded preview CDRAM budget");
+        }
         // Count which route the image actually took: a pre-baked GXT never decodes
         // or bakes, everything else does both.
         #[cfg(target_os = "vita")]
-        if matches!(pixels, Pixels::GxtNative { .. }) {
+        if matches!(pixels, Pixels::GxtNative { .. } | Pixels::StoryTiles(..)) {
             self.image_perf.gxt_images += 1;
         } else {
             self.image_perf.decoded_images += 1;
         }
         #[cfg(target_os = "vita")]
-        if !matches!(pixels, Pixels::GxtNative { .. }) {
+        if !matches!(pixels, Pixels::GxtNative { .. } | Pixels::StoryTiles(..)) {
             let (width, height, bpp, altered) = pixels.vita_upload_layout()
                 .with_context(|| format!("invalid image upload {name}"))?;
             let before = self.images.len();
@@ -1299,6 +1397,46 @@ impl Assets {
         self.image_cache.retain_keys(|key| self.images.contains_key(key));
     }
 
+    #[cfg(target_os = "vita")]
+    pub fn vita_has_saved_image(&self, name: &str) -> bool {
+        let name = name.to_ascii_uppercase();
+        Self::primary_image_locator(&self.image_archives(), &name)
+            .is_some_and(|(archive, index)| archive.entries().get(index)
+                .is_some_and(|entry| entry.stored_sectors > 0))
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_drop_preview_sources(&mut self) {
+        self.images.retain(|key, _| !key.starts_with(THUMB));
+        self.image_cache.retain_keys(|key| self.images.contains_key(key));
+    }
+
+    #[cfg(target_os = "vita")]
+    fn native_preview_locator(archives: &[Arc<Archive>], name: &str, grade: Bake,
+        strip: Option<(usize, usize)>) -> Option<(Arc<Archive>, usize, bool)>
+    {
+        let stem = name.strip_prefix(THUMB)?;
+        if grade.raw || grade.bright != 1.0 || grade.contrast != 1.0 || strip.is_some() { return None; }
+        let archive = archives.iter().find(|archive| archive.name == "savethumb")?;
+        [('O', true), ('A', false)].into_iter().find_map(|(prefix, opaque)| {
+            archive.find_stem(&format!("{prefix}{:02X}{stem}", grade.grade))
+                .map(|index| (archive.clone(), index, opaque))
+        })
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_preview_opaque(&self, name: &str, grade: Bake) -> bool {
+        Self::native_preview_locator(self.save_thumbs.as_slice(), name, grade, self.strip(name))
+            .is_some_and(|(_, _, opaque)| opaque)
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn vita_finished_black_thumb(&self, name: &str) -> Option<String> {
+        let key = format!("FINISHED_{}", name.to_ascii_uppercase());
+        self.save_thumbs.as_ref()?.find_stem(&format!("O00{key}"))?;
+        Some(key)
+    }
+
     /// Give a missing UI atlas the same native headroom admission as a CG
     /// upload. Only actual pressure scans cache-owned images; the renderer
     /// retains every native texture referenced by the complete pending frame.
@@ -1349,14 +1487,57 @@ impl Assets {
     /// the language strip.
     fn decode_pixels(archives: &[Arc<Archive>], name: &str, grade: Bake, strip: Option<(usize, usize)>) -> Result<Pixels> {
         #[cfg(target_os = "vita")]
-        if let Some((archive, index)) = Self::primary_image_locator(archives, name)
-            && let Some(hit) = graded_cache::lookup_source(&archive, index, name, grade, strip) {
-            let source = ImageReload { archive: hit.archive.clone(), index: hit.index,
-                encoded_len: hit.encoded_len, grade, strip, initial:None };
-            return Ok(Pixels::Reloadable(Box::new(hit.into_pixels()), source));
+        if let Some((archive, index, _)) = Self::native_preview_locator(archives, name, grade, strip) {
+            let data = ByteView::owned(archive.read(index)?);
+            return Self::prebaked_story_gxt(data, archive, index, name);
+        }
+        #[cfg(all(not(target_os = "vita"), debug_assertions))]
+        if knife_render::vita_capture_colors()
+            && let Some((archive, index)) = Self::primary_image_locator(archives, name)
+            && let Some(variant) = Self::story_variant(&archive, index, grade, strip)
+        {
+            return Self::decode_capture_variant(&archive, variant);
+        }
+        #[cfg(target_os = "vita")]
+        if let Some((archive, index)) = Self::primary_image_locator(archives, name) {
+            if let Some(variant) = Self::story_variant(&archive, index, grade, strip) {
+                let data = ByteView::owned(archive.read(variant)?);
+                return Self::prebaked_story_gxt(data, archive, variant, name);
+            }
+            if let Some(hit) = graded_cache::lookup_source(&archive, index, name, grade, strip) {
+                let source = ImageReload { archive: hit.archive.clone(), index: hit.index,
+                    encoded_len: hit.encoded_len, grade, strip, initial:None };
+                return Ok(Pixels::Reloadable(Box::new(hit.into_pixels()), source));
+            }
         }
         let (data, archive, index) = Self::image_data(archives, name).context("not found")?;
         Self::decode_data_pixels(data, archive, index, name, grade, strip, None)
+    }
+
+    #[cfg(all(not(target_os = "vita"), debug_assertions))]
+    fn decode_capture_variant(archive: &Archive, index: usize) -> Result<Pixels> {
+        use knife_core::format::gxt_decode;
+        let wire = archive.read(index)?;
+        if let Some(grid) = story_gxt::TiledImage::parse(&wire) {
+            let [w, h] = grid.physical;
+            anyhow::ensure!(u64::from(w) * u64::from(h) <= 8 * 1024 * 1024, "capture tile grid exceeds bounds");
+            let mut pixels = vec![0; w as usize * h as usize * 4];
+            for (i, tile) in grid.tiles.into_iter().enumerate() {
+                let wire = archive.read(tile.index)?;
+                let view = compact::parse(&wire)?;
+                let (tw, th, tile) = gxt_decode::rgba8(view.payload, 4 * 960 * 1080)?;
+                let ([l, t, r, b], [cx, cy, cr, cb]) = story_gxt::tile_rects(grid.physical, grid.columns, i as u32);
+                anyhow::ensure!([tw, th] == [cr - cx, cb - cy], "capture tile dimensions changed");
+                for y in t..b {
+                    let dst = ((y * w + l) * 4) as usize;
+                    let src = (((y - cy) * tw + l - cx) * 4) as usize;
+                    let len = ((r - l) * 4) as usize;
+                    pixels[dst..dst + len].copy_from_slice(&tile[src..src + len]);
+                }
+            }
+            return Ok(Pixels::Scaled(Box::new(Pixels::Rgba(w, h, pixels, None)), grid.logical));
+        }
+        Self::decode_image_pixels_limit(&wire, Bake::NONE, None, None)
     }
 
     fn decode_data_pixels(data: Vec<u8>, archive: Arc<Archive>, index: usize, name: &str,
@@ -1370,11 +1551,19 @@ impl Assets {
     #[cfg(target_os = "vita")]
     fn decode_source(cache: &atlas_cache::AtlasCache, archives: &[Arc<Archive>], name: &str,
         grade: Bake, strip: Option<(usize, usize)>, cap: Option<(usize,usize)>, worker_progress:bool) -> Result<Pixels> {
-        let (archive, index) = Self::primary_image_locator(archives, name).context("not found")?;
-        if let Some(hit) = graded_cache::lookup_source(&archive,index,name,grade,strip) {
+        let (archive, index, variant) = if let Some((archive, index, _)) =
+            Self::native_preview_locator(archives, name, grade, strip) {
+            (archive, index, Some(index))
+        } else {
+            let (archive, index) = Self::primary_image_locator(archives, name).context("not found")?;
+            let variant = Self::story_variant(&archive, index, grade, strip);
+            (archive, index, variant)
+        };
+        if variant.is_none() && let Some(hit) = graded_cache::lookup_source(&archive,index,name,grade,strip) {
             let source = ImageReload { archive:hit.archive.clone(),index:hit.index,encoded_len:hit.encoded_len,grade,strip,initial:None };
             return Ok(Pixels::Reloadable(Box::new(hit.into_pixels()),source));
         }
+        let index = variant.unwrap_or(index);
         if let Some((encoded, _)) = cap {
             let plan = archive.read_plan(index)?;
             anyhow::ensure!(plan.decoded_bytes <= encoded, "prefetch encoded budget");
@@ -1383,9 +1572,60 @@ impl Assets {
             knife_platform_vita::image_worker::resource_state::image_location(archive.cache_identity(),index);
             knife_platform_vita::image_worker::resource_state::image_phase(knife_platform_vita::image_worker::resource_state::Phase::DemandSource);
         }
-        let data = cache.whole(archive.clone(),index)?;
+        let data = if cap.is_some() && knife_perf::optimizations::enabled(knife_perf::optimizations::TRANSITION_TEXTURES) {
+            cache.whole_for_prepare(archive.clone(), index)?
+        } else {
+            cache.whole(archive.clone(), index)?
+        };
         if worker_progress {knife_platform_vita::image_worker::resource_state::image_phase(knife_platform_vita::image_worker::resource_state::Phase::Decode);}
-        Self::decode_shared_data_pixels(data,archive,index,name,grade,strip,cap.map(|v|v.1))
+        if variant.is_some() {
+            Self::prebaked_story_gxt(data, archive, index, name)
+        } else {
+            Self::decode_shared_data_pixels(data,archive,index,name,grade,strip,cap.map(|v|v.1))
+        }
+    }
+
+    #[cfg(target_os = "vita")]
+    fn prebaked_story_gxt(data: ByteView, archive: Arc<Archive>, index: usize, name: &str) -> Result<Pixels> {
+        if data.starts_with(b"KQTL") {
+            let tiles = story_gxt::TiledImage::parse(&data).context("invalid offline story GXT tile grid")?;
+            anyhow::ensure!(std::iter::once(&tiles.fallback).chain(&tiles.tiles).all(|tile|
+                tile.index > index && archive.entries().get(tile.index)
+                    .is_some_and(|entry| entry.name.starts_with("KQT") && entry.name.ends_with(".NXZ"))),
+                "offline story GXT tile points outside its payload entries");
+            knife_perf::Scope::new(Metric::StoryGxtVariant).finish_hot(name, data.len() as u64, tiles.tiles.len() as u64);
+            return Ok(Pixels::StoryTiles(tiles, archive));
+        }
+        let image = compact::parse(&data).context("parsing offline story GXT")?;
+        anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm,
+            "offline story variant must contain a native UNORM GXT");
+        let size = knife_core::format::gxt_decode::dimensions(image.payload)?;
+        anyhow::ensure!(image.size == [size.0, size.1], "offline story GXT dimensions differ");
+        knife_perf::Scope::new(Metric::StoryGxtVariant).finish_hot(name, image.payload.len() as u64, 1);
+        Self::decode_shared_data_pixels(data, archive, index, name, Bake::NONE, None, None)
+    }
+
+    #[cfg(target_os = "vita")]
+    fn register_story_tiles(&self, r: &Renderer, name: &str, image: story_gxt::TiledImage, archive: Arc<Archive>) -> Result<TexRef> {
+        let register = |tile: story_gxt::GxtDescriptor, logical, label: &str| {
+            let cache = self.atlas_cache.clone();
+            let archive = archive.clone();
+            let len = 32 + 64 + tile.payload.next_multiple_of(16);
+            let load = Rc::new(move || cache.range(archive.clone(), tile.index, 0, len));
+            let metadata = knife_render::IndexedGxtMetadata {
+                layout: 0xa000_0000, format: tile.format, payload_bytes: tile.payload,
+            };
+            r.defer_gxt_indexed(logical, tile.size, len, metadata, label, load, extract_native_gxt)
+        };
+        let fallback = register(image.fallback, image.logical, name)?;
+        let normalize = |rect: [u32; 4]| std::array::from_fn(|i| rect[i] as f32 / image.physical[i % 2] as f32);
+        let tiles = image.tiles.iter().enumerate().map(|(i, &tile)| {
+            let (interior, crop) = story_gxt::tile_rects(image.physical, image.columns, i as u32);
+            let label = format!("{name}/tile{i}");
+            Ok(knife_render::StoryGxtTile { tex: register(tile, tile.size, &label)?,
+                interior: normalize(interior), crop: normalize(crop) })
+        }).collect::<Result<Vec<_>>>()?;
+        Ok(knife_render::GpuTexture::with_story_tiles(fallback, tiles))
     }
 
     #[cfg(target_os = "vita")]
@@ -1399,7 +1639,18 @@ impl Assets {
             let len = compact::HEADER_SIZE.checked_add(image.payload.len()).context("GXT KIMG envelope length overflow")?;
             let (logical,physical) = (image.logical,image.size);
             let encoded = data.range(0,len).context("truncated GXT KIMG envelope")?;
-            return Ok(Pixels::GxtNative {logical,physical,encoded,source:data,archive,index,first_use:false});
+            // This normally runs on the image worker. Hash only exact locator
+            // candidates, using the original envelope already read for decode.
+            let live_coverage = if knife_perf::optimizations::enabled(knife_perf::optimizations::LIVE_ALPHA_COVERAGE)
+                || knife_perf::optimizations::enabled(knife_perf::optimizations::GROUP_OPAQUE_MASK) {
+                archive.entries().get(index).and_then(|entry| {
+                    knife_render::SparseCoveragePlan::live_alpha_source(&archive.name, index,
+                        &entry.name, logical, physical, &encoded, knife_platform_vita::image::sha256_hex)
+                })
+            } else { None };
+            return Ok(Pixels::GxtNative {
+                logical, physical, encoded, source: data, archive, index, first_use: false, live_coverage,
+            });
         }
         let pixels = Self::decode_cached_pixels(&data,&archive,index,name,grade,strip,rgba_cap)?;
         let encoded_len = data.len();
@@ -1445,8 +1696,9 @@ impl Assets {
         if !grade.cpu() && strip.is_none() && bntx::is_bntx(&data) {
             return Ok(Pixels::Bntx(bntx::parse(&data)?.into_iter().next().context("empty BNTX")?, !grade.raw));
         }
-        #[cfg(target_os = "vita")]
-        if let Some(image) = compact.as_ref().filter(|i|i.encoding == compact::Encoding::GxtNativeUnorm) {
+        #[cfg(any(target_os = "vita", debug_assertions))]
+        if (cfg!(target_os = "vita") || Self::capture_native_colors())
+            && let Some(image) = compact.as_ref().filter(|i|i.encoding == compact::Encoding::GxtNativeUnorm) {
             use knife_core::format::gxt_decode;
             let size = gxt_decode::dimensions(image.payload)?;
             anyhow::ensure!([size.0,size.1] == image.size,"KIMG GXT dimensions mismatch");
@@ -1527,11 +1779,18 @@ impl Assets {
         }
         if grade.cpu() {
             let processing = Scope::new(Metric::CpuGrade);
-            grade.apply(&mut px, srgb);
+            grade.apply(&mut px, srgb && !Self::capture_native_colors());
             processing.finish(px.len() as u64, 0);
             return Ok(wrap(Pixels::Baked(w, h, px), logical));
         }
         Ok(wrap(Pixels::Rgba(w, h, px, (!cfg!(target_os = "vita") && !grade.raw).then_some(srgb)), logical))
+    }
+
+    fn capture_native_colors() -> bool {
+        #[cfg(not(target_os = "vita"))]
+        { knife_render::vita_capture_colors() }
+        #[cfg(target_os = "vita")]
+        { false }
     }
 
     fn upload_pixels(&self, r: &Renderer, name: &str, pixels: Pixels) -> Result<Image> {
@@ -1543,25 +1802,23 @@ impl Assets {
         let (pixels, logical) = match pixels {
             Pixels::Scaled(pixels, logical) => (*pixels, Some(logical)),
             #[cfg(target_os = "vita")]
-            Pixels::GxtNative { logical, encoded, source, archive, index, physical, first_use } =>
-                (Pixels::GxtNative { encoded, source, archive, index, logical, physical, first_use }, Some(logical)),
+            pixels @ Pixels::GxtNative { logical, .. } => (pixels, Some(logical)),
             pixels => (pixels, None),
         };
         #[cfg(target_os = "vita")]
         let sparse = match &pixels {
-            Pixels::GxtNative { encoded, archive, index, logical, physical, .. } => {
+            Pixels::GxtNative { live_coverage: Some(plan), .. } => Some(*plan),
+            Pixels::GxtNative { encoded, archive, index, logical, physical, .. } if name == "IMG0436" => {
                 let entry = archive.entries().get(*index).map_or("", |entry| entry.name.as_str());
                 let candidate = sparse_source::candidate(knife_platform_vita::audit::ASSET_MANIFEST,
                     &archive.name, *index, name, entry, *logical, *physical, encoded.len());
                 let verified = candidate && knife_platform_vita::image::sha256_hex(encoded)
                     .is_some_and(|hash| &hash == sparse_source::ENVELOPE_SHA256);
-                if name == "IMG0436" {
-                    tracing::info!(name, archive = %archive.name, index, candidate, verified,
-                        "SPARSE_SOURCE plan=img0436 tile=16 halo=2 rects=68");
-                }
-                verified
+                tracing::info!(name, archive = %archive.name, index, candidate, verified,
+                    "SPARSE_SOURCE plan=img0436 tile=16 halo=2 rects=68");
+                verified.then_some(knife_render::SparseCoveragePlan::Img0436)
             }
-            _ => false,
+            _ => None,
         };
         #[cfg(target_os = "vita")]
         let rebuilt_us = match &pixels { Pixels::SharedBaked(_, _, _, us) => *us, _ => 0 };
@@ -1572,7 +1829,9 @@ impl Assets {
             || matches!(&pixels, Pixels::Native { owner, .. } if owner.bytes_per_pixel() == 1);
         let tex = match pixels {
             #[cfg(target_os = "vita")]
-            Pixels::GxtNative { encoded, source, archive, index, logical, physical, first_use } => {
+            Pixels::StoryTiles(image, archive) => self.register_story_tiles(r, name, image, archive)?,
+            #[cfg(target_os = "vita")]
+            Pixels::GxtNative { encoded, source, archive, index, logical, physical, first_use, .. } => {
                 let len = encoded.len();
                 if knife_perf::optimizations::enabled(knife_perf::optimizations::SHARED_ATLAS)
                     && self.atlas_cache.seed(&archive,index,source) {
@@ -1701,8 +1960,8 @@ impl Assets {
             }
         } else { tex };
         #[cfg(target_os = "vita")]
-        let tex = if sparse {
-            knife_render::GpuTexture::with_sparse_coverage(tex, knife_render::SparseCoveragePlan::Img0436)
+        let tex = if let Some(plan) = sparse {
+            knife_render::GpuTexture::with_sparse_coverage(tex, plan)
         } else { tex };
         let no_shake = self.image_info(name).is_some_and(|i| i.no_shake);
         let (width, height, center_x, center_y, level) = match self.image_info(name) {
@@ -2274,7 +2533,14 @@ impl Assets {
     }
 
     pub fn load_stream_file(&self, rel: &str) -> Result<Pcm> {
-        let data = std::fs::read(self.stream_path(rel)).with_context(|| format!("reading {rel}"))?;
+        let path = self.stream_path(rel);
+        #[cfg(target_os = "vita")]
+        if knife_platform_vita::audio_banks::packed_path(&path) {
+            let data = knife_platform_vita::audio_banks::read_encoded(&path, 8 * 1024 * 1024)
+                .with_context(|| format!("reading {rel}"))?;
+            return codec::decode_stream(&data);
+        }
+        let data = std::fs::read(path).with_context(|| format!("reading {rel}"))?;
         codec::decode_stream(&data)
     }
 

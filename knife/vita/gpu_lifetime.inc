@@ -187,8 +187,10 @@ static int collect_retired_textures(KvGxm *g) {
 }
 int32_t kv_gxm_reclaim(KvGxm *g, uint32_t wait) {
     if (!active(g) || g->scene_open || wait > 1) return KV_STATE;
-    if (!(kv_render_options() & KV_OPT_BATCH_ARENA)) return 0;
-    if (wait) CHECK(g, wait_submitted(g, KV_PERF_BATCH_WAIT));
+    if (wait) {
+        if (async_submission(g)) CHECK(g, wait_submitted(g, KV_PERF_BATCH_WAIT));
+        else perf_finish(g->context, KV_PERF_BATCH_WAIT);
+    }
     return collect_retired_textures(g);
 }
 int32_t kv_gxm_begin_batch(KvGxm *g, uint32_t basic_quads, uint32_t effect_vertices) {
@@ -326,6 +328,11 @@ static int pool_trim(KvGxm *g, uint32_t keep_bytes) {
         else entry = &page->next;
     }
     return 0;
+}
+int32_t kv_gxm_trim_texture_pages(KvGxm *g) {
+    if (!active(g) || g->scene_open) return KV_STATE;
+    CHECK(g, collect_retired_textures(g));
+    return pool_trim(g, 0);
 }
 static int pool_slice_free(KvGxm *g, Block *b) {
     TexturePage *page = b->page;

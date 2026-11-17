@@ -38,6 +38,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../vita/vendor/shacccg-ext/NOTICE");
     println!("cargo:rerun-if-changed=../vita/vendor/dependencies");
     println!("cargo:rerun-if-changed=../../tools/generate-runtime-shaders.py");
+    println!("cargo:rerun-if-changed=../vita/shaders/normal_multiply.cg");
     println!("cargo:rerun-if-changed=../../tools/generate-ps-operation-shaders.py");
     println!("cargo:rerun-if-changed=../../tools/offline_vita_shaders.py");
     println!("cargo:rerun-if-changed=../vita/audio_decode.c");

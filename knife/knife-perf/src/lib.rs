@@ -50,7 +50,9 @@ metrics! {
     GroupCacheHit => "group_cache_hit", GroupCacheMiss => "group_cache_miss",
     GroupCacheBypass => "group_cache_bypass", GroupCacheEvict => "group_cache_evict",
     GroupCacheDrawSaved => "group_cache_draw_saved",
-    GxtCpuDecode => "gxt_cpu_decode", SourceCacheHit => "source_cache_hit",
+    GxtCpuDecode => "gxt_cpu_decode", StoryGxtVariant => "story_gxt_variant",
+    StoryTileDraw => "story_tile_draw", StoryTileFallback => "story_tile_fallback",
+    SourceCacheHit => "source_cache_hit",
     SourceCacheMiss => "source_cache_miss", SourceCacheSeed => "source_cache_seed",
     SourceCachePrefetch => "source_cache_prefetch", SourceCacheDropped => "source_cache_dropped",
     CachePressureTrim => "cache_pressure_trim",
@@ -59,7 +61,8 @@ metrics! {
     StagePrefixHit => "stage_prefix_hit", StagePrefixMiss => "stage_prefix_miss",
     StagePrefixBuild => "stage_prefix_build", StagePrefixBypass => "stage_prefix_bypass",
     StagePrefixDrawSaved => "stage_prefix_draw_saved",
-    StageCoverage => "stage_coverage",
+    StageGroupPrefix => "stage_group_prefix",
+    StoryTileClipReject => "story_tile_clip_reject",
     SparseCoverageHit => "sparse_coverage_hit",
     SparseCoverageTiles => "sparse_coverage_tiles",
     SparseCoverageFallback => "sparse_coverage_fallback",
@@ -76,6 +79,7 @@ metrics! {
     Message => "message_total", MessageBackup => "message_backup", MessageResolve => "message_resolve",
     MessageLayout => "message_layout", MessageHistory => "message_history", VoiceSchedule => "voice_schedule",
     AudioStreamOpen => "audio_stream_open",
+    AudioBankRead => "audio_bank_read",
     PsOp1 => "ps_op_1",
     PsOp2 => "ps_op_2",
     PsOp3 => "ps_op_3",
@@ -114,6 +118,13 @@ metrics! {
     GpuCacheAdmit => "gpu_cache_admit", GpuCacheEvict => "gpu_cache_evict",
     GpuCacheBypass => "gpu_cache_bypass", GroupBatchPlan => "group_batch_plan",
     GroupBatchBypass => "group_batch_bypass", GroupBatchStagePasses => "group_batch_stage_passes",
+    GroupMaskReject => "group_mask_reject",
+    GroupMaskClip => "group_mask_clip",
+    GroupOpaqueMask => "group_opaque_mask",
+    GroupOpaqueOverwrite => "group_opaque_overwrite",
+    GroupClearOverwrite => "group_clear_overwrite",
+    StageOpaqueCover => "stage_opaque_cover",
+    TransparentDrawReject => "transparent_draw_reject",
     GroupBatchRejectPlan => "group_batch_reject_plan",
     GroupBatchRejectAlias => "group_batch_reject_alias",
     GroupBatchRejectCapability => "group_batch_reject_capability",
@@ -132,10 +143,6 @@ metrics! {
     BlendChainFallback => "blend_chain_fallback",
     TargetRingEnable => "target_ring_enable", TargetRingRotate => "target_ring_rotate",
     TargetRingBypass => "target_ring_bypass", TargetRingRelease => "target_ring_release",
-    StageInputGeometryChanged => "stage_input_geometry_changed",
-    StageInputColorChanged => "stage_input_color_changed",
-    StageInputMaterialChanged => "stage_input_material_changed",
-    StageInputTextureChanged => "stage_input_texture_changed",
     StageRestoreHit => "stage_restore_hit",
     StageRestoreMiss => "stage_restore_miss",
     SceneProducerReuse => "scene_producer_reuse",
@@ -165,9 +172,14 @@ metrics! {
     MovieOwnerOpen => "movie_owner_open", MovieOwnerPoll => "movie_owner_poll",
     MovieOwnerControl => "movie_owner_control", MovieOwnerFrame => "movie_owner_frame",
     MovieOwnerClose => "movie_owner_close", MovieFrameCache => "movie_frame_cache",
+    TransitionSourceQueued => "transition_source_queued", TransitionSourceReady => "transition_source_ready",
+    TransitionSourceHit => "transition_source_hit", TransitionSourceEvict => "transition_source_evict",
+    TransitionSourceRejected => "transition_source_rejected", TransitionSourceJoined => "transition_source_joined",
+    StageAlphaRegionPlan => "stage_alpha_region_plan", StageAlphaRegion => "stage_alpha_region",
 }
-// Console audit banks carry eight counters and use a bounded 0..32 index.
-const _: () = assert!(NAMES.len() <= 32 * 8);
+// Console audit banks carry eight named counters per JSON record. Rust and
+// native banks are independent domains, and changed banks are emitted sparsely.
+const _: () = assert!(NAMES.len() <= 40 * 8);
 
 #[repr(C)]
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]

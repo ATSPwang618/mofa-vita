@@ -1,5 +1,6 @@
 //! Bounded startup checks against the asset profile embedded in the engine.
 use std::{fs::File, io::{Read, Seek, SeekFrom}, path::Path};
+use crate::audio_banks::AudioBanks;
 
 pub const BUFFER_BYTES: usize = 8192;
 pub const PROBE_BYTES: usize = 4096;
@@ -64,10 +65,33 @@ include!("asset_profile_540p.rs");
 /// Large payloads use size + first/last 4 KiB, NOT a whole-file integrity claim.
 /// tools/generate_vita_asset_profile_540.py performs the full offline SHA-256 inventory check.
 pub fn check_assets(root: &Path) -> Result<CheckReport, AssetError> {
-    check_files(root, PROFILE)
+    check_assets_with_audio(root).map(|(report, _)| report)
 }
 
+pub fn check_assets_with_audio(root: &Path) -> Result<(CheckReport, Option<AudioBanks>), AssetError> {
+    let banks = AudioBanks::open(root).map_err(|(path, error)| AssetError {
+        path,
+        failure: match error.kind() {
+            std::io::ErrorKind::NotFound => Failure::Missing,
+            std::io::ErrorKind::InvalidData | std::io::ErrorKind::UnexpectedEof => Failure::Content,
+            _ => Failure::Read,
+        },
+    })?;
+    if let Some(banks) = &banks {
+        let members: usize = banks.counts().iter().sum();
+        if members != 9471 {
+            return Err(AssetError { path: "voice.mrg / bgm.mrg", failure: Failure::Size });
+        }
+    }
+    check_with_audio(root, PROFILE, banks.as_ref()).map(|report| (report, banks))
+}
+
+#[cfg(test)]
 fn check_files(root: &Path, specs: &[FileSpec]) -> Result<CheckReport, AssetError> {
+    check_with_audio(root, specs, None)
+}
+
+fn check_with_audio(root: &Path, specs: &[FileSpec], banks: Option<&AudioBanks>) -> Result<CheckReport, AssetError> {
     if !root.is_dir() {
         return Err(AssetError { path: "assets/", failure: Failure::Missing });
     }
@@ -82,7 +106,22 @@ fn check_files(root: &Path, specs: &[FileSpec]) -> Result<CheckReport, AssetErro
             || matches!(spec.content, ContentCheck::Full(_)) && spec.bytes > MAX_FULL_BYTES
             || matches!(spec.content, ContentCheck::Edges { .. }) && spec.bytes < (PROBE_BYTES * 2) as u64
         { return Err(error(Failure::Profile)); }
-        let mut file = File::open(root.join(spec.path)).map_err(|e| error(
+        let path = root.join(spec.path);
+        if let Some(banks) = banks.filter(|_| spec.path.starts_with("stream/")) {
+            let range = banks.entry(&path).ok_or_else(|| error(Failure::Missing))?;
+            if u64::from(range.len()) != spec.bytes { return Err(error(Failure::Size)); }
+            let ContentCheck::Full(expected) = spec.content else { return Err(error(Failure::Profile)); };
+            let mut crc = crc32fast::Hasher::new();
+            for offset in (0..range.len()).step_by(BUFFER_BYTES) {
+                let count = range.read_at(offset, &mut buffer).map_err(|_| error(Failure::Read))?;
+                crc.update(&buffer[..count]);
+            }
+            if crc.finalize() != expected { return Err(error(Failure::Content)); }
+            report.files += 1;
+            report.read_bytes += spec.bytes;
+            continue;
+        }
+        let mut file = File::open(path).map_err(|e| error(
             if e.kind() == std::io::ErrorKind::NotFound { Failure::Missing } else { Failure::Read }
         ))?;
         let metadata = file.metadata().map_err(|_| error(Failure::Read))?;

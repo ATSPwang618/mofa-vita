@@ -6,6 +6,21 @@
 //! both operations in order, with an encoded UNORM8 store/load between them.
 use super::*;
 
+/// Reuse the original triangle list and shared UVs for both passes.
+pub(super) fn normal_multiply(a: &Quad, b: &Quad) -> bool {
+    (a.blend, b.blend) == (Blend::Ps(PsOp::Normal), Blend::Multiply)
+        && plain_ps_source(a) && plain_ps_source(b)
+        && [a, b].iter().all(|q|
+            !q.tex.native.srgb && !q.tex.native.render_target && q.tex.sparse_coverage.is_none())
+        && a.pos == b.pos && a.uv == b.uv && a.clip == b.clip
+        // A triangle fan with overlapping fragments would interleave the two
+        // operations per triangle, whereas the original draws separate them.
+        && convex(&a.pos.map(|p| p.map(f64::from)))
+        && a.clip.is_none_or(|clip| convex(&clip.map(|p| p.map(f64::from))))
+        && a.color[3] == 1.
+        && a.color.iter().chain(&b.color).all(|v| (0. ..=1.).contains(v))
+}
+
 type Point = [f64; 2];
 type Polygon = Vec<Point>;
 

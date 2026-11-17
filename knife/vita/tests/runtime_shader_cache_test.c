@@ -187,7 +187,6 @@ static void all_operation_metadata(void) {
         EXPECT(runtime_shader_enabled(shader,UINT64_MAX));
         for(unsigned bits=0;bits<16;++bits){fixture(data,bits);EXPECT(validate(data,sizeof(data),shader)==(bits==(material_group(shader)?5:1)));}
     }
-    for(unsigned shader=58;shader<=63;++shader) EXPECT(!runtime_shader_id(shader));
     for(unsigned bits=0;bits<16;++bits) {
         fixture(data,bits);
         EXPECT(validate(data,sizeof(data),48)==(bits==1));

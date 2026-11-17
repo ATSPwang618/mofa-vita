@@ -45,6 +45,21 @@ pub const PS_PLAIN_OP7: u64 = 1u64 << 39;
 pub const PS_CHAIN_OP7: u64 = 1u64 << 40;
 pub const PS_GROUP_MATERIAL: u64 = 1u64 << 42;
 pub const PS_MATERIAL_VARIANTS: u64 = 1u64 << 41;
+pub const VIEWPORT_REJECT: u64 = 1u64 << 43;
+pub const GROUP_MASK_REJECT: u64 = 1u64 << 46;
+pub const PS_NORMAL_MULTIPLY: u64 = 1u64 << 44;
+pub const LIVE_ALPHA_COVERAGE: u64 = 1u64 << 45;
+pub const COLD_COHORT: u64 = 1u64 << 47;
+pub const SAVE_BGM_FOCUS: u64 = 1u64 << 48;
+pub const SHADER_CAP_BATCH: u64 = 1u64 << 49;
+pub const TRANSITION_TEXTURES: u64 = 1u64 << 50;
+pub const GROUP_MASK_CLIP: u64 = 1u64 << 51;
+pub const COVERAGE_MATERIALS: u64 = 1u64 << 52;
+pub const GROUP_OPAQUE_MASK: u64 = 1u64 << 53;
+pub const STAGE_OPAQUE_COVER: u64 = 1u64 << 54;
+pub const GROUP_OPAQUE_OVERWRITE: u64 = 1u64 << 55;
+pub const TRANSPARENT_DRAW_REJECT: u64 = 1u64 << 58;
+pub const STAGE_ALPHA_REGION: u64 = 1u64 << 59;
 pub const FEATURES: &[(&str, u64)] = &[
     ("shared-atlas", SHARED_ATLAS), ("gxt-ready", GXT_READY),
     ("batch-arena", BATCH_ARENA), ("group-fused", GROUP_FUSED),
@@ -80,6 +95,21 @@ pub const FEATURES: &[(&str, u64)] = &[
     ("ps-chain-op7", PS_CHAIN_OP7),
     ("ps-group-material", PS_GROUP_MATERIAL),
     ("ps-material-variants", PS_MATERIAL_VARIANTS),
+    ("viewport-reject", VIEWPORT_REJECT),
+    ("group-mask-reject", GROUP_MASK_REJECT),
+    ("ps-normal-multiply", PS_NORMAL_MULTIPLY),
+    ("live-alpha-coverage", LIVE_ALPHA_COVERAGE),
+    ("cold-cohort", COLD_COHORT),
+    ("save-bgm-focus", SAVE_BGM_FOCUS),
+    ("shader-cap-batch", SHADER_CAP_BATCH),
+    ("transition-textures", TRANSITION_TEXTURES),
+    ("group-mask-clip", GROUP_MASK_CLIP),
+    ("coverage-materials", COVERAGE_MATERIALS),
+    ("group-opaque-mask", GROUP_OPAQUE_MASK),
+    ("stage-opaque-cover", STAGE_OPAQUE_COVER),
+    ("group-opaque-overwrite", GROUP_OPAQUE_OVERWRITE),
+    ("transparent-draw-reject", TRANSPARENT_DRAW_REJECT),
+    ("stage-alpha-region", STAGE_ALPHA_REGION),
 ];
 // Bits 0..28 are admitted by the existing renderer profile. Sparse coverage
 // and newer capacity experiments remain explicit opt-ins and are excluded from
@@ -97,10 +127,18 @@ pub const IMPLEMENTED: u64 = SHARED_ATLAS | GXT_READY | BATCH_ARENA | GROUP_FUSE
 /// Latest candidate profile for an explicitly requested hardware test build.
 /// `all` remains the admitted baseline; this preset does not imply GPU acceptance.
 pub const HARDWARE_TEST_PROFILE: &str = "hardware-test";
+const R6_SHIPPED_PROFILE: &str = "hardware-test,viewport-reject,group-mask-reject,ps-normal-multiply,live-alpha-coverage,cold-cohort,save-bgm-focus,shader-cap-batch";
+const R7_PROFILE_SUFFIX: &str = ",transition-textures,group-mask-clip,coverage-materials";
+const R8_PROFILE_SUFFIX: &str = ",group-opaque-mask,stage-opaque-cover";
+const R9_PROFILE_SUFFIX: &str = ",group-opaque-overwrite";
+const R10_PROFILE_SUFFIX: &str = ",transparent-draw-reject,stage-alpha-region";
 pub const HARDWARE_TEST: u64 = IMPLEMENTED | PS_ALL_OPERATIONS | GROUP_BOUNDS
     | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | PS_PLAIN_OP7 | PS_CHAIN_OP7 | PS_MATERIAL_VARIANTS | PS_GROUP_MATERIAL;
 pub const KNOWN: u64 = IMPLEMENTED | SPARSE_COVERAGE | PS_PLAIN_MATERIAL | GROUP_BOUNDS
-    | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | RT_SCENES_4 | PS_FULL_MATERIAL | PS_ALL_OPERATIONS | PS_PLAIN_OP7 | PS_CHAIN_OP7 | PS_MATERIAL_VARIANTS | PS_GROUP_MATERIAL;
+    | HALF_COLOR | TILED_TARGETS | BLUR_WEIGHTS | RT_SCENES_2 | RT_SCENES_4 | PS_FULL_MATERIAL | PS_ALL_OPERATIONS | PS_PLAIN_OP7 | PS_CHAIN_OP7 | PS_MATERIAL_VARIANTS | PS_GROUP_MATERIAL | VIEWPORT_REJECT | GROUP_MASK_REJECT
+    | PS_NORMAL_MULTIPLY | LIVE_ALPHA_COVERAGE | COLD_COHORT | SAVE_BGM_FOCUS | SHADER_CAP_BATCH
+    | TRANSITION_TEXTURES | GROUP_MASK_CLIP | COVERAGE_MATERIALS | GROUP_OPAQUE_MASK | STAGE_OPAQUE_COVER
+    | GROUP_OPAQUE_OVERWRITE | TRANSPARENT_DRAW_REJECT | STAGE_ALPHA_REGION;
 // Executable startup explicitly selects a profile before creating resources.
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
 pub fn set(mask: u64) {
@@ -155,15 +193,30 @@ pub struct StartupProfile {
     pub legacy_expanded: bool,
 }
 
+fn shipped_profile_version(profile: &str) -> Option<u32> {
+    let mut rest = profile.trim().strip_prefix(R6_SHIPPED_PROFILE)?;
+    for (offset, suffix) in [R7_PROFILE_SUFFIX, R8_PROFILE_SUFFIX, R9_PROFILE_SUFFIX, R10_PROFILE_SUFFIX]
+        .into_iter().enumerate()
+    {
+        if rest.is_empty() { return Some(6 + offset as u32); }
+        rest = rest.strip_prefix(suffix)?;
+    }
+    rest.is_empty().then_some(10)
+}
+
 /// Resolve the compiled default and optional complete data-root override.
 /// Only the hardware test build expands the exact previous stock profiles;
 /// custom tokens (especially explicit removals) retain complete-override meaning.
 pub fn resolve_startup(compiled_profile: &str, file_profile: Option<&str>) -> Result<StartupProfile, String> {
-    let legacy_expanded = compiled_profile.trim() == HARDWARE_TEST_PROFILE
+    let compiled_profile = compiled_profile.trim();
+    let legacy_expanded = matches!(
+        (shipped_profile_version(compiled_profile), file_profile.and_then(shipped_profile_version)),
+        (Some(compiled), Some(file)) if file < compiled)
+        || (compiled_profile == HARDWARE_TEST_PROFILE
         && file_profile.is_some_and(|text| matches!(text.trim(),
-            "all" | "all ps-all-operations" | "all ps-full-material"));
+            "all" | "all ps-all-operations" | "all ps-full-material")));
     Ok(StartupProfile {
-        mask: parse(if legacy_expanded { HARDWARE_TEST_PROFILE }
+        mask: parse(if legacy_expanded { compiled_profile }
             else { file_profile.unwrap_or(compiled_profile) })?,
         legacy_expanded,
     })
@@ -172,6 +225,7 @@ pub fn resolve_startup(compiled_profile: &str, file_profile: Option<&str>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn hardware_test_enables_latest_candidates_without_rollback_modes() {
         // Baseline bits 0..28,30 plus candidates 31..35,38. Sparse rollback,

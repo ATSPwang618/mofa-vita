@@ -12,7 +12,7 @@ mkdir -p "$build/backend/shaders/generated" "$logs"
 
 # Keep one immutable input set for the red and green builds. Never roll back the
 # shared production source while another task is building or exercising it.
-for source in perf_audit.c perf_audit.h perf_counters.def; do
+for source in material_variants.h runtime_shaders.h perf_audit.c perf_audit.h perf_counters.def; do
     cp "$project/knife/vita/$source" "$build/backend/$source"
 done
 cp "$project/knife/vita/gxm_backend.c" "$build/backend/gxm_backend.c"
@@ -77,7 +77,7 @@ PY
         if [[ $variant == red ]]; then variant_flags=(-Wno-unused-function); fi
         command=("$host_cc" "${flags[@]}" "${variant_flags[@]}" "-DKV_GXM_BACKEND_SOURCE=\"$backend\""
             -MD -MF "$build/$variant.d" "$build/gxm_present_test.c" "$build/perf_audit.o"
-            "-Wl,-Map,$build/$variant.map" -o "$build/present-$variant")
+            "-Wl,-Map,$build/$variant.map" -lm -o "$build/present-$variant")
         printf '%q ' "${command[@]}" > "$build/$variant.command"
         printf '\n' >> "$build/$variant.command"
         cat "$build/$variant.command"
@@ -137,7 +137,7 @@ if not any(p.name == "gxm.h" for p in sdk_headers):
     raise SystemExit("The compiler did not consume the real VitaSDK gxm.h")
 files = [build / p for p in (
     "backend/gxm_backend.c", "backend/gxm_backend.red.c", "backend/gxm_backend.h",
-    "backend/jpeg_hw.h", "backend/image_decode.h",
+    "backend/jpeg_hw.h", "backend/image_decode.h", "backend/material_variants.h", "backend/runtime_shaders.h",
     "backend/effects_backend.inc", "backend/movie_gxm.inc", "backend/shaders/generated/shaders.h",
     "backend/shaders/generated/effects.h", "gxm_present_test.c", "test-vita-gxm-present.sh",
     "present-red", "present-green", "red.command", "green.command", "red.log", "green.log",

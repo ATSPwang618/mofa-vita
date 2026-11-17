@@ -116,6 +116,20 @@ struct Control {
 }
 
 impl Control {
+    fn stop(&mut self, secs: f64) {
+        if secs <= 0.0 {
+            self.stop_now = true;
+        } else {
+            self.volume = Ramp {
+                from: self.volume.value(),
+                to: 0.0,
+                len: secs,
+                t: 0.0,
+            };
+            self.stop_after_ramp = true;
+        }
+    }
+
     fn ramp_to(&mut self, volume: f32, per_sec: f32) {
         let cur = self.volume.value();
         let len = if per_sec > 0.0 { f64::from((volume - cur).abs() / per_sec) } else { 0.0 };
@@ -198,20 +212,7 @@ impl Voice {
 
     /// Fade out over `secs` and stop.
     pub fn stop(&self, secs: f64) {
-        self.change(move |c| {
-            if secs <= 0.0 {
-                c.stop_now = true;
-            } else {
-                let cur = c.volume.value();
-                c.volume = Ramp {
-                    from: cur,
-                    to: 0.0,
-                    len: secs,
-                    t: 0.0,
-                };
-                c.stop_after_ramp = true;
-            }
-        });
+        self.change(move |c| c.stop(secs));
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -672,6 +673,6 @@ mod tests {
 #[cfg(target_os = "vita")]
 mod vita;
 #[cfg(target_os = "vita")]
-pub use vita::{Audio, MovieAudioSink};
+pub use vita::{Audio, BgmBuffer, MovieAudioSink, PreparedBgm};
 #[cfg(all(test, not(target_os = "vita")))]
 mod vita;

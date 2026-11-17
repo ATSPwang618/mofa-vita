@@ -21,6 +21,153 @@ const MAX_PENDING_VOICES: usize = 64;
 const OUTPUT_QUEUE_BLOCKS: usize = 8;
 const SAMPLE_TIME: f64 = 1.0 / 48_000.0;
 const MOVIE_QUEUE_BLOCKS: usize = 4;
+#[cfg(any(test, target_os = "vita"))]
+const BGM_SWAP_FRAMES: usize = 6 * CHUNK_FRAMES;
+
+/// Decoder preparation belongs to a worker. The game can wait for its first
+/// 120 ms of PCM without exposing a silent voice to the mixer.
+#[cfg(any(test, target_os = "vita"))]
+pub struct PreparedBgm {
+    input: Option<BgmInput>,
+    #[cfg(target_os = "vita")]
+    opening: Option<BgmLeadOpening>,
+    #[cfg(target_os = "vita")]
+    requested: bool,
+}
+
+#[cfg(any(test, target_os = "vita"))]
+struct BgmInput {
+    pump: stream_pump::Pump,
+    lead: Option<BgmLead>,
+}
+
+#[cfg(any(test, target_os = "vita"))]
+struct BgmLead {
+    pcm: Box<[[f32; 2]]>,
+    cursor: usize,
+    mono: bool,
+}
+
+#[cfg(target_os = "vita")]
+struct BgmLeadOpening {
+    result: Receiver<Result<BgmInput, String>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[cfg(target_os = "vita")]
+impl Drop for BgmLeadOpening {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(target_os = "vita")]
+static BGM_LEAD_WORKER: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "vita")]
+struct BgmLeadWorker;
+
+#[cfg(target_os = "vita")]
+impl BgmLeadWorker {
+    fn acquire() -> Option<Self> {
+        BGM_LEAD_WORKER.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .ok().map(|_| Self)
+    }
+}
+
+#[cfg(target_os = "vita")]
+impl Drop for BgmLeadWorker {
+    fn drop(&mut self) {
+        BGM_LEAD_WORKER.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(any(test, target_os = "vita"))]
+static BGM_FOCUS_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// Owns the speculative open until the worker leaves the blocking decoder
+/// call. Dropping a menu selection cannot release another worker's slot.
+#[cfg(any(test, target_os = "vita"))]
+struct BgmFocusOpen;
+
+#[cfg(any(test, target_os = "vita"))]
+impl BgmFocusOpen {
+    fn acquire() -> Option<Self> {
+        BGM_FOCUS_OPEN.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .ok().map(|_| Self)
+    }
+}
+
+#[cfg(any(test, target_os = "vita"))]
+impl Drop for BgmFocusOpen {
+    fn drop(&mut self) {
+        BGM_FOCUS_OPEN.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(any(test, target_os = "vita"))]
+impl BgmLead {
+    fn sample(&mut self) -> Option<stream_pump::Poll> {
+        let sample = *self.pcm.get(self.cursor)?;
+        self.cursor += 1;
+        Some(stream_pump::Poll::Sample(sample, self.mono))
+    }
+}
+
+#[cfg(any(test, target_os = "vita"))]
+impl PreparedBgm {
+    fn from_pump(pump: stream_pump::Pump) -> Self {
+        Self {
+            input: Some(BgmInput { pump, lead: None }),
+            #[cfg(target_os = "vita")]
+            opening: None,
+            #[cfg(target_os = "vita")]
+            requested: false,
+        }
+    }
+
+    pub fn ready(&mut self) -> Result<bool, String> {
+        #[cfg(target_os = "vita")]
+        if let Some(opening) = &self.opening {
+            match opening.result.try_recv() {
+                Ok(result) => {
+                    self.opening = None;
+                    let mut input = result?;
+                    if input.lead.is_none() && self.requested {
+                        input.pump.request_start();
+                    }
+                    self.input = Some(input);
+                }
+                Err(TryRecvError::Empty) => return Ok(false),
+                Err(TryRecvError::Disconnected) => return Err("BGM lead worker exited".into()),
+            }
+        }
+        let input = self.input.as_mut().ok_or("missing prepared BGM source")?;
+        if input.lead.is_some() {
+            return Ok(true);
+        }
+        input.pump.primed(BGM_SWAP_FRAMES)
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn request_start(&mut self) {
+        self.requested = true;
+        if let Some(input) = self.input.as_mut().filter(|input| input.lead.is_none()) {
+            input.pump.request_start();
+        }
+    }
+}
+
+#[cfg(target_os = "vita")]
+pub struct BgmBuffer(Arc<std::sync::atomic::AtomicUsize>);
+
+#[cfg(target_os = "vita")]
+impl BgmBuffer {
+    pub fn needs_io(&self) -> bool {
+        self.0.load(Ordering::Acquire) < 2 * BGM_SWAP_FRAMES
+    }
+}
+
 struct MovieChunk { samples: [[f32; 2]; CHUNK_FRAMES], frames: usize }
 pub struct MovieAudioSink { sender: SyncSender<MovieChunk>, pending: Option<MovieChunk> }
 impl MovieAudioSink {
@@ -134,6 +281,11 @@ enum Source {
     Stream {
         path: PathBuf,
         loop_range: Option<(u64, u64)>,
+    },
+    #[cfg(any(test, target_os = "vita"))]
+    PreparedBgm {
+        audio: BgmInput,
+        outgoing: Option<(Arc<Mutex<Control>>, f64)>,
     },
 }
 #[derive(Default)]
@@ -401,6 +553,108 @@ impl Audio {
             0.0,
         ))
     }
+
+    #[cfg(target_os = "vita")]
+    pub fn prepare_bgm(path: PathBuf, start: usize, loop_range: Option<(u64, u64)>)
+        -> Result<PreparedBgm, String>
+    {
+        Self::prepare_bgm_inner(path, start, loop_range, None)
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn prepare_focus_bgm(path: PathBuf, loop_range: Option<(u64, u64)>)
+        -> Result<Option<PreparedBgm>, String>
+    {
+        let Some(permit) = BgmFocusOpen::acquire() else { return Ok(None); };
+        Self::prepare_bgm_inner(path, 0, loop_range, Some(permit)).map(Some)
+    }
+
+    #[cfg(target_os = "vita")]
+    fn prepare_bgm_inner(path: PathBuf, start: usize, loop_range: Option<(u64, u64)>, open_slot: Option<BgmFocusOpen>)
+        -> Result<PreparedBgm, String>
+    {
+        if path.as_os_str().is_empty() || loop_range.is_some_and(|(a, b)| a >= b || b > i64::MAX as u64) {
+            return Err("invalid BGM path or loop range".into());
+        }
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let has_lead = start == 0 && name.eq_ignore_ascii_case("M10.ogg");
+        if has_lead
+            && let Some(worker_permit) = BgmLeadWorker::acquire()
+        {
+            let (ready, result) = mpsc::sync_channel(1);
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let worker_cancelled = cancelled.clone();
+            thread::Builder::new().name("knife-bgm-lead".into()).stack_size(128 * 1024).spawn(move || {
+                let _permit = worker_permit;
+                let lead = match read_bgm_lead(&path, loop_range, &worker_cancelled) {
+                    Ok(lead) => Some(lead),
+                    Err(error) => {
+                        if worker_cancelled.load(Ordering::Acquire) { return; }
+                        Self::log_bgm_lead_fallback(&error);
+                        None
+                    }
+                };
+                if worker_cancelled.load(Ordering::Acquire) { return; }
+                let consumed = lead.as_ref().map_or(0, |lead| lead.pcm.len());
+                let input = stream_pump::Pump::prepare_bgm(&name, move || {
+                    let _open_slot = open_slot;
+                    let mut cursor = StreamCursor::open(path, loop_range, start, true)?;
+                    cursor.discard_opening_frames(consumed)?;
+                    Ok(cursor)
+                }).map(|pump| BgmInput { pump, lead });
+                let _ = ready.send(input);
+            }).map_err(|error| format!("BGM lead worker: {error}"))?;
+            return Ok(PreparedBgm {
+                input: None,
+                opening: Some(BgmLeadOpening { result, cancelled }),
+                requested: false,
+            });
+        }
+        if has_lead { Self::log_bgm_lead_fallback("lead worker busy"); }
+        let pump = stream_pump::Pump::prepare_bgm(&name, move || {
+            let _open_slot = open_slot;
+            StreamCursor::open(path, loop_range, start, true)
+        })?;
+        Ok(PreparedBgm::from_pump(pump))
+    }
+
+    #[cfg(target_os = "vita")]
+    fn log_bgm_lead_fallback(error: &str) {
+        if !knife_perf::enabled() { return; }
+        let mut detail = String::new();
+        knife_perf::json_string(&mut detail, error);
+        let _ = knife_platform_vita::audit::console(&format!(
+            "{{\"kind\":\"bgm_lead_fallback\",\"track\":\"M10.ogg\",\"reason\":{detail}}}\n"
+        ));
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn log_bgm_handoff(id: i32, replaced: bool, priming_us: u128, lead_frames: usize) {
+        if !knife_perf::enabled() { return; }
+        let _ = knife_platform_vita::audit::console(&format!(
+            "{{\"kind\":\"bgm_handoff\",\"id\":{id},\"replaced\":{replaced},\"priming_us\":{priming_us},\"prefill_frames\":{BGM_SWAP_FRAMES},\"lead_frames\":{lead_frames}}}\n"
+        ));
+    }
+
+    #[cfg(target_os = "vita")]
+    pub fn queue_primed_bgm(&mut self, mut audio: PreparedBgm, volume: f32,
+        fade_in: f64, outgoing: Option<(&Voice, f64)>) -> Result<(Voice, BgmBuffer, usize), String>
+    {
+        if !audio.ready()? || self.queued.len() >= MAX_PENDING_VOICES {
+            return Err("BGM did not prime or mixer queue is full".into());
+        }
+        let pending = self.pending.as_ref().map_or(0, |batch| batch.starts.len());
+        if pending + self.queued.len() >= MAX_PENDING_VOICES {
+            return Err("pending mixer batch is full".into());
+        }
+        let audio = audio.input.take().ok_or("missing primed BGM source")?;
+        let buffer = BgmBuffer(audio.pump.ready_frames());
+        let lead_frames = audio.lead.as_ref().map_or(0, |lead| lead.pcm.len());
+        let outgoing = outgoing.map(|(voice, fade)| (voice.ctl.clone(), fade));
+        let voice = self.start(Source::PreparedBgm { audio, outgoing },
+            volume, fade_in, true, 0, Curve::Bgm, 1.0, 0.0);
+        Ok((voice, buffer, lead_frames))
+    }
 }
 impl Default for Audio {
     fn default() -> Self {
@@ -428,7 +682,7 @@ struct Mixer {
 enum Active {
     Pcm(PcmSound),
     Movie(MovieSound),
-    #[cfg(target_os = "vita")]
+    #[cfg(any(test, target_os = "vita"))]
     Stream(StreamSound),
 }
 impl Mixer {
@@ -440,7 +694,17 @@ impl Mixer {
             change(&mut ctl.lock());
         }
         for start in batch.starts {
-            if self.voices.len() >= MAX_VOICES {
+            // Permit the one overlap needed for a crossfade even if ordinary
+            // voices are at their ceiling. A failed admission leaves the old
+            // voice untouched.
+            #[cfg(any(test, target_os = "vita"))]
+            let replacing = matches!(&start.source, Source::PreparedBgm {
+                outgoing: Some((ctl, _)), ..
+            } if self.voices.iter().any(|voice|
+                matches!(voice, Active::Stream(stream) if Arc::ptr_eq(&stream.ctl, ctl))));
+            #[cfg(not(any(test, target_os = "vita")))]
+            let replacing = false;
+            if self.voices.len() >= MAX_VOICES + usize::from(replacing) {
                 start.finished.store(true, Ordering::Release);
                 *failure.lock() = Some("active audio voices exceed 64".into());
                 continue;
@@ -475,6 +739,15 @@ impl Mixer {
                         }
                     }
                 }
+                #[cfg(any(test, target_os = "vita"))]
+                Source::PreparedBgm { audio, outgoing } => {
+                    if let Some((ctl, fade)) = outgoing {
+                        ctl.lock().stop(fade);
+                    }
+                    self.voices.push(Active::Stream(StreamSound {
+                        pump: audio.pump, lead: audio.lead, ctl: start.ctl, finished: start.finished, done: false,
+                    }));
+                }
             }
         }
     }
@@ -491,7 +764,7 @@ impl Mixer {
                     mix[i][0] += s[0];
                     mix[i][1] += s[1];
                 }),
-                #[cfg(target_os = "vita")]
+                #[cfg(any(test, target_os = "vita"))]
                 Active::Stream(sound) => {
                     if let Err(error) = sound.process_frames(&mut mix) {
                         sound.finished.store(true, Ordering::Release);
@@ -504,7 +777,7 @@ impl Mixer {
         self.voices.retain(|voice| match voice {
             Active::Pcm(sound) => !sound.done,
             Active::Movie(sound) => !sound.done,
-            #[cfg(target_os = "vita")]
+            #[cfg(any(test, target_os = "vita"))]
             Active::Stream(sound) => !sound.done,
         });
         let mut clipped = 0;
@@ -532,6 +805,11 @@ enum StreamDecoder {
 impl StreamDecoder {
     fn open(path: &std::path::Path) -> Result<Self, String> {
         let _probe = knife_perf::Scope::new(knife_perf::Metric::AudioStreamOpen);
+        if knife_platform_vita::audio_banks::packed_path(path) {
+            let range = knife_platform_vita::audio_banks::entry(path)
+                .ok_or_else(|| format!("missing packed audio: {}", path.display()))?;
+            return AudioStream::open_range(range).map(Self::Ogg).map_err(|e| e.to_string());
+        }
         // Manifest-backed Ogg names can go straight to the validating decoder.
         if path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("ogg")) {
             let name = path.to_str().ok_or("stream path is not UTF-8")?;
@@ -583,6 +861,55 @@ fn stream_buffering(curve: Curve) -> stream_pump::Buffering {
     match curve { Curve::Bgm => stream_pump::Buffering::Bgm, _ => stream_pump::Buffering::Default }
 }
 #[cfg(target_os = "vita")]
+fn read_bgm_lead(path: &std::path::Path, loop_range: Option<(u64, u64)>, cancelled: &AtomicBool)
+    -> Result<BgmLead, String>
+{
+    // The package ships copies of the opening Ogg pages. Decode the validated
+    // small stream in memory without a seek to the end of the original song.
+    const LEAD_MAGIC: &[u8; 8] = b"KBGMST1\0";
+    const MAX_ENCODED: usize = 256 * 1024;
+    const MAX_FRAMES: usize = 5 * 48_000;
+    let started = std::time::Instant::now();
+    use knife_platform_vita::audio_banks::{encoded_size, read_encoded};
+    let lead = read_encoded(&path.with_extension("bgmstart.mrg"), 24 + MAX_ENCODED)
+        .map_err(|e| e.to_string())?;
+    let header = lead.get(..24).ok_or("truncated BGM lead header")?;
+    let encoded_source = u64::from_le_bytes(header[8..16].try_into().unwrap());
+    let frames = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
+    let encoded = u32::from_le_bytes(header[20..24].try_into().unwrap()) as usize;
+    if &header[..8] != LEAD_MAGIC || !(3 * 48_000..=MAX_FRAMES).contains(&frames)
+        || !(1..=MAX_ENCODED).contains(&encoded)
+        || loop_range.is_some_and(|(a, b)| a >= b || b <= frames as u64)
+        || lead.len() != 24 + encoded
+        || encoded_size(path).map_err(|e| e.to_string())? != encoded_source
+    {
+        return Err("unmatched or malformed BGM lead".into());
+    }
+    if cancelled.load(Ordering::Acquire) { return Err("BGM lead cancelled".into()); }
+    let read_us = started.elapsed().as_micros();
+    let mut decoder = AudioStream::open_memory(&lead[24..]).map_err(|e| e.to_string())?;
+    if decoder.total_frames() != frames as u64 {
+        return Err("BGM lead frame count mismatch".into());
+    }
+    let mut pcm = Vec::new();
+    pcm.try_reserve_exact(frames).map_err(|_| "BGM lead PCM allocation")?;
+    pcm.resize(frames, [0.0; 2]);
+    for chunk in pcm.chunks_mut(CHUNK_FRAMES) {
+        if cancelled.load(Ordering::Relaxed) { return Err("BGM lead cancelled".into()); }
+        if decoder.read(chunk).map_err(|e| e.to_string())? != chunk.len() {
+            return Err("short BGM lead PCM".into());
+        }
+    }
+    if knife_perf::enabled() {
+        let total_us = started.elapsed().as_micros();
+        let _ = knife_platform_vita::audit::console(&format!(
+            "{{\"kind\":\"bgm_lead_ready\",\"frames\":{frames},\"encoded_bytes\":{encoded},\"read_us\":{read_us},\"total_us\":{total_us}}}\n"
+        ));
+    }
+    Ok(BgmLead { pcm: pcm.into_boxed_slice(), cursor: 0, mono: decoder.channels() == 1 })
+}
+
+#[cfg(target_os = "vita")]
 struct StreamCursor {
     decoder: StreamDecoder,
     pcm: [[f32; 2]; CHUNK_FRAMES], cursor: usize, filled: usize,
@@ -590,6 +917,22 @@ struct StreamCursor {
 }
 #[cfg(target_os = "vita")]
 impl StreamCursor {
+    fn discard_opening_frames(&mut self, frames: usize) -> Result<(), String> {
+        let mut remaining = frames;
+        // Decode and discard from frame zero to preserve the exact Opus
+        // decoder history at the join. A seek can warm up with fewer packets.
+        while remaining != 0 {
+            let count = remaining.min(self.pcm.len());
+            let n = self.decoder.read(&mut self.pcm[..count])?;
+            if n == 0 {
+                return Err("BGM ended before lead continuation".into());
+            }
+            remaining -= n;
+        }
+        self.position += frames as u64;
+        Ok(())
+    }
+
     fn open(path: PathBuf, loop_range: Option<(u64, u64)>, start: usize, looping: bool)
         -> Result<Self, String>
     {
@@ -656,7 +999,8 @@ impl stream_pump::Reader for StreamCursor {
 }
 #[cfg(any(test, target_os = "vita"))]
 struct StreamSound {
-    pump: stream_pump::Pump, ctl: Arc<Mutex<Control>>, finished: Arc<AtomicBool>, done: bool,
+    pump: stream_pump::Pump, lead: Option<BgmLead>,
+    ctl: Arc<Mutex<Control>>, finished: Arc<AtomicBool>, done: bool,
 }
 #[cfg(any(test, target_os = "vita"))]
 impl StreamSound {
@@ -671,7 +1015,7 @@ impl StreamSound {
         let buffering = stream_buffering(ctl.lock().curve);
         let pump=stream_pump::Pump::spawn_named(&name, buffering, move || StreamCursor::open(path,loop_range,start,looping))
             .map_err(|error|(error,finished.clone()))?;
-        Ok(Self { pump,ctl,finished,done:false })
+        Ok(Self { pump, lead: None, ctl,finished,done:false })
     }
     fn process_frames(&mut self, mix: &mut [[f32;2];CHUNK_FRAMES]) -> Result<(),String> {
         let control=self.ctl.clone(); let mut ctl=control.lock();
@@ -680,7 +1024,13 @@ impl StreamSound {
         for (index, dst) in mix.iter_mut().enumerate() {
             if self.done || ctl.stop_now { self.done=true; break; }
             if ctl.paused { continue; }
-            let (sample,mono)=match self.pump.sample() {
+            let next = self.lead.as_mut().and_then(BgmLead::sample).unwrap_or_else(|| {
+                if self.lead.take().is_some() {
+                    self.pump.mark_continuation();
+                }
+                self.pump.sample()
+            });
+            let (sample,mono)=match next {
                 stream_pump::Poll::Sample(sample,mono)=>(sample,mono),
                 stream_pump::Poll::Pending=>{
                     self.pump.missing_frames(CHUNK_FRAMES - index);
@@ -790,7 +1140,7 @@ fn mixer_worker(
         match voice {
             Active::Pcm(sound) => sound.finished.store(true, Ordering::Release),
             Active::Movie(sound) => sound.finished.store(true, Ordering::Release),
-            #[cfg(target_os = "vita")]
+            #[cfg(any(test, target_os = "vita"))]
             Active::Stream(sound) => sound.finished.store(true, Ordering::Release),
         }
     }
@@ -802,6 +1152,7 @@ fn mixer_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn only_the_explicit_bgm_category_selects_the_larger_stream_queue() {
         assert_eq!(stream_buffering(Curve::Bgm).queued(), 50);
@@ -832,11 +1183,12 @@ mod tests {
             gain: 1.0, curve: Curve::Bgm, pan: 0.0,
             stop_after_ramp: false, stop_now: false, paused: false, swap: None,
         }));
-        (StreamSound { pump, ctl, finished: Arc::new(AtomicBool::new(false)), done: false }, resume_tx)
+        (StreamSound { pump, lead: None, ctl, finished: Arc::new(AtomicBool::new(false)), done: false }, resume_tx)
     }
 
     #[test]
     fn buffered_bgm_obeys_pause_volume_and_stop_before_consuming_its_lookahead() {
+        let _serial = stream_pump::TEST_SERIAL.lock().unwrap();
         let (mut sound, resume) = prefilled_music();
         sound.ctl.lock().paused = true;
         let mut mix = [[0.0; 2]; CHUNK_FRAMES];
@@ -856,6 +1208,7 @@ mod tests {
 
     #[test]
     fn buffered_bgm_fade_out_finishes_without_waiting_for_a_second_of_predecoded_pcm() {
+        let _serial = stream_pump::TEST_SERIAL.lock().unwrap();
         let (mut sound, resume) = prefilled_music();
         {
             let mut ctl = sound.ctl.lock();

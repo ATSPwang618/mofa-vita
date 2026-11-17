@@ -48,6 +48,8 @@ pub enum EffectShader {
     BlurWeights = 53,
     /// Complete PS source contract, with only the operation dispatcher removed.
     PsFull1 = 54, PsFull6 = 55, PsFull13 = 56,
+    PsNormalMultiply = 58,
+    PsNormalMultiplyDual = 59,
     // Fixed-operation full-material shaders; capability bank 1.
     PsAll1 = 64,
     PsAll2 = 65,
@@ -216,6 +218,9 @@ impl Gxm {
         if wait { self.control.borrow_mut().pressure_waits += 1; }
         Ok(())
     }
+    pub fn trim_texture_pages(&mut self) -> Result<(), String> {
+        Ok(())
+    }
     pub fn texture_allocation_failed(&self) -> bool { self.last_texture_allocation_failed }
     fn allocate_texture(&mut self, bytes: usize) -> Result<(), String> {
         self.control.borrow_mut().texture_allocation_attempts += 1;
@@ -245,6 +250,10 @@ impl Gxm {
         Ok(if shader<64 {control.shader_capabilities & (1u64<<shader)!=0}
             else if shader<128 {control.shader_capabilities_high & (1u64<<(shader-64))!=0}
             else {false})
+    }
+    pub fn shader_mask(&self) -> Result<[u64; 2], String> {
+        let control = self.control.borrow();
+        Ok([control.shader_capabilities, control.shader_capabilities_high])
     }
     pub fn chain_pair_available(&self, first: u32, second: u32) -> Result<bool, String> {
         let ops = [2, 11, 13, 19];
@@ -422,6 +431,12 @@ impl Gxm {
         control.events.push(Event::End);
         Ok(())
     }
+    pub fn set_producer_clip(&mut self, _bounds: Option<[u32; 4]>) -> Result<(), String> {
+        if self.control.borrow().active.is_none() {
+            return Err("mock producer clip outside pass".into());
+        }
+        Ok(())
+    }
     pub fn seal_texture(&mut self, id: &TextureId) -> Result<(), String> {
         if self.control.borrow().active.is_some() {
             return Err("mock sealing inside pass".into());
@@ -539,6 +554,18 @@ impl Gxm {
                     || params[5] != 0.0 || (params[6] != 0.0 && params[6] != 1.0)
                     || params[7] != 0.0) {
                 return Err("mock plain material ABI".into());
+            }
+        }
+        if matches!(shader, EffectShader::PsNormalMultiply | EffectShader::PsNormalMultiplyDual) {
+            if control.shader_capabilities & (1 << shader as u32) == 0 || blend != EffectBlend::Opaque
+                || params[0] != 19. || params[1] != 0. || params[2] <= 0. || params[3] <= 0.
+                || !params[4..].iter().all(|v| (0. ..=1.).contains(v))
+                || textures[0].is_none() || textures[1].is_some() || textures[3].is_some()
+                || textures[2].is_some() != (shader == EffectShader::PsNormalMultiplyDual)
+                || vertices.iter().any(|v| v.color[3] != 1. || v.haze.iter().flatten()
+                    .chain(v.soft.iter().flatten()).any(|x| *x != 0.))
+            {
+                return Err("mock Normal/Multiply shader ABI".into());
             }
         }
         control.events.push(Event::Draw {

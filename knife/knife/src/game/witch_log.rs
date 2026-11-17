@@ -5,7 +5,7 @@
 
 use knife_render::{Quad, Renderer, TexRef};
 
-use super::{Back, Game, UX, UY, entry_f823, resolve_refs, voice_row};
+use super::{Back, Game, SavePreview, UX, UY, entry_f823, resolve_refs, voice_row};
 use crate::text::{self, Layout};
 
 /// The preview key of the quick jump's thumbnail (jp_89590 / jp_89AD0 draw the entry's stage into the
@@ -94,12 +94,12 @@ impl Game {
 
     /// The quick jump's thumbnail of entry `serial` (jp_89590 sets it up, jp_89AD0 draws it, ready a frame
     /// or more later), None until drawn.
-    pub fn witch_log_preview(&mut self, serial: u64, fresh: bool) -> Option<TexRef> {
+    pub fn witch_log_preview(&mut self, serial: u64, fresh: bool) -> Option<SavePreview> {
         if fresh {
             self.clear_previews(Some(JUMP_PREVIEW));
         }
         let d = self.history.iter().find(|h| h.serial == serial)?.data.clone();
-        self.preview(JUMP_PREVIEW, &d)
+        self.preview(JUMP_PREVIEW, &d, true)
     }
 
     /// State 9: the quick jump restores the entry (jp_5BAF0(entry, 0), sub_3E570, sub_6A7B0), as Tsukihime's

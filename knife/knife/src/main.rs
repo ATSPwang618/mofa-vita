@@ -42,8 +42,6 @@ mod witch;
 mod vita_entry;
 #[cfg(target_os = "vita")]
 mod vita_audit;
-#[cfg(any(target_os = "vita", test))]
-mod vita_gpu_replay;
 #[cfg(target_os = "vita")]
 mod vita_watchdog;
 #[cfg(any(target_os = "vita", test))]

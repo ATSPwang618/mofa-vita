@@ -21,8 +21,11 @@ jobs:
       CARGO_HOME: ${{ github.workspace }}/.cargo-home
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       KNIFE_VITA_CACHE: ${{ github.workspace }}/.vita-cache
-      KNIFE_BUILD_TAG: ${{ github.ref_name }}
+      KNIFE_BUILD_TAG: r10-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
       KNIFE_VITA_QUIET: '0'
+      KNIFE_PERF_CONSOLE: '1'
+      # Match the validated local R10 configuration recorded in evidence/48.
+      KNIFE_VITA_OPTIMIZATIONS: hardware-test,viewport-reject,group-mask-reject,ps-normal-multiply,live-alpha-coverage,cold-cohort,save-bgm-focus,shader-cap-batch,transition-textures,group-mask-clip,coverage-materials,group-opaque-mask,stage-opaque-cover,group-opaque-overwrite,transparent-draw-reject,stage-alpha-region
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
@@ -55,6 +58,30 @@ jobs:
 
       - name: Build and validate release package
         run: python3 tools/build-vita.py game release
+
+      - name: Verify R10 optimization profile and log identity
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = json.loads(Path('doc/evidence/48-large-image-integration.json').read_text())
+          receipt = json.loads(Path('.work/vita/game-release-540p/vita-game-release-540p-build.json').read_text())
+          actual = receipt['optimization_profile']
+          checks = {
+              'profile': actual['default'] == expected['optimization_profile'] == os.environ['KNIFE_VITA_OPTIMIZATIONS'],
+              'mask': actual['default_mask'] == int(expected['optimization_mask'], 16),
+              'features': sorted(actual['default_features']) == sorted(expected['optimization_features']),
+              'build tag': receipt['build_tag'] == os.environ['KNIFE_BUILD_TAG'],
+              'console logging': receipt['performance_console_default'] is True,
+              'quiet build disabled': receipt['quiet_build'] is False,
+          }
+          failures = [name for name, passed in checks.items() if not passed]
+          if failures:
+              raise SystemExit('R10 release contract mismatch: ' + ', '.join(failures))
+          print(f"R10 verified: {len(actual['default_features'])} options, mask={actual['default_mask']:#x}, build={receipt['build_tag']}")
+          PY
 
       - name: Collect release files
         run: |

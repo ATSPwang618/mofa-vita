@@ -18,6 +18,7 @@ PC离线编译工具：[offline_vita_shaders.py](../tools/offline_vita_shaders.p
 |---|---|
 | 14 / 17 | snapshot PS回退 / native destination fetch通用处理 |
 | 29、30/31、21 | 完整OP7；plain OP1/6；扩展OP13 |
+| 58 / 59 | Normal＋Multiply单/双源有限合并；运行时源，不在85个内嵌GXP集合中 |
 | 48 / 57 | FP32 plain OP7；有限相邻双OP7交集融合 |
 | 49–52 / 53 | 局部Half候选；n≤16的Blur预计算权重 |
 | 64–87 | 全24种PS混合，各自保留完整材质处理 |
@@ -38,4 +39,15 @@ Tiled仅用于探针通过的合格RGBA8离屏目标：逻辑960×540、存储pa
 
 每目标Scene容量默认测试2，失败清理后回1；4为独立互斥实验。Blur只缓存原权重，保持tap顺序与边界，n>16原路回退。
 
-默认配置是`hardware-test`，含待实机单项验收实验。开关、状态、实测和撤回记录统一见[优化清单](05-优化记录与实测数据.md)；完整回归入口见[构建](03-构建与工具链.md)。
+构建脚本缺省是`hardware-test`；2026-11-17交付显式启用完整R10组合，含待实机单项验收实验。开关、状态、实测和撤回记录统一见[优化清单](05-优化记录与实测数据.md)；完整回归入口见[构建](03-构建与工具链.md)。
+
+
+## large-image新增路径（06415b5）
+
+- KQTL将大图分成504像素内部区域、4像素边缘保护的DXT块。按准备后的Quad分割、排除可见区外块，逻辑坐标与全图UV保持对应；Haze、部分mask/PS及不规则UV回退整图。
+- Group mask reject/clip只处理合格中间producer，保留最后一对持久表面和别名保护；与旧group-bounds只缩Composite的范围不同。
+- 透明支持域与不透明证明绑定实际素材尺寸/哈希，未知或变更素材不套用旧证明。
+- `group-opaque-overwrite`目前在`game/group_batch.rs`受`live_charge`门控，来源为scene38、PC1246附近指定演出阶段；它不是已推广全游戏的任意覆盖删除。
+- Stage alpha region以32像素网格保守估计支持域，并限制分区数量；减少覆盖不等于已证明整帧更快。
+
+shader资格、动态能力与执行命中是不同状态。源码中有入口不等于安装包中存在离线GXP，更不等于实机实际启用。新增58/59目前使用运行时shader机制；保持其失败回退。

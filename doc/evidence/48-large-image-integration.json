@@ -1,0 +1,108 @@
+{
+  "date": "2026-11-17",
+  "source_commit": "06415b59dd01440640a416067138d080d9214a5d",
+  "release_build_tag": "perf-render-20261117-142048-06415b5-large-image-r10",
+  "release_built_at": "2026-11-17T09:05:38.137827+00:00",
+  "release_identity": {
+    "build_tag": "perf-render-20261117-142048-06415b5-large-image-r10",
+    "vpk_eboot_identical": true,
+    "files": [
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\release\\eboot.bin",
+        "bytes": 4602785,
+        "sha256": "92c76bf20bba9e156a9d747a490ef83e8ac5ea1a72a68e7755ea96af90cab82b"
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\release\\mofa-vita.vpk",
+        "bytes": 6703696,
+        "sha256": "7f815da8410147568d69b2f0d28df4cd8b823ee9a9d1c776f07ea65b0f356686"
+      }
+    ]
+  },
+  "optimization_profile": "hardware-test,viewport-reject,group-mask-reject,ps-normal-multiply,live-alpha-coverage,cold-cohort,save-bgm-focus,shader-cap-batch,transition-textures,group-mask-clip,coverage-materials,group-opaque-mask,stage-opaque-cover,group-opaque-overwrite,transparent-draw-reject,stage-alpha-region",
+  "optimization_mask": "0xcffffcfdfffffff",
+  "optimization_features": [
+    "shared-atlas",
+    "gxt-ready",
+    "batch-arena",
+    "group-fused",
+    "ps-fetch",
+    "async-submit",
+    "compact-stream",
+    "direct-stage",
+    "texture-pool",
+    "decode-owner",
+    "gray-r8",
+    "animation-window",
+    "dependency-graph",
+    "source-rename",
+    "grade-cache",
+    "stream-index",
+    "coalesce-bake",
+    "resource-io-cache",
+    "stage-prefix",
+    "group-batch",
+    "ui-pass-cache",
+    "plain-forcealpha",
+    "ui-source-prefetch",
+    "archive-glow-bounds",
+    "blend-chain",
+    "producer-reuse",
+    "async-rebake",
+    "target-ring",
+    "ps-op7",
+    "ps-plain-material",
+    "group-bounds",
+    "half-color",
+    "tiled-targets",
+    "blur-weights",
+    "rt-scenes-2",
+    "ps-all-operations",
+    "ps-plain-op7",
+    "ps-chain-op7",
+    "ps-group-material",
+    "ps-material-variants",
+    "viewport-reject",
+    "group-mask-reject",
+    "ps-normal-multiply",
+    "live-alpha-coverage",
+    "cold-cohort",
+    "save-bgm-focus",
+    "shader-cap-batch",
+    "transition-textures",
+    "group-mask-clip",
+    "coverage-materials",
+    "group-opaque-mask",
+    "stage-opaque-cover",
+    "group-opaque-overwrite",
+    "transparent-draw-reject",
+    "stage-alpha-region"
+  ],
+  "performance_console_default": true,
+  "quiet_build": false,
+  "asset_verification": {
+    "startup_profile_checks": 46,
+    "audio_banks": {
+      "voice.mrg": 9406,
+      "bgm.mrg": 65
+    },
+    "manifest_sha256": "caa3afb3e52913f3634f24fa6365c61e1502fab7837712e585b834fb1caf9a00",
+    "manifest_files_verified": 9573,
+    "manifest_bytes_hashed": 7225211382,
+    "preserved_local_files": 9
+  },
+  "integration_host_tests": {
+    "passed": 469,
+    "failed": 0,
+    "scope": "2026-11-17 integration before maintenance; not rerun by documentation changes"
+  },
+  "cleanup": {
+    "before_bytes": 56847238301.0,
+    "after_bytes": 7486610900.0,
+    "released_bytes": 49360627401.0,
+    "protected_hashes_unchanged": true,
+    "git_status_unchanged": true
+  },
+  "maintenance": "Removed unused duplicate vita_controls module, unused TexRef import and corrected extern comment. Existing release remains the prior source snapshot.",
+  "hardware_validated": false
+}

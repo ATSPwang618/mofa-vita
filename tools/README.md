@@ -1,6 +1,6 @@
 # 工具索引
 
-从项目根目录运行脚本。当前正式目标只有 **KNIF00540 / 原生 GXM / 960×540**。工具生成的日志、暂存文件放在 `.work/`；资源长期只保留 `dist/` 中的一份运行包和一份可编辑工程，见 [仓库维护](../doc/09-仓库维护与清理.md)。
+从项目根目录运行脚本。当前正式目标只有 **KNIF00540 / 原生 GXM / 960×540**。工具生成的日志、暂存文件放在 `.work/`；当前 `dist/` 只保留一份运行包，完整可编辑工程不在本机目录中，见 [仓库维护](../doc/09-仓库维护与清理.md)。
 
 ## 构建与当前包检查
 
@@ -13,7 +13,7 @@
 | `generate-runtime-shaders.py` / `compile-vita-*.ps1` | 当前运行时 shader 源生成及基础 shader 离线编译 |
 | `offline_vita_shaders.py` / `generate-material-variants.py` | 85个离线GXP身份校验、编译与有限材质入口生成 |
 | `script_census.py` / `script-census/` | 生产MZX/motion解析器全场景盘点；完整输出默认放`.work/reports/script-census.json` |
-| `vita_gpu_replay.py` / `test_vita_gpu_replay.py` | 有限GPU回放的ABBA、实际命中、像素差分与性能门槛分析 |
+| `vita_gpu_replay.py` / `test_vita_gpu_replay.py` | 历史GPU回放日志的ABBA/像素分析；当前生产回放入口已删除 |
 
 完整依赖和输出路径见 [构建文档](../doc/03-构建与工具链.md)。编译引擎不需要游戏素材。
 
@@ -22,10 +22,10 @@
 | 入口 | 用途与边界 |
 |---|---|
 | [quality540](quality540/README.md) | 从自备原图重做剧情图库；一次 DXT1/DXT5 编码，保护长图、逻辑坐标、语言条带和蒙版 |
-| [limit_runtime_art.py](quality540/limit_runtime_art.py) / [verify_runtime_art.py](quality540/verify_runtime_art.py) | 全库离线缩小潜在 RGBA 大图，生成只含变化归档的暂存输出；单图 1 MiB 分配限额及逐条校验，见 [资源预算](../doc/04-资源调度与缓存.md) |
+| [limit_runtime_art.py](quality540/limit_runtime_art.py) / [verify_runtime_art.py](quality540/verify_runtime_art.py) | 旧基础条目的离线缩小与1MiB预算校验；不是新KQTL包完整制作器，见 [资源预算](../doc/04-资源调度与缓存.md) |
 | [prepare-vita-ps-help.py](prepare-vita-ps-help.py) | 从配套输入生成随程序内嵌的 PS 操作说明 PNG/KIMG；需要 Pillow 与 ispc_texcomp |
 | [credit-intro](credit-intro/README.md) | 感谢页源图、更新/检查脚本与回归测试 |
-| `generate_vita_asset_profile_540.py` | 清单与启动 profile；`--check` 核对关键文件和已生成源码 |
+| `generate_vita_asset_profile_540.py` | 清单与启动profile；当前依赖散装stream，不能直接检查只有音频归档的新包 |
 | `generate-vita-atlas-index.py` / `generate-vita-stream-index.py` | 图集成员索引与音频文件名索引 |
 | [prepare_vita_ui_ranges.py](prepare_vita_ui_ranges.py) | 将选中的公共菜单/存读档及图录/书库等UI外层 NX 离线去除，逐张校验 KIMG 原字节，另存暂存结果；`--check` 校验直接读取布局，见 [UI 范围读取](../doc/04-资源调度与缓存.md) |
 | `prepare_game.py` / `create_540p.py` / `create_compact.py` | 历史初制链路；需要自备原始输入、字体、汉化和对应宿主工具 |
@@ -56,3 +56,11 @@
 `build-windows.sh`、`build-540p.ps1`、`build-compact.*` 和相应 `verify_*` / `test_*` 保留给桌面对照及历史初制；需要其自己的输入与依赖，不是当前 Vita 包验证入口。
 
 已删除依赖失效文档或已移除 ZIP 格式的 `package_project.py`、`verify_compact_package.py`、`write_compact_delivery.py`、`cleanup-obsolete-assets.ps1`、`verify_current_compact.py`。历史内容通过 Git 查看，不再维护多个相互冲突的交付入口。
+
+
+## 当前工具链边界（2026-11-17）
+
+- `vita_image_metadata.py`已验证KQ变体/分块及归档分卷；不能据此认定对应生成器也齐全。
+- 新分支的live alpha表引用`generate-vita-live-alpha-coverage.py`，该生成器未在当前Git树提供；完整KQTL/音频包制作入口尚未核验。
+- `export-original-switch-png.py`、`finalize-original-switch-png.py`、`audit-original-switch-scaling.py`、`repair-original-switch-scaling.py`为本地原版PNG工作工具，当前尚未提交。提取中间副本已清理，重跑需自备原始输入；详见[12](../doc/12-原版540p无损图片工程.md)。
+- 历史分析器/探针保留给对应格式及证据，不能因为正式游戏未调用而按死代码删除。缺少本机依赖的分析工具需先补齐依赖，不属于当前一键构建保证。

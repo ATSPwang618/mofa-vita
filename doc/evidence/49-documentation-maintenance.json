@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-17",
+  "branch": "perf/render",
+  "source_commit": "06415b59dd01440640a416067138d080d9214a5d",
+  "scope": "Documentation maintenance and removal of an unused duplicate module; no gameplay or renderer changes. No repackaging, commit, or push.",
+  "code_cleanup": [
+    "Removed unused vita_controls.rs and its module declaration; production Shortcut remains in story_font.rs.",
+    "Removed unused TexRef import.",
+    "Corrected extern-block comment."
+  ],
+  "verification": {
+    "story_font_tests_passed": 3,
+    "story_font_tests_failed": 0,
+    "vita_arm_cargo_check": "passed; 21 existing warnings remain",
+    "feature_table_named_options": 58,
+    "release_profile_enabled_options": 55,
+    "release_files_unchanged": [
+      {
+        "path": "release\\eboot.bin",
+        "sha256": "92c76bf20bba9e156a9d747a490ef83e8ac5ea1a72a68e7755ea96af90cab82b",
+        "bytes": 4602785
+      },
+      {
+        "path": "release\\mofa-vita.vpk",
+        "sha256": "7f815da8410147568d69b2f0d28df4cd8b823ee9a9d1c776f07ea65b0f356686",
+        "bytes": 6703696
+      }
+    ],
+    "vpk_eboot_identical": true,
+    "hardware_tested": false,
+    "full_host_suite_rerun": false,
+    "local_document_link_targets_checked": 192,
+    "missing_local_document_link_targets": 0
+  },
+  "removed_worktree": {
+    "path": "D:\\AI-CODEX\\mofa-vita\\.work\\merge-main-perf-render-20261113",
+    "bytes": 19907976.0,
+    "head": "54a92c51bf70146f8c479f322e8971d5c69dc8c9",
+    "clean": true,
+    "branch": "sync/main-perf-render-20261113"
+  },
+  "prior_cleanup_bytes_not_counted_again": 49360627401,
+  "evidence_logs": [
+    ".work/maintenance-20261117/arm-check.log",
+    ".work/maintenance-20261117/story-font-tests.log"
+  ],
+  "release_source_boundary": "release remains perf-render-20261117-142048-06415b5-large-image-r10, built before this maintenance.",
+  "repository_logical_bytes_after_maintenance": 7466688615
+}

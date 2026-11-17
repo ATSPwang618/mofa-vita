@@ -1,0 +1,72 @@
+{
+  "schema": "original-switch-scale-audit-v2",
+  "status": "PASS",
+  "scope": "scaling repair and compatibility audit only; no game executable or runtime resource changes",
+  "canvas": [
+    960,
+    540
+  ],
+  "png_count": 36293,
+  "png_bytes": 15291128523,
+  "counts": {
+    "allpachdml": 325,
+    "allpacml": 634,
+    "allui": 1727,
+    "jallpac": 22178,
+    "jallpachd": 11421,
+    "parts": 2,
+    "standalone": 6
+  },
+  "corrected_source_textures": 60,
+  "rewritten_or_added_pngs": 204,
+  "production_language_stems": 84,
+  "language_source_textures": 252,
+  "source_archive_checks": {
+    "jallpachd": true,
+    "allpachdml": true,
+    "jallpac": true,
+    "allpacml": true,
+    "allui": true,
+    "parts": true
+  },
+  "image_ratio_violations": 0,
+  "language_contract_violations": 0,
+  "runtime_texture_groups": 35531,
+  "runtime_dimension_policy_blocked_groups": 15931,
+  "blocker_counts": {
+    "texture-axis-over-2048": 3967,
+    "whole-owner-over-1036800-pixels": 6770,
+    "png-whole-owner-over-decoder-budget": 6770,
+    "existing-story-owner-policy-over-1MiB": 15915
+  },
+  "runtime_ready": false,
+  "device_tested": false,
+  "runtime_assets_modified": false,
+  "old_pack_used_as_pixel_source": false,
+  "tool_sha256": "1060a411cad89d01fc2c48f15c190b02c6e6aad3e6a3752ff8dbe5feded7e490",
+  "exporter_sha256": "d29b80574f50b404b50d94c43e8b8e431f5c869ddebf1e3b279bc9af3bd4038a",
+  "production_table_sha256": "16d240522e468d87b3c1161fbfecdcf91347e7d684cfefb069df7ab68d08ce35",
+  "png_native_decoder_dimension_blocked_groups": 10317,
+  "en_zc_axis_blocked_groups": 3879,
+  "current_runtime_language_count": 2,
+  "source_language_count": 4,
+  "this_run_corrected_source_textures": 0,
+  "this_run_rewritten_or_added_pngs": 0,
+  "project": "D:\\AI-CODEX\\mofa-vita\\dist\\原始switch版本-540p分辨率项目",
+  "branch": "perf/render",
+  "tests": {
+    "tool_tests": 15,
+    "status": "PASS",
+    "read_only_precheck": "PASS",
+    "csv_row_counts": "PASS",
+    "repeated_full_png_and_source_hash_check": "PASS"
+  },
+  "files": {
+    "manifest.json": "178ca6896db8183ff4af59e71ce2fb9ec35107ec82875ce47ebb45d2bd03a92a",
+    "verification.json": "c8fd8868b858baaf191c407a0ab558cfe899d7a82ea32dc3f13994abf5475d06",
+    "图片索引.csv": "73b089a1bae803998b92c0cea2ebd3a784e42576667dfa9bf968f589f133d654",
+    "Vita部署检查.csv": "5f84b1bff082e176c3f762979e51564a408cf480478e5a6cd7b14a28b3c9caff",
+    "metadata/scaling-audit.json": "94623aabd6bb290af42fdd1c0dc55643defd24a435f66ed70db61777677cc262",
+    "metadata/vita-deployment-plan.json": "bb1d1624a95547b607d365c5977cecec6986f5cfbe1521d1421c3fe6aa772394"
+  }
+}

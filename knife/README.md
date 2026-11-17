@@ -15,11 +15,11 @@
 
 Vita 包固定中文 ID2，使用 960×540 场景和合成画布。编译引擎无需游戏素材；素材由使用者自行准备。换电脑构建时使用 `python3 tools/build-vita.py --check` 检查本地环境，完整步骤见 [构建与工具链](../doc/03-构建与工具链.md)。
 
-当前配套素材为 native540 离线显存限额 + r11 raw UI成员读取包。剧情图保留逻辑坐标与完整长图内容，物理采样尺寸按离线预算限制；PNG编辑工程不能直接代替运行归档。当前交互和显存准入更新沿用r11资源身份；程序固定输出至外层 `release/mofa-vita.vpk` 与 `release/eboot.bin`。清单和安装说明见[素材与安装](../doc/08-素材与安装.md)，制作链见[quality540](../tools/quality540/README.md)。
+当前配套为 large-image 资源：原生DXT、离线调色变体、KQTL分块、图片分卷、专用缩略图和音频归档。保留逻辑坐标，PNG工程不能直接替代运行归档，旧r11资源身份不匹配。输出固定为外层 `release/mofa-vita.vpk` 与 `release/eboot.bin`，详见[素材与安装](../doc/08-素材与安装.md)。旧[quality540](../tools/quality540/README.md)只覆盖历史制作流程。
 
 本地资源与临时产物的保留规则见 [仓库维护与清理](../doc/09-仓库维护与清理.md)；脚本分类见 [tools](../tools/README.md)。
 
-Vita阅读设置由 `story_font.rs`、`vita_controls.rs` 与 `vita_input.rs` 配合 `Game` 实现：L+□调整剧情字号50%～150%，○保存、×取消；配置独立于故事存档。模块职责、状态保护及测试边界见[阅读与交互设置](../doc/11-可选交互更新.md)。
+Vita阅读设置由 `story_font.rs` 与 `vita_input.rs` 配合 `Game` 实现：L+□调整剧情字号50%～150%，○保存、×取消；配置独立于故事存档。模块职责、状态保护及测试边界见[阅读与交互设置](../doc/11-可选交互更新.md)。
 
 ## 桌面开发
 

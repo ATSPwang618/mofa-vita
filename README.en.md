@@ -1,80 +1,58 @@
 # mofa-vita · Witch on the Holy Night
-- projiect website：https://atspwang618.github.io/myvita.github.io/mofa-vita/
-- showcase：https://www.bilibili.com/video/BV1vUxn6nE59
 
-**A native GXM engine port for PS Vita**
+**Native PS Vita GXM engine · 960×540 scenes and compositing**
 
-[![简体中文](doc/language-zh.svg)](README.md)
+[![中文](doc/language-zh.svg)](README.md)
 
-[Technical documentation (Chinese)](doc/README.md) · [Optimization inventory (Chinese)](doc/05-优化记录与实测数据.md) · [Extracting assets](doc/10-switch-asset-extraction.en.md)
+[Project website](https://atspwang618.github.io/myvita.github.io/mofa-vita/) · [Hardware demonstration](https://www.bilibili.com/video/BV1vUxn6nE59) · [Technical documentation](doc/README.md)
 
-This project ports the [knife](https://github.com/AuroraWright/knife) 0.9.4 Rust engine to **native PS Vita GXM**, using user-supplied data from the Switch release of *Witch on the Holy Night*. Scenes and composition render at **960×540**, centered on the Vita's 960×544 display. The desktop WGPU backend remains available for development comparisons.
+Based on [AuroraWright/knife](https://github.com/AuroraWright/knife) 0.9.4. The Rust engine reads Switch game data and renders through native GXM, centered on the Vita's 960×544 display. The desktop WGPU backend remains available for development.
 
-The repository contains engine sources, build tools, offline shaders and resource metadata. Game assets, fonts, audio, video and translation data must be supplied separately. **Building the engine does not require the full game asset pack.**
+The repository contains engine source, tools, shaders and metadata. Supply your own game images, fonts, audio/video and translation data. Building the engine does not require the complete game assets.
 
-## Screenshots
+## Hardware screenshots
 
 | Title | Voice settings |
 |---|---|
-| ![Title](doc/screenshots/01-title.jpg) | ![Voice settings](doc/screenshots/02-voices.jpg) |
+| ![Title](doc/screenshots/01-title.jpg) | ![Voices](doc/screenshots/02-voices.jpg) |
 | **Archive** | **Story** |
 | ![Archive](doc/screenshots/03-archive.jpg) | ![Story](doc/screenshots/04-story.jpg) |
 
-Historical device screenshots; not performance acceptance evidence for the latest build.
-## Current release and scope
+Historical screenshots are not performance acceptance evidence for the latest candidate.
 
-The local package is **`stage-effect-r14-resource-guard-20261109`**, title ID **`KNIF00540`**. It uses the native540 memory-limited asset contract with r11 raw UI member access. The Vita UI is fixed to Chengkong Chinese, original language ID2; the asset pack retains English and Chinese. The default test profile is `hardware-test`, mask `0x7cfdfffffff`, with VitaDeck logging enabled.
+## Current state
 
-r14 adds typed allocation-pressure recovery shared by frame uploads and story requests. If bounded recovery fails, it writes the last successfully presented resumable point to the automatic slot without rendering a menu. CONTINUE restores it; manual and quick-save slots are preserved. All 326 host tests and native fault-injection suites passed; this release still needs device validation.
+On 2026-11-17, `perf/large_image@06415b5` was fully integrated into local `perf/render`. Latest packaged build: **`perf-render-20261117-142048-06415b5-large-image-r10`**, title ID **`KNIF00540`**. Subsequent documentation/dead-code maintenance has not repackaged this binary. See [release identity](doc/08-素材与安装.md).
 
-r13 originally disabled story-panel buttons 1, 2, 4 and 5 (previous scene, rewind, fast-forward and next scene). Rewind and fast-forward are now enabled; previous/next scene remain disabled and controller navigation skips them. Auto playback, bookmarks, voice replay and internal save restoration remain available. It includes the r12 save/load focus fixes. With the r11 asset pack already installed, only the EBOOT or VPK needs updating. All 326 host tests passed; see the [installation guide](doc/08-素材与安装.md) for build receipts and device-validation limits.
+- Native DXT1/DXT5 upload, offline color variants and KQTL large-image tiles. Unsupported material combinations retain a fallback texture.
+- Material-selected specialized shaders, limited blend fusion, mask bounds and transparent-area rejection. Some optimizations require authenticated texture data or a specific scene phase; they are not universally applied.
+- Bounded caches, GPU retirement, allocation recovery and protection of the last valid story checkpoint.
+- Member-based UI reads, transition prefetch, dedicated save previews, packed Ogg audio and prepared BGM handoff.
+- L+Square settings: 50%–150% story font size and rear-touch modes. Rewind/fast-forward are enabled; previous/next scene remain disabled. Vita currently selects Chengkong Chinese; the asset pack retains English and Chinese.
 
-## Implemented optimizations
+Integration passed 469 host tests, ARM packaging and asset verification. New hardware image/performance/long-session validation is pending; no whole-game minimum FPS is guaranteed.
 
-- **Offline shaders selected by material across the game:** 85 embedded GXP programs, including complete programs for all 24 PS blend operations and specialized plain, Fill, NoAlpha, Haze and Group contracts. Unsupported combinations retain the complete fallback.
-- **Less GPU work and safer submission:** native destination fetch, Group composition, bounded adjacent OP7 fusion, conservative composite bounds, compact vertex streams, dependency tracking and per-slot completion.
-- **Bounded resource handling:** native DXT1/DXT5 upload, shared owners, bounded prefetch, grading/text/group caches, allocation recovery and safe GPU retirement.
-- **UI member reads:** r11 preserves image bytes while avoiding the mandatory 16.75 MiB whole-atlas output allocation for DISP. Temporary allocation failures have bounded recovery.
-- **Audio and UI stability:** approximately one second of BGM PCM buffering, gallery/library loading fixes, save/load target recovery and r12 focus fixes. Auto playback remains; player-triggered fast-forward and rewind are enabled on Vita.
+## Installation
 
-The [optimization inventory](doc/05-优化记录与实测数据.md) lists all **43 switches**, fixes, defaults and evidence limits. The heaviest complete window in the r10 hardware log was approximately 12.75 FPS. This is **not a guarantee of 20 FPS throughout the game**. Enabled Half/Tiled/Blur experiments still require individual device image and performance validation.
+1. Install `release/mofa-vita.vpk`, or close the game and upload `release/eboot.bin` to `ux0:app/KNIF00540/eboot.bin` using VitaDeck.
+2. Copy the matching new `assets/` to `ux0:data/WitchontheHolyNight/assets/`. **The old r11 pack does not match this executable.** The new pack includes split image archives, `savethumb`, and audio banks.
+3. Check the startup build tag, effective optimization profile and asset identity.
 
-## Game assets
+VitaDeck logging is enabled by default. `perf-enable.txt=0` in the data root disables performance logging. `optimization-profile.txt` replaces the entire default profile; an old `hardware-test` file does not enable all R10 additions. See [installation](doc/08-素材与安装.md) and [logging](doc/06-性能采集与分析.md).
 
-Supply your own Switch game, matching 1.02 update, and required fonts/translation files. See the [Switch asset extraction guide](doc/10-switch-asset-extraction.en.md) for steps, commands and Vita conversion requirements.
-
-## Build and install
-
-Run from the repository root; Windows uses WSL. Vita builds use the pinned `nightly-2026-05-28` toolchain, rust-src and VitaSDK.
+## Build and assets
 
 ```bash
 python3 tools/build-vita.py --check
 python3 tools/build-vita.py game release
 ```
 
-On Windows, `py -3` is also supported. Select a distribution with `--wsl <name>`. Set `KNIFE_BUILD_TAG` for each delivered build; keep `KNIFE_PERF_CONSOLE=1` and `KNIFE_VITA_QUIET=0` for logging. See the [build guide](doc/03-构建与工具链.md).
+Requires VitaSDK, `nightly-2026-05-28` and rust-src; use WSL on Windows. The generic build defaults to `hardware-test`; use the environment settings in the [build guide](doc/03-构建与工具链.md) to reproduce the R10 configuration. Outputs are always `release/eboot.bin` and `release/mofa-vita.vpk`.
 
-Install the local `dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/knife-vita-540p.vpk`, or stop the game and use VitaDeck to replace `ux0:app/KNIF00540/eboot.bin`. Put matching assets in `ux0:data/WitchontheHolyNight/assets/`.
+See the [Switch extraction guide](doc/10-switch-asset-extraction.en.md). An editable PNG project is not a deployable Vita pack. A verified one-command NSP-to-identical-large-image-pack pipeline is not currently provided.
 
-**With r11 assets already installed, r12 only needs an executable/VPK update.** Older packs also need r11's `allui.hed`, `allui.mrg` and `vita-540p-assets.json`. The VPK does not contain these game assets. See [installation and hashes](doc/08-素材与安装.md).
+## Layout and licensing
 
-Place `perf-enable.txt` and `optimization-profile.txt` in `ux0:data/WitchontheHolyNight/`, outside `assets/`. An explicit `0` disables logging; use `1` to enable it. Verify `build_tag` at startup. r12 emits `save_focus` only when selection state changes. See [logging and GPU replay](doc/06-性能采集与分析.md).
+[`knife/`](knife/README.md) contains the engine, [`tools/`](tools/README.md) the tooling, and [`doc/`](doc/README.md) current documentation plus versioned historical evidence. `release/`, `dist/` and `.work/` are local-only outputs. This checkout currently retains the runtime pack, not a complete editable PNG project. See [maintenance rules](doc/09-仓库维护与清理.md).
 
-
-
-## Repository
-
-| Path | Purpose |
-|---|---|
-| [knife/](knife/README.md) | Rust workspace, GXM backend and dependencies |
-| [tools/](tools/README.md) | Build, asset preparation and validation |
-| [doc/](doc/README.md) | Current technical documentation (Chinese) |
-| `dist/` | One runtime pack and one editable PNG project, ignored by Git |
-| `.work/` | Temporary output, diagnostic symbols and maintenance receipts, ignored by Git |
-
-[Maintenance policy (Chinese)](doc/09-仓库维护与清理.md). Changes stay local unless explicitly authorized to push.
-
-## Credits and licensing
-
-Engine: [AuroraWright/knife](https://github.com/AuroraWright/knife), [MPL 2.0](knife/LICENSE), [upstream provenance](knife/UPSTREAM.txt). Third-party components retain their own notices and licenses under `knife/vita/vendor/`. Game content belongs to its respective rights holders and is not included.
-
+Engine license: [MPL 2.0](knife/LICENSE); provenance: [UPSTREAM.txt](knife/UPSTREAM.txt). Native dependencies retain their own notices. Game content belongs to its respective rights holders and is not distributed with the source. Thanks to @SpriteLisenLisen for technical support.

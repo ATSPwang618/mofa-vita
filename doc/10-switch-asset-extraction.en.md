@@ -1,5 +1,7 @@
 # Switch asset extraction guide
 
+Version boundary (2026-11-17): the extraction steps remain source-data extraction instructions. The r14/quality540 conversion table is a historical base pipeline, not a complete rebuild of the current large-image pack. New variants, KQTL tiles, save previews and audio banks require additional tooling. The profile generator still expects loose stream files; its final --check does not directly support a bank-only pack. See [current asset contract](08-素材与安装.md).
+
 [Back to project README](../README.en.md) · [简体中文](10-Switch原版资源提取.md)
 
 **Extract a complete RomFS with the base game and update 1.02 merged, add the shared fonts and translation, then convert it into the Vita asset format.** `prepare_game.py` produces original game data, not an asset pack ready for the current EBOOT. Neither this repository nor the VPK includes game data, keys, firmware or translation files; supply these from your own game/device and separately obtained translation.
@@ -186,4 +188,3 @@ if ($LASTEXITCODE -ne 0) { throw 'UI member-layout validation failed.' }
 | `WRONG FILE SIZE` / startup asset validation failure | New assets paired with an old EBOOT/profile, or incomplete copying; regenerate metadata and build a matching program |
 
 Commands were checked against repository scripts and [hactool's upstream options](https://github.com/SciresM/hactool#usage). This documentation update did not re-extract the complete NSP or validate a fresh end-to-end rebuild of the current runtime pack.
-

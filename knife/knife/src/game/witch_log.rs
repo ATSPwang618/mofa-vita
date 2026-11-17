@@ -3,7 +3,7 @@
 //! record (+14016 the text, +13264 the voice, +13952 the name, F1105 the window type), and state 9 restores the
 //! quick jump's entry like a rewind (jp_5BAF0).
 
-use knife_render::{Quad, Renderer, TexRef};
+use knife_render::{Quad, Renderer};
 
 use super::{Back, Game, SavePreview, UX, UY, entry_f823, resolve_refs, voice_row};
 use crate::text::{self, Layout};

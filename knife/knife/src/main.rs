@@ -925,6 +925,3 @@ fn pad_name(k: &str) -> Option<Pad> {
 fn main() -> anyhow::Result<()> {
     vita_entry::run()
 }
-
-#[cfg(target_os = "vita")]
-mod vita_controls;

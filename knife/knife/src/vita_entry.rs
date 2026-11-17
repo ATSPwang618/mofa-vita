@@ -14,7 +14,7 @@ const ASSETS: &str = "ux0:data/WitchontheHolyNight/assets";
 // assets/, saves/ and the runtime shader cache.
 const PERF_ROOT: &str = "ux0:data/WitchontheHolyNight";
 
-/// Build identity recorded in the log header, so two logs can never be confused.
+// Native clock request and query functions; results are included in the log header.
 unsafe extern "C" {
     fn kv_set_performance_clock(arm: *mut i32, bus: *mut i32, gpu: *mut i32, xbar: *mut i32);
     fn kv_clock_mhz(arm: *mut u32, bus: *mut u32, gpu: *mut u32);

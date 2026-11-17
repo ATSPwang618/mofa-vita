@@ -1,0 +1,102 @@
+{
+  "date": "2026-11-14",
+  "status": "PASS",
+  "repository": "D:\\AI-CODEX\\mofa-vita",
+  "branch": "perf/render",
+  "output": "dist/原始switch版本-540p分辨率项目",
+  "source_nsp": {
+    "source_nsp": "D:\\SWITCH\\Ryujinx\\game\\WITCH ON THE HOLY NIGHT v0 (010012A017F18000) (BASE).nsp",
+    "bytes": 21380558096,
+    "sha256": "87f8082ccd5bd90cf00db279533145fcaa902b0d509459246671a8a2d96dce75",
+    "program_nca": "c134dd53826646afa027df1833254e0f.nca",
+    "nca_manifest": {
+      "source": "D:\\SWITCH\\Ryujinx\\game\\WITCH ON THE HOLY NIGHT v0 (010012A017F18000) (BASE).nsp",
+      "bytes": 21380558096,
+      "entries": [
+        {
+          "name": "c134dd53826646afa027df1833254e0f.nca",
+          "bytes": 21379973120,
+          "sha256": "c134dd53826646afa027df1833254e0f999e6a6fc1c64bcf470944219f43da86"
+        },
+        {
+          "name": "eed8afd306d7a1c60486f5736f861e29.nca",
+          "bytes": 438272,
+          "sha256": "eed8afd306d7a1c60486f5736f861e298481c36079680e6ecd2031c9a93d199b"
+        },
+        {
+          "name": "1efa2ddd2b2733f6bbd6e3b166b6dd8a.nca",
+          "bytes": 142848,
+          "sha256": "1efa2ddd2b2733f6bbd6e3b166b6dd8af8ab9a283cd33cc79ef63d7de3a1188e"
+        },
+        {
+          "name": "2f0d03a9a3e51e29beb2b6924e4d3b8d.cnmt.nca",
+          "bytes": 3584,
+          "sha256": "2f0d03a9a3e51e29beb2b6924e4d3b8dbd385b15ce0ffc3df4affa64c865db04"
+        }
+      ]
+    },
+    "update_applied": false,
+    "translation_applied": false
+  },
+  "png_count": 36149,
+  "png_bytes": 15290997728,
+  "counts": {
+    "jallpachd": 11406,
+    "allpachdml": 325,
+    "jallpac": 22148,
+    "allpacml": 535,
+    "allui": 1727,
+    "parts": 2,
+    "standalone": 6
+  },
+  "manifest_sha256": "a04db8558730c3ab667d62f112bb91409e6e6b10863068ae1861f1699a83a80a",
+  "verification_sha256": "711d6143c94610d8f27617c68f5f6ca6896f7b1f93c48c1e74ec6c4f90f88261",
+  "tests_passed": 8,
+  "python": "3.13.1",
+  "pillow": "11.3.0",
+  "numpy": "2.3.3",
+  "old_runtime_pack_used": false,
+  "old_editable_project_used": false,
+  "runtime_modified": false,
+  "vpk_built": false,
+  "remote_written": false,
+  "auxiliary_members": 50,
+  "cleanup": {
+    "status": "blocked",
+    "reason": "blocked by policy",
+    "stage": "before process creation",
+    "deleted_bytes": 0,
+    "pending_bytes": 45279037774,
+    "selected": [
+      {
+        "path": ".work/original-switch-png-20261114/.work",
+        "files": 5,
+        "bytes": 21380558695
+      },
+      {
+        "path": ".work/original-switch-png-20261114/romfs",
+        "files": 9565,
+        "bytes": 21320901679
+      },
+      {
+        "path": ".work/original-switch-png-20261114/first-pass",
+        "files": 2860,
+        "bytes": 2570036705
+      },
+      {
+        "path": ".work/original-switch-png-20261114/pilot",
+        "files": 32,
+        "bytes": 2027571
+      },
+      {
+        "path": ".work/original-switch-png-20261114/decoder-check",
+        "files": 34,
+        "bytes": 5513124
+      }
+    ]
+  },
+  "output_total_bytes": 15328438264,
+  "output_total_files": 36220,
+  "superseded_for_scaling_by": "original-switch-scaling-20261114.json",
+  "scope_note": "Initial file-integrity receipt; the later scaling audit corrected language strips and soft-clip LUT dimensions."
+}

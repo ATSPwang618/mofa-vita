@@ -1,5 +1,7 @@
 # Switch 原版资源提取指南
 
+2026-11-17版本边界：原版解包步骤仍用于提取源数据；下文r14/quality540转换表属于旧基础链，不是当前large-image包的完整重制流程。新版需要KQ变体、KQTL分块、savethumb及音频归档；profile生成器仍依赖散装stream，只有音频归档时不能直接执行最后的--check。当前身份与验证范围见[安装说明](08-素材与安装.md)。
+
 [返回项目首页](../README.md) · [English](10-switch-asset-extraction.en.md)
 
 **先提取本体 + 1.02 更新的完整 RomFS，再准备字体和汉化，最后转换为 Vita 专用资源。** `prepare_game.py` 的输出是原版资源，不是能直接搭配当前 EBOOT 的 Vita 包。源码仓库与 VPK 都不包含游戏数据、密钥、固件或汉化文件，以下输入由使用者自行从自己持有的游戏/设备准备。
@@ -186,4 +188,3 @@ if ($LASTEXITCODE -ne 0) { throw 'UI 成员布局校验失败。' }
 | `WRONG FILE SIZE` / 启动素材校验失败 | 新素材与旧 EBOOT/profile 混用，或复制不完整；按最终包重新生成元数据并构建配套程序 |
 
 本节命令依据仓库脚本及 [hactool 上游选项](https://github.com/SciresM/hactool#usage)核对。此次文档更新未重新解包整份 NSP，也未声称完成从干净环境重制当前运行包的端到端验证。
-

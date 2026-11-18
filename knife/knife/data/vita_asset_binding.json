@@ -1,0 +1,12 @@
+{
+  "schema": "mofa-compiled-asset-binding-v1",
+  "manifest_sha256": "e47f39cf6268f60f89054bf89c793db75efc2ec3febdedde0825288ae99b8082",
+  "manifest": "knife/knife/data/vita-540p-assets.json",
+  "generated": {
+    "knife/knife-platform-vita/src/asset_profile_540p.rs": "7bd207cd773c768b68320fb985fc8947c9114b78794dc410238dbf386fbeda9f",
+    "knife/knife/data/vita_atlas_index_540p.rs": "7a408608cc1feb8424980c9c79b7ac185743d3198c2e1e52079a9ea7e1e48f8a",
+    "knife/knife/data/vita_stream_index_540p.txt": "7b34fc2b3e94adb5d8dcb344e934cd73ba2f94bcfc789aa0b5d030aa86332542"
+  },
+  "physical_layout": "ux0:data/WitchontheHolyNight/assets",
+  "audio_layout": "voice.mrg + bgm.mrg"
+}

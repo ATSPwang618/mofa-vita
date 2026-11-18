@@ -1,4 +1,4 @@
-# knife-stream-index-v1 caa3afb3e52913f3634f24fa6365c61e1502fab7837712e585b834fb1caf9a00
+# knife-stream-index-v1 e47f39cf6268f60f89054bf89c793db75efc2ec3febdedde0825288ae99b8082
 stream/A10_1DOT5_2_0000.ogg
 stream/A10_1DOT5_2_0001.ogg
 stream/A10_1DOT5_2_0002.ogg
@@ -9400,6 +9400,7 @@ stream/M06.ogg
 stream/M07.ogg
 stream/M08.ogg
 stream/M09.ogg
+stream/M10.bgmstart.mrg
 stream/M10.ogg
 stream/M11.ogg
 stream/M12.ogg

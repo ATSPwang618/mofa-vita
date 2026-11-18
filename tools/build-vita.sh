@@ -106,6 +106,7 @@ export KNIFE_BUILD_TAG="${KNIFE_BUILD_TAG:-native540}"
 export KNIFE_VITA_OPTIMIZATIONS="${KNIFE_VITA_OPTIMIZATIONS:-hardware-test}"
 # Validate the checked-in packaging input before compiling anything.
 if [[ "$MODE" = game ]]; then
+    python3 "$ROOT/vita_asset_pipeline/build_binding.py" --project "$ROOT" --check
     python3 "$ROOT/tools/offline_vita_shaders.py" --check
     export KNIFE_VITA_SHADER_COMPILER="$ROOT/knife/vita/vendor/shacccg/libshacccg.suprx"
     python3 - "$KNIFE_VITA_SHADER_COMPILER" <<'CHECK_COMPILER'

@@ -1,0 +1,5 @@
+.runtime/
+__pycache__/
+!production/tools/source_replay/legacy-compact-replay.exe
+!production/tools/source_replay/native-color-blocks.dll
+!production/tools/source_replay/reciprocal_compat.dll

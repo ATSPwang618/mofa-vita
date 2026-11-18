@@ -6,7 +6,7 @@ Vita bin 名为 `vita-text-probe`，DEV title ID 为 **KNIF00008**。VPK 打包�
 
 ## 真实输入
 
-主机测试默认从当前发布目录 `../../../dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/assets` 加载这 6 个现有文件；也可显式设置 `KNIFE_TEXT_ASSETS`。任何必需字体缺失都会失败。
+主机测试的默认路径仍为历史目录 `../../../dist/Witch-on-the-Holy-Night-Chengkong-540p-Compact-x64/assets`；使用当前交付包时，需显式将 `KNIFE_TEXT_ASSETS` 设置为仓库下 `dist/ux0/data/WitchontheHolyNight/assets` 的绝对路径。测试加载以下 6 个文件，任何必需字体缺失都会失败。
 
 - `en/HelveticaNeueLTGEO-55Roman.otf`
 - `zc/arshanghaisonggbpro_lt.otf`

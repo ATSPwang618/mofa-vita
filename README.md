@@ -53,4 +53,6 @@
 引擎沿用 [MPL 2.0](knife/LICENSE)，来源见 [UPSTREAM.txt](knife/UPSTREAM.txt)。
 第三方依赖保留各自许可。历史资源配方包含游戏派生编码差分，范围见
 [配方与许可说明](vita_asset_pipeline/production/tools/source_replay/README.md)。
-感谢 @SpriteLisenLisen @DeQxJ00 @今何求 的技术支持。
+
+特别感谢 [SpriteLisen](https://github.com/SpriteLisen) 和 [DeQxJ00](https://github.com/DeQxJ00) 两位作者提供的技术支持，为本项目的实现提供了重要帮助。
+同时感谢 @今何求 的技术支持。

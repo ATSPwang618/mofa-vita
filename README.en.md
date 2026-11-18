@@ -49,4 +49,6 @@ Engine license: [MPL 2.0](knife/LICENSE); provenance: [UPSTREAM.txt](knife/UPSTR
 Third-party dependencies retain their own notices. The locked recipe contains explicitly identified
 historical game-derived encoding deltas; see its
 [scope and licensing notes](vita_asset_pipeline/production/tools/source_replay/README.md).
-Thanks to @SpriteLisenLisen @DeQxJ00 @今何求 for technical support.
+
+Special thanks to [SpriteLisen](https://github.com/SpriteLisen) and [DeQxJ00](https://github.com/DeQxJ00) for the technical support they provided, which made an important contribution to this project.
+Thanks also to @今何求 for technical support.

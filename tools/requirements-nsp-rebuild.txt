@@ -1,0 +1,4 @@
+# Host encoder versions used for the 2026-11-17 reconstruction validation.
+Pillow==11.3.0
+numpy==2.3.3
+ispc_texcomp==1.0.1

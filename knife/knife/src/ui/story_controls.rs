@@ -5,21 +5,22 @@ pub(super) struct StoryControls {
     pub fast_forward: bool,
     pub rewind: bool,
     pub scene_jump: bool,
+    panel_seek: bool,
 }
 
 pub(super) const STORY_CONTROLS: StoryControls = StoryControls::for_vita(cfg!(target_os = "vita"));
 
 impl StoryControls {
     const fn for_vita(vita: bool) -> Self {
-        Self { fast_forward: true, rewind: true, scene_jump: !vita }
+        Self { fast_forward: true, rewind: true, scene_jump: !vita, panel_seek: !vita }
     }
 
     /// Zero-based panel indices: previous, rewind, auto, fast-forward, next, save, load, voice.
     pub const fn panel_button(self, button: usize) -> bool {
         match button {
             0 | 4 => self.scene_jump,
-            1 => self.rewind,
-            3 => self.fast_forward,
+            1 => self.panel_seek && self.rewind,
+            3 => self.panel_seek && self.fast_forward,
             2 | 5 | 6 | 7 => true,
             _ => false,
         }
@@ -49,10 +50,10 @@ mod tests {
     use super::{STORY_CONTROLS, StoryControls};
 
     #[test]
-    fn vita_keeps_rewind_and_fast_forward_but_locks_scene_jump() {
+    fn vita_locks_panel_seek_but_keeps_shortcut_policy() {
         let policy = StoryControls::for_vita(true);
         let actual: Vec<_> = (0..8).filter(|&i| policy.panel_button(i)).collect();
-        assert_eq!(actual, [1, 2, 3, 5, 6, 7]);
+        assert_eq!(actual, [2, 5, 6, 7]);
         assert!(policy.fast_forward && policy.rewind && !policy.scene_jump);
         assert!(!policy.panel_button(8));
     }
@@ -60,7 +61,7 @@ mod tests {
     #[test]
     fn vita_focus_skips_disabled_controls_and_wraps_on_fresh_press() {
         let policy = StoryControls::for_vita(true);
-        for (from, right) in [(1, 2), (2, 3), (3, 5), (5, 6), (6, 7), (7, 1)] {
+        for (from, right) in [(2, 5), (5, 6), (6, 7), (7, 2)] {
             assert_eq!(policy.panel_focus(from, true, false), Some(right));
             assert_eq!(policy.panel_focus(right, false, false), Some(from));
         }
@@ -69,16 +70,16 @@ mod tests {
     #[test]
     fn held_navigation_stops_at_the_first_and_last_enabled_buttons() {
         let policy = StoryControls::for_vita(true);
-        assert_eq!(policy.panel_focus(1, false, true), None);
+        assert_eq!(policy.panel_focus(2, false, true), None);
         assert_eq!(policy.panel_focus(7, true, true), None);
         assert_eq!(policy.panel_focus(3, true, true), Some(5));
-        assert_eq!(policy.panel_focus(5, false, true), Some(3));
+        assert_eq!(policy.panel_focus(5, false, true), Some(2));
     }
 
     #[test]
     fn stale_disabled_focus_can_only_move_to_an_enabled_control() {
         let policy = StoryControls::for_vita(true);
-        for current in [0, 4] {
+        for current in [0, 1, 3, 4] {
             assert!(!policy.panel_button(current));
             for right in [false, true] {
                 let next = policy.panel_focus(current, right, false).unwrap();

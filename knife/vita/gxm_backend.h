@@ -59,7 +59,7 @@ int32_t kv_gxm_texture_create_ex(KvGxm *g, const uint8_t *data, uint32_t width,
     uint32_t height, uint32_t stride, uint32_t format, uint32_t srgb,
     uint32_t linear, uint32_t render_target, KvGxmTexture **out);
 /* Immutable, already encoded/swizzled single-level texture. format is a full
-   GXM PVRT4BPP_ABGR, UBC1_ABGR or UBC3_ABGR enum, not create_ex's format ID.
+   GXM PVRT4BPP_ABGR, PVRTII4BPP_ABGR, UBC1_ABGR or UBC3_ABGR enum, not create_ex's format ID.
    Logical dimensions are 1..2048; length must include next-power-of-two
    backing (minimum 8x8 PVRTC or 4x4 DXT). Copies synchronously to owned CDRAM.
    Compressed textures cannot be CPU-updated/read, copied or used as RTs. */

@@ -39,3 +39,7 @@ doc/*.log
 /tools/vita_audit_log.py
 # Required startup shader compiler, packaged with the engine.
 !/knife/vita/vendor/shacccg/libshacccg.suprx
+# Source-available, hash-pinned host helpers for exact historical asset replay.
+!/tools/source_replay/legacy-compact-replay.exe
+!/tools/source_replay/native-color-blocks.dll
+!/tools/source_replay/reciprocal_compat.dll

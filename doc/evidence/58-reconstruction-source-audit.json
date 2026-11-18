@@ -1,0 +1,495 @@
+{
+  "schema": "knife-source-audit-v2",
+  "kit_sha256": "8c9f77a4f7c89286ef0aab9f10b9209208c3e7717f0c142850ce5d10de2a7508",
+  "mod_files": [
+    {
+      "path": "allui.mrg",
+      "bytes": 139853824,
+      "sha256": "1eeb355d1b62a2e86e92dee0385fd98274295da6b8f2d2aba58567ad3faad699",
+      "reference_present": true,
+      "reference_identical": false
+    },
+    {
+      "path": "script_text.mrg",
+      "bytes": 7520136,
+      "sha256": "1be83a011592abfdb38e3cd201b736e2f5e6674825d692337251802d821cb1a6",
+      "reference_present": true,
+      "reference_identical": false
+    },
+    {
+      "path": "zc/arshanghaisonggbpro_lt.otf",
+      "bytes": 6249992,
+      "sha256": "0ebe4fac683355ea899a15a19f61bb3900135a424a8484ccf1758b73721eeef2",
+      "reference_present": true,
+      "reference_identical": true
+    },
+    {
+      "path": "zt/SungASC-Medium.TTF",
+      "bytes": 6249992,
+      "sha256": "6f926b236c21b8f428ae284b9fc63812cc59c8e791d105cf6866faaa9cf52aee",
+      "reference_present": false,
+      "reference_identical": false
+    }
+  ],
+  "file_origins": {
+    "zc/arshanghaisonggbpro_lt.otf": {
+      "status": "verified-source-copy",
+      "source": "MOD",
+      "sha256": "0ebe4fac683355ea899a15a19f61bb3900135a424a8484ccf1758b73721eeef2"
+    },
+    "script_text.mrg": {
+      "status": "verified-transform",
+      "source": "MOD/script_text.mrg",
+      "operation": "unpack_mzp -> blocks[2:6] -> pack_mzp",
+      "source_sha256": "1be83a011592abfdb38e3cd201b736e2f5e6674825d692337251802d821cb1a6",
+      "output_sha256": "97e520efcd1e45bc3312ec36ce6d0f8e1a5c6af3d4451948b0f091bf9614f1c1"
+    },
+    "allscr.mrg": {
+      "status": "transformed-or-unresolved",
+      "sha256": "8a2fae5f733d04d05844ddf2189a0a5fe5ce4e0b77df1ad52fe3c6f8b8a1b2a1"
+    },
+    "allui.hed": {
+      "status": "transformed-or-unresolved",
+      "sha256": "98257a5928a8a3bf908e4aa0647c84a15e83a106fccb443777e2bfa97f86403e"
+    },
+    "allui.mrg": {
+      "status": "transformed-or-unresolved",
+      "sha256": "07446bc2b7a2ebe9cf2cb363f51d49ef33e391ab0a0d935546babeb4060f28e9"
+    },
+    "allui.nam": {
+      "status": "transformed-or-unresolved",
+      "sha256": "cceed947903dd3f8825746918484111e85117bae28e3dcca3c8d524273d7c334"
+    },
+    "corp.tga": {
+      "status": "BASE-match-recorded-in-kit",
+      "sha256": "761acfe1fe0b6554a7892fe11d944a80f112679460320ec9975b3d41ab7b59d6"
+    },
+    "exfont_nx01.bffnt": {
+      "status": "BASE-match-recorded-in-kit",
+      "sha256": "b513bb13ff97a621e25429e17186add62542cdf584eaf46d17e81afedbad73fb"
+    },
+    "language-profile.txt": {
+      "status": "transformed-or-unresolved",
+      "sha256": "a9e1044eab0b6b8cda7e89104be66582ad02d3f82209389419d715b8d83966c5"
+    },
+    "nintendo_udsg-r_ext_zh-cn_003.bfttf": {
+      "status": "firmware-input-required",
+      "sha256": "f5784e7a553fef9a05b3b7dba94e77e79162ace9db8dafc715ace0be1fd9b9ff"
+    },
+    "nintendo_udsg-r_org_zh-cn_003.bfttf": {
+      "status": "firmware-input-required",
+      "sha256": "a04eb490283d8393b2c49c52e315132461d790ac73996cb43ac869ce72003938"
+    },
+    "nintendo_udsg-r_std_003.bfttf": {
+      "status": "firmware-input-required",
+      "sha256": "823913c9d80807979381e327846466f561f31ba1842cea8f7fedc5ad7d45d2ad"
+    },
+    "parts.hed": {
+      "status": "transformed-or-unresolved",
+      "sha256": "c91df7f7b62bdde2aee49a93e3efcce141ca2bc34477a6a5043899ec06b0261f"
+    },
+    "parts.mrg": {
+      "status": "transformed-or-unresolved",
+      "sha256": "023fa15b95ec0e97d372d97b7f388e6ecee6d4ed3720156809e5efeb1e70cb8b"
+    },
+    "saveicon_en.tga": {
+      "status": "BASE-match-recorded-in-kit",
+      "sha256": "5db376e62331a92d3b5f31d1b23e68b2644419d13b9342ce1b63e2945b86f633"
+    },
+    "saveicon_zc.tga": {
+      "status": "BASE-match-recorded-in-kit",
+      "sha256": "8acae885376caed7da627de0b8fb2bb3be7b08bfba69b522e2c2581c607ff9eb"
+    },
+    "ui-aliases.tsv": {
+      "status": "transformed-or-unresolved",
+      "sha256": "8274910571bf4f9801ef4636848c81de64dec74d4b098714cf1fd3652c491537"
+    },
+    "witch.bfsar": {
+      "status": "BASE-match-recorded-in-kit",
+      "sha256": "3416c56c8b694a632b9da63cd9069dcab2a2294ff8170d201566bfdf8bf933b3"
+    },
+    "en/HelveticaNeueLTGEO-55Roman.otf": {
+      "status": "BASE-match-recorded-in-kit",
+      "sha256": "18e070635bfb53837bb8a9a8cf4c01a5ca0a190a92500da6e350cee3af237f1c"
+    },
+    "movie/logo.mp4": {
+      "status": "transformed-or-unresolved",
+      "sha256": "6bb49ee83aa8cc0f666db91d08583f5b7c9f656029a2bb4dc376fb844808aba0"
+    },
+    "movie/opening_en.mp4": {
+      "status": "transformed-or-unresolved",
+      "sha256": "6bc4686fb0e76d13542ee36d2d288c62e38e17d6128dccf4f49e33f4c98554c6"
+    },
+    "movie/opening_zc.mp4": {
+      "status": "transformed-or-unresolved",
+      "sha256": "11b8201ad1fcbc6242e6470ed63ac52f5096b281d4834fcff912c9cac0f50702"
+    },
+    "shader/nexl_nxshader_add.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "ecaf40f7d94c428fe7c5695d40c4df04757ffdd636bddd8cda00309320a5f0cd"
+    },
+    "shader/nexl_nxshader_add_alpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "25e16f518ef6ff6f5aaf8ff05c70440786eaa75e445bbc0d9db8b99edde9815a"
+    },
+    "shader/nexl_nxshader_burn.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "c4a20efa23854565d658f972811c2fd6ee410cbf3251be25dfa509798159c702"
+    },
+    "shader/nexl_nxshader_darken.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "34cb2bd24dcab79cf6cdc5d4dc5bf38179d409102d51dfa605307c69adfaee1b"
+    },
+    "shader/nexl_nxshader_default.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "943156de6b70fb2048a0d85b004d6dcafd4d30099074f0b7b067c968601ffd0d"
+    },
+    "shader/nexl_nxshader_default_mesh.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "d7f66a5cbe0f64cbb36c820c42748a52f8a94a8785d28a44760bb03bfc79d72e"
+    },
+    "shader/nexl_nxshader_differnce.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "4d97ec44fb2512532680a15faf286b6cb6d06a9f669aeda65dafcf095d928b77"
+    },
+    "shader/nexl_nxshader_differnce5.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "db0ae26bb651196ee6953312a0cf4543127e34022ab35a578d391aec0c181a42"
+    },
+    "shader/nexl_nxshader_dissolve.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "0253f3d1d96e38df04b120491a40df171f32f4b29c9b7fa8cde9557850b34f28"
+    },
+    "shader/nexl_nxshader_dodge.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "e6d1b153d38ccf6167d66e624420e18e88930f9ce03f23f6e20920805152a9da"
+    },
+    "shader/nexl_nxshader_exalpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "0a9786d1dc5caa4a7f13414b665319a1002af3e9602bfc9a4745ec15fce7bc0e"
+    },
+    "shader/nexl_nxshader_exclusion.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "b87ff02c5ba6838ea4641d98215df9f6c1361fbb0cafb429d68002735aed98df"
+    },
+    "shader/nexl_nxshader_forcealpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "5241593a1059a6bd123697ed9af543c96c0e392f8701d37bce99c2681072bca1"
+    },
+    "shader/nexl_nxshader_fulladd.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "7431bf3f63291da315bc1ca9d69ecfeedc1977fd61a0dcbd5f600073f22755d1"
+    },
+    "shader/nexl_nxshader_fulladd_mesh.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "e71dc8e5cb1bf72bdf0d4b76c9dc49d0cbc6345037b1783bba8b2ccf0304f3a0"
+    },
+    "shader/nexl_nxshader_gauss.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "12f87dbf8b0c8ab5880280b50ae9c118550e265573f293af0ac7769bd10cadac"
+    },
+    "shader/nexl_nxshader_gaussian_h.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "9950656fbd9a40541996531a95864025b7e0d70479ef68c88869f8e7ad37cbd9"
+    },
+    "shader/nexl_nxshader_gaussian_v.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "61ad6cdbf79debb099071a0b42b0675182ebb1b00769572fe82eac4d690d6ef6"
+    },
+    "shader/nexl_nxshader_hardlight.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "d7e927d33e63c7ac2906b31a7a9064fd28324724cda2adba7c73a59ed553f83c"
+    },
+    "shader/nexl_nxshader_hardlight_ex.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "657d1a11cafae58679b95eb109f83ab31bb7419936ef8a5a880ceef2c381ce3b"
+    },
+    "shader/nexl_nxshader_haze.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "82eccd368e8d95521f9099a50fd84f4da32d2a0017da05c07658c340b7f1f30f"
+    },
+    "shader/nexl_nxshader_hdr.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "3a973936c7915cc841515d281deeb8916d12aa65ca3430a2ff193b12c42114df"
+    },
+    "shader/nexl_nxshader_lighten.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "bbf7245776db2c4e00a90bb67e92ceab0fb29504a4824002073d6a55807da528"
+    },
+    "shader/nexl_nxshader_monotone.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "f449e7fb0e92fca8d0fc93b09690aa7323b889bf513815e4e810410a68fe4594"
+    },
+    "shader/nexl_nxshader_movie_abgr.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "97dee5af22bc7749e5c6fcd7c9addf6408a2fc73fbe8227ce687eaa9faf1ada6"
+    },
+    "shader/nexl_nxshader_movie_ycbcr.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "c2cbb8e58e2e046dcb04424564e9400c0d7895815f58dea00022a3b36908ee3b"
+    },
+    "shader/nexl_nxshader_multi.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "3249ecf02cc00b73e04285dd16ddc70ee0cd0a8db97cf096cf5d2679297800a4"
+    },
+    "shader/nexl_nxshader_negafilter.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "1b6247004507c5159d258b5abbb8ed1895c719780aed5d43aff610aa976b5870"
+    },
+    "shader/nexl_nxshader_negative.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "25e340b378065b3cd612bf3c05174d6fc1e3da494d7b3ca10bb4629102ee736a"
+    },
+    "shader/nexl_nxshader_noalpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "a6ad83f9d8bb1516bece8b232ce0f5748307f46ec3c46573d093cb7967a6656e"
+    },
+    "shader/nexl_nxshader_noalpha_srgb.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "65cf270e5f6ff454fbb90389284956da49c76db48d9053545287a57de6879db0"
+    },
+    "shader/nexl_nxshader_noise.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "8b03d4fc7d280d4e821f79e214bc3d9ab65373b0d27631ebcfe29260dde71068"
+    },
+    "shader/nexl_nxshader_normal.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "c735139cc62d6a06561ee2fd55bf2a031306486f47c4e4c9b718ecd472cc9f93"
+    },
+    "shader/nexl_nxshader_normal_linear.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "d03cefd2c331d3057517271be59fc7dd37c0325ea709aebe7dbd3222cb9510ff"
+    },
+    "shader/nexl_nxshader_overlay.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "f38d049e351e54636f3a174af080750948e4a86a16db0859de4b24c002550da1"
+    },
+    "shader/nexl_nxshader_pre_alter.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "b32ce96aedf52dbb43cfa414ced29b4009811fb0d91621370fed645fa76948b4"
+    },
+    "shader/nexl_nxshader_ps_add.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "6c72a4e134864785f54c6a7e00a48144dcc77cfa586deb693f2348b009e4d669"
+    },
+    "shader/nexl_nxshader_ps_burn.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "de28d022e423e5e898a8db5ebdcf056ec1f111b0d3cc3a5894f54ef65ab4accf"
+    },
+    "shader/nexl_nxshader_ps_darken.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "a589067377a3e2d63498019223f2f542b73663331ce9afa17c0739e9415f2db7"
+    },
+    "shader/nexl_nxshader_ps_dodge.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "6f09789036898e9a9c103ad5790e5a963ec69541b2bd02d1e19254af61b1a390"
+    },
+    "shader/nexl_nxshader_ps_dodge5.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "889a6db224de26fd49f02419d008f0fb7373a8264745c0153d709094eb979521"
+    },
+    "shader/nexl_nxshader_ps_dodge5_ex.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "7df6f5002b2f937033793112561e05a70d735454c23aa11944a4d323c876f3bf"
+    },
+    "shader/nexl_nxshader_ps_lighten.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "3a12374f91be24d1932c305471bc985982bc5285f8ef6d377f9f488df35ffa85"
+    },
+    "shader/nexl_nxshader_ps_mul.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "603341cc3ebc17f635094c796d33c23024993defe404ebecde7cb95589e79829"
+    },
+    "shader/nexl_nxshader_ps_screen.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "ef1461499236e8216fb83543770e0a299a3e70d27428489e604c7f15a70f4685"
+    },
+    "shader/nexl_nxshader_ps_sub.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "ce2e749edcc1c7a2e2e2bb1d87a3e64d0181cbdd922ca7f15f9b2c8ae5e41cbc"
+    },
+    "shader/nexl_nxshader_raster.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "63c3c2fa11f0cc64a003834b867bb319f3aa51acc22e87cf6fce78c06b5d7494"
+    },
+    "shader/nexl_nxshader_rasterv.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "6cd8376fbdf75a593ba376293d3dae203f24a76516f7b8135c019610b3a62f92"
+    },
+    "shader/nexl_nxshader_screen.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "4128e6ea30563512f3ac20c1ce000b1ff8944089dec8fe07d4419755c66dfb3d"
+    },
+    "shader/nexl_nxshader_sepia.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "f870b9690ed0037079f15a890be33bb70e4518194e08c7452c4986f48e7eb457"
+    },
+    "shader/nexl_nxshader_sepianega.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "012e7c3710a81cbef49a33e2d3ebdff54cf301285f8d55b73dfdb2a3d3fb020a"
+    },
+    "shader/nexl_nxshader_softlight.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "3822cc15cb70500dc0c05c431ef7b2dee320d57f2e73b4e6f5c3729bae3f648a"
+    },
+    "shader/nexl_nxshader_splash.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "733058cb90e493f3aec3096ea976256f97421b3e5b85cd5b34a4241d9c913867"
+    },
+    "shader/nexl_nxshader_stencil_alpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "23bee89dbe31954aea9d41e378e3f087d0ff440c288713fa7e22ac3b0c2e3fd6"
+    },
+    "shader/nexl_nxshader_sub.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "6a3f39f4173ccd37eef8816eaefa92018c1e1de3db6a9dc024cf43e6400adb5b"
+    },
+    "shader/nexl_nxshader_sub_noalpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "b023e4b1511b524a4398fd09cbebc03bcbd9da5ccb59dc788d8676585df2c9a8"
+    },
+    "shader/nexl_nxshader_transition.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "b34ae50a321fc3386bcee8c3a00ba3eefc2d6cb9bb1f0db63a541417f9bf797b"
+    },
+    "shader/nexl_nxshader_transitionalpha.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "8a5997f72acf456f6a2e6e6418c28334b122eb75dcc005a9932975f8c179ea13"
+    },
+    "shader/nexl_nxshader_wave.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "410723529535314be6cb0f2a4648dabe94a66b32f88be24f907860070c8c24df"
+    },
+    "shader/nexl_nxshader_whiteness.bnsh": {
+      "status": "transformed-or-unresolved",
+      "sha256": "fa13a761bc4674c495547b2fbf235fc131e7c51ce5775bacf9a38d76d9fe5ba1"
+    },
+    "stream/M10.bgmstart.mrg": {
+      "status": "transformed-or-unresolved",
+      "sha256": "aa6be3e7f13669432ad69ce27a3137c9124a1e809ecf96a735735926873ec8ce"
+    },
+    "stream/A40_C_1_0001.ogg": {
+      "status": "transformed-or-unresolved",
+      "sha256": "e7f30ba5961f9aa296ea73e0bcda165d484484b2754bb294308e2914990a7b06"
+    },
+    "stream/A40_C_1_0005.ogg": {
+      "status": "transformed-or-unresolved",
+      "sha256": "539b9efd408ebf24615533319d87a822534716c67d1cbbaaea06711eb0280f16"
+    }
+  },
+  "source_reproducible_release": false,
+  "translation": {
+    "source_blocks": 10,
+    "reference_blocks": 4,
+    "selected_indices": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "english_chengkong_repack_identical": true,
+    "source_sha256": "1be83a011592abfdb38e3cd201b736e2f5e6674825d692337251802d821cb1a6",
+    "target_sha256": "97e520efcd1e45bc3312ec36ce6d0f8e1a5c6af3d4451948b0f091bf9614f1c1",
+    "generator_sha256": "a49532c7c59eaba4d3c74e854c3584e8c7c5e6da66c292d18513a56f19a6009e"
+  },
+  "update": {
+    "name": "WITCH ON THE HOLY NIGHT v131072 (010012A017F18800) (UPD).nsp",
+    "bytes": 19474192,
+    "sha256": "e08e9f8440f945022c61285d0f9b519f85aaa168cc9184dc4d1069ec01075913",
+    "members": [
+      {
+        "name": "db83e0cdb33b5eb5a0868f3ddf15204b.nca",
+        "bytes": 18888192
+      },
+      {
+        "name": "13e96721a7dd278ca3934b10b3c83a96.nca",
+        "bytes": 438272
+      },
+      {
+        "name": "a7d45e4ce63172862e9181e9a733f089.nca",
+        "bytes": 142848
+      },
+      {
+        "name": "df36de05f6b42b3652b1b95962bda86d.cnmt.nca",
+        "bytes": 4608
+      }
+    ],
+    "merged_romfs_checked": false,
+    "nca_header_probe": {
+      "returncode": 0,
+      "member": "db83e0cdb33b5eb5a0868f3ddf15204b.nca",
+      "selected_metadata": [
+        "  Content Type:    Program"
+      ],
+      "temporary_nca_removed": true
+    }
+  },
+  "limits": [
+    "BASE matches use saved kit evidence, not a fresh full NSP extraction",
+    "Update contents not merged; changed voices have not been attributed to update",
+    "MOD UI requires conversion; archive hash inequality is not proof of missing source",
+    "Proof images and composed previews retain recovery-only provenance",
+    "Successful MOD text replay does not validate other production stages"
+  ],
+  "historical_chain": {
+    "native_color_migration": {
+      "source_manifest_sha256": "c7ce4d216f147cec4693019b6a20b18dd6f47ef9fdf27a5c6cb23229e8be3e14",
+      "method": "decode-dxt-inverse-alter-rgb-refit-native-unorm-v2",
+      "alpha_exact": true,
+      "original_source_recovered": false,
+      "second_lossy_DXT_encoding": true,
+      "rgb_fit": "nearest-and-inverse-endpoint-ls-v3-ui32-cg01pct",
+      "lossless_fallback_policy": {
+        "allui": "premult max>32",
+        "CG": "premult max>32 and count>=max(4,ceil(physicalPixels*0.001))"
+      }
+    },
+    "offline_story_memory_budget": {
+      "schema": "knife-offline-story-memory-budget-v1",
+      "rgba_allocation_cap": 1048576,
+      "maximum_width": 960,
+      "maximum_height_per_strip": 540,
+      "scope": "all story colour textures, irrespective of previously observed runtime use",
+      "language_strip_names": 84,
+      "whole_owner_also_bounded": true,
+      "date": "2026-11-02",
+      "source_manifest_sha256": "35d10167217002801416dfcf990ad3e3117a6dc1a60b1c6743bfa5ea0c885189",
+      "images_resized": 20181,
+      "all_story_colour_images_considered": true,
+      "logical_coordinates_preserved": true,
+      "runtime_resampling": false,
+      "editable_project": "higher resolution input retained unchanged; apply this offline policy when repacking"
+    },
+    "offline_ui_ranges": {
+      "schema": "knife-ui-direct-ranges-v1",
+      "bases": [
+        "CG_PARTS",
+        "ARCHIVE_PARTS",
+        "ARCHTHUMB_PARTS",
+        "DISP_PARTS",
+        "MENU_PARTS",
+        "SAVE_PARTS",
+        "CONF_PARTS",
+        "TITLE_PARTS",
+        "MODEPNL_PARTS",
+        "BORDER_PARTS",
+        "NOISE_PARTS",
+        "EXTRA_PARTS",
+        "SOUND_PARTS"
+      ],
+      "source_manifest_sha256": "0f161f5c868f109cbcaca0da8db2c57a8a1cce7260ad2d0335ba70952e3ae1a3",
+      "image_bytes_unchanged": true,
+      "storage": "raw-sector-katl",
+      "whole_atlas_preload": false
+    },
+    "manifest_verification": {
+      "files_hashed": true,
+      "source_preserved": false,
+      "resampled": true,
+      "runtime_hd_fallback": false
+    },
+    "legacy_kdu_present": false,
+    "new_driver_reads_update_or_mod": false,
+    "warning": "These are historical manifest declarations, not proof that all original recipes can be recovered."
+  }
+}

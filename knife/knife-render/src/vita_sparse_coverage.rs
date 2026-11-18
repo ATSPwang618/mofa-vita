@@ -104,13 +104,13 @@ struct OpaqueMask {
 
 const OPAQUE_MASKS: [OpaqueMask; 2] = [
     OpaqueMask {
-        index: 97422, entry: "KQ014710003F8000003F800000.NXZ",
+        index: 73049, entry: "KQ014710003F8000003F800000.NXZ",
         logical: [1420, 860], physical: [1065, 645],
         sha256: b"bd6587961a63188daeeb5ca04209e68582b7de6bc1879319ba310730f8c79440",
         rect: [286, 160, 776, 441],
     },
     OpaqueMask {
-        index: 98016, entry: "KQ0075D0003F8000003F800000.NXZ",
+        index: 73643, entry: "KQ0075D0003F8000003F800000.NXZ",
         logical: [1400, 840], physical: [1050, 630],
         sha256: b"c4a767ecfde836a17e9281f37e3d6d06366579cb42bc1b703442caf995486b8f",
         rect: [29, 23, 1013, 582],

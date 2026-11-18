@@ -1,6 +1,6 @@
 # 工具索引
 
-从项目根目录运行脚本。当前正式目标只有 **KNIF00540 / 原生 GXM / 960×540**。工具生成的日志、暂存文件放在 `.work/`；当前 `dist/` 只保留一份运行包，完整可编辑工程不在本机目录中，见 [仓库维护](../doc/09-仓库维护与清理.md)。
+从项目根目录运行脚本。当前正式目标只有 **KNIF00540 / 原生 GXM / 960×540**。工具生成的日志、暂存文件放在 `.work/`；当前 `dist/` 保留高清运行包、70%候选及旧运行包目录，80%候选与完整可编辑工程已不在本机目录中，见 [仓库维护](../doc/09-仓库维护与清理.md)。
 
 ## 构建与当前包检查
 
@@ -25,7 +25,7 @@
 | [limit_runtime_art.py](quality540/limit_runtime_art.py) / [verify_runtime_art.py](quality540/verify_runtime_art.py) | 旧基础条目的离线缩小与1MiB预算校验；不是新KQTL包完整制作器，见 [资源预算](../doc/04-资源调度与缓存.md) |
 | [prepare-vita-ps-help.py](prepare-vita-ps-help.py) | 从配套输入生成随程序内嵌的 PS 操作说明 PNG/KIMG；需要 Pillow 与 ispc_texcomp |
 | [credit-intro](credit-intro/README.md) | 感谢页源图、更新/检查脚本与回归测试 |
-| `generate_vita_asset_profile_540.py` | 清单与启动profile；当前依赖散装stream，不能直接检查只有音频归档的新包 |
+| `generate_vita_asset_profile_540.py` | 清单与启动profile；支持散装stream和音频bank成员，候选须显式指定--assets |
 | `generate-vita-atlas-index.py` / `generate-vita-stream-index.py` | 图集成员索引与音频文件名索引 |
 | [prepare_vita_ui_ranges.py](prepare_vita_ui_ranges.py) | 将选中的公共菜单/存读档及图录/书库等UI外层 NX 离线去除，逐张校验 KIMG 原字节，另存暂存结果；`--check` 校验直接读取布局，见 [UI 范围读取](../doc/04-资源调度与缓存.md) |
 | `prepare_game.py` / `create_540p.py` / `create_compact.py` | 历史初制链路；需要自备原始输入、字体、汉化和对应宿主工具 |
@@ -60,7 +60,26 @@
 
 ## 当前工具链边界（2026-11-17）
 
-- `vita_image_metadata.py`已验证KQ变体/分块及归档分卷；不能据此认定对应生成器也齐全。
-- 新分支的live alpha表引用`generate-vita-live-alpha-coverage.py`，该生成器未在当前Git树提供；完整KQTL/音频包制作入口尚未核验。
-- `export-original-switch-png.py`、`finalize-original-switch-png.py`、`audit-original-switch-scaling.py`、`repair-original-switch-scaling.py`为本地原版PNG工作工具，当前尚未提交。提取中间副本已清理，重跑需自备原始输入；详见[12](../doc/12-原版540p无损图片工程.md)。
+- `vita_image_metadata.py`验证KQ变体/分块及归档分卷；新的生成器与其独立验证，见下方NSP入口。
+- live alpha表引用的`generate-vita-live-alpha-coverage.py`仍未提供；重建通过保留哈希绑定图片并重新绑定索引延续已有证明，不宣称重新生成了支持域证明。
+- `export-original-switch-png.py`、`finalize-original-switch-png.py`、`audit-original-switch-scaling.py`、`repair-original-switch-scaling.py`已在Git跟踪，重跑需自备原始输入；详见[12](../doc/12-原版540p无损图片工程.md)。
 - 历史分析器/探针保留给对应格式及证据，不能因为正式游戏未调用而按死代码删除。缺少本机依赖的分析工具需先补齐依赖，不属于当前一键构建保证。
+
+## 最终资源制作与溯源
+
+唯一正式入口为 `rebuild_final_assets.py`；详细输入与操作见[中英提取教程](../doc/10-Switch原版资源提取.md)。不需要旧运行包、PNG工程或私人恢复kit。成功必须通过不可改写的103文件验收锁。
+
+| 工具 | 职责 |
+|---|---|
+| `rebuild_final_assets.py` | 源输入/工具身份、NSP合并、阶段恢复、完整验收、发布与受限清理 |
+| `replay_images.py` / `replay_legacy_images.py` | 历史原图处理、离线变体、分块及预览的源重放 |
+| `replay_misc.py` | MOD界面、字体、音频bank、项目致谢与确定性影片 |
+| `replay_resize.py` | 固定70%缩放；校验并跳过已完成档案 |
+| `replay_final_textures.py` | 固定11,616条PVRTC选择，保留其余DXT，校验最终档案 |
+| `source_replay/` | 固定配方、工具锁及自建辅助程序/源码；含明确标记的历史编码差分 |
+| `verify_final_delivery.py` | 最终103个物理文件集合、长度、SHA，绝不重写基准 |
+| `test_source_replay.py` / `test_asset_reproducibility.py` | 损坏输入、差分、检查点、换行差异与交付锁拒绝回归 |
+
+`resize_story_variants.py`、`convert_story_pvrtc.py`仍提供生产转换函数；正式入口固定参数/选择，不重新遍历已经淘汰的画质实验。
+
+旧`rebuild_from_nsp.py`、`prepare_recovery_kit.py`、`recover_runtime_recipe.py`保留作历史恢复调查工具，不是新用户教程；其候选门禁不解除。`build_recovered_runtime.py`、`rebuild_story_images.py`、`recovery_kit.py`内的解析/编码辅助函数仍被正式入口使用，不能整文件当死代码删除。历史角色与边界见收据57–60；当前验收见[61](../doc/evidence/61-source-exact-replay.json)。

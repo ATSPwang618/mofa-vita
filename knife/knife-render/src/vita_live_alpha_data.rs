@@ -3,7 +3,7 @@
 const LIVE_PLANS: &[LivePlan] = &[
     // IMG1769_06_06, grade 0
     LivePlan {
-        index: 79866, entry: "KQ0172E0003F8000003F800000.NXZ",
+        index: 60109, entry: "KQ0172E0003F8000003F800000.NXZ",
         logical: [770, 1969], physical: [578, 1477], bytes: 2097248,
         sha256: b"d12d642b735af23601bd22a4a72b1a473f684d804c36453ca5f9a5639d1b5314",
         extended: true,
@@ -57,7 +57,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG1769_02_02, grade 0
     LivePlan {
-        index: 79872, entry: "KQ0172A0003F8000003F800000.NXZ",
+        index: 60115, entry: "KQ0172A0003F8000003F800000.NXZ",
         logical: [770, 1969], physical: [578, 1477], bytes: 2097248,
         sha256: b"4f3cac7631ccba3b5b3b2f6039bf23696c6dd8d0c4995dd102d73cefb06ad589",
         extended: true,
@@ -108,7 +108,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG0846, grade 0
     LivePlan {
-        index: 95876, entry: "KQ005DF0003F8000003F800000.NXZ",
+        index: 71503, entry: "KQ005DF0003F8000003F800000.NXZ",
         logical: [1299, 1312], physical: [974, 984], bytes: 1048672,
         sha256: b"03e0ca7e68509309e8eb4e8aead715f8479bdbdf8fa7050f9f80c227f3cb7760",
         extended: false,
@@ -201,7 +201,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG2309, grade 0
     LivePlan {
-        index: 96029, entry: "KQ00B5D0003F8000003F800000.NXZ",
+        index: 71656, entry: "KQ00B5D0003F8000003F800000.NXZ",
         logical: [375, 1351], physical: [281, 1013], bytes: 524384,
         sha256: b"21fa0d0dd663eb401218bb04841d0e151017e636a53a02ad6573b10366b6a1e9",
         extended: false,
@@ -217,7 +217,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG0614_00_01, grade 0
     LivePlan {
-        index: 96272, entry: "KQ012070003F8000003F800000.NXZ",
+        index: 71899, entry: "KQ012070003F8000003F800000.NXZ",
         logical: [1620, 980], physical: [1215, 735], bytes: 2097248,
         sha256: b"a686022d367d1adf5ab09df72e6228f33ddb49330a8a799b27115c79976a4a50",
         extended: true,
@@ -279,7 +279,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG0476, grade 0
     LivePlan {
-        index: 96328, entry: "KQ0046D0003F8000003F800000.NXZ",
+        index: 71955, entry: "KQ0046D0003F8000003F800000.NXZ",
         logical: [1250, 1250], physical: [938, 938], bytes: 1048672,
         sha256: b"e556758305da11ae5592eebbfc4579dd521baf3fb602e19555558eb1edeb3468",
         extended: false,
@@ -354,7 +354,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG1671_20_20, grade 33
     LivePlan {
-        index: 96993, entry: "KQ016A12103F8000003F800000.NXZ",
+        index: 72620, entry: "KQ016A12103F8000003F800000.NXZ",
         logical: [1147, 1145], physical: [860, 859], bytes: 1048672,
         sha256: b"ad150e4d1e11d9129d5b76689cd4434deba0ecd3613221454b1010247551a0e8",
         extended: false,
@@ -399,7 +399,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG0624_10_10, grade 0
     LivePlan {
-        index: 97119, entry: "KQ012170003F8000003F800000.NXZ",
+        index: 72746, entry: "KQ012170003F8000003F800000.NXZ",
         logical: [1440, 880], physical: [1080, 660], bytes: 2097248,
         sha256: b"453c3bf0d581d3b920c26044fd60f24162fd6da6f8916fa82406ee5584ba5332",
         extended: true,
@@ -466,7 +466,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG0617, grade 0
     LivePlan {
-        index: 98107, entry: "KQ004FA0003F8000003F800000.NXZ",
+        index: 73734, entry: "KQ004FA0003F8000003F800000.NXZ",
         logical: [1400, 840], physical: [1050, 630], bytes: 2097248,
         sha256: b"af2cb51967f480512c56ff4ac3a6405d419ef8abcdd44b6e7e6c4f8f399befbb",
         extended: false,
@@ -507,7 +507,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG1524_10_00, grade 0
     LivePlan {
-        index: 98953, entry: "KQ015D70003F8000003F800000.NXZ",
+        index: 74580, entry: "KQ015D70003F8000003F800000.NXZ",
         logical: [1782, 210], physical: [1337, 158], bytes: 524384,
         sha256: b"d68f27c5c6543b511434aff9ddb746c9530e20d395bd1cc606691c53647d0850",
         extended: false,
@@ -529,7 +529,7 @@ const LIVE_PLANS: &[LivePlan] = &[
     },
     // IMG1524, grade 0
     LivePlan {
-        index: 99186, entry: "KQ0087F0003F8000003F800000.NXZ",
+        index: 74813, entry: "KQ0087F0003F8000003F800000.NXZ",
         logical: [1742, 190], physical: [1307, 143], bytes: 524384,
         sha256: b"397e3cc86a8f7e4071ff679693b8f76ae5f874da7bd61fb0b967dfd4ef1d7573",
         extended: false,

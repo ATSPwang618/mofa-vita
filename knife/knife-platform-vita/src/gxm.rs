@@ -413,6 +413,7 @@ impl Gxm {
         let gxt = GxtTexture::parse(file).map_err(|e| e.to_string())?;
         let format = match gxt.format {
             GxtFormat::Pvrtc4 => 0x8100_0000,
+            GxtFormat::PvrtcII4 => 0x8300_0000,
             GxtFormat::Dxt1 => 0x8500_0000,
             GxtFormat::Dxt5 => 0x8700_0000,
         };

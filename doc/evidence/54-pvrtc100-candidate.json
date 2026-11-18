@@ -1,0 +1,139 @@
+{
+  "build_tag": "perf-render-20261117-r10-assets100-pvrtc2",
+  "hardware_tested": false,
+  "verification": {
+    "manifest_files": 9573,
+    "unchanged_files": 87,
+    "original_entries_identical": 33826,
+    "fallbacks_identical": 8698,
+    "variants": 16255,
+    "appended_images": 118776,
+    "converted_images": 33494,
+    "summed_entry_gpu_payload_reduction": 4802376704,
+    "note": "Summed entry payloads include duplicates; this is not resident memory savings.",
+    "production_metadata_and_budget": {
+      "checked": 28604,
+      "protected": 5198,
+      "maximum_rgba_allocation": 1048576
+    },
+    "hardware_tested": false
+  },
+  "files": [
+    {
+      "path": "release/eboot.bin",
+      "bytes": 4583087,
+      "sha256": "0f67e5b4619d47d96333b5a4c6ebc78e9ef84cb9bc45da99ba1b4ae06455e525"
+    },
+    {
+      "path": "release/mofa-vita.vpk",
+      "bytes": 6684205,
+      "sha256": "e63bfa5e9fc22082619262771388364992deece16ec472ad9d8c5b5289407b5d"
+    }
+  ],
+  "conversion": {
+    "schema": "knife-pvrtc2-4bpp-candidate-v1",
+    "source_manifest_sha256": "caa3afb3e52913f3634f24fa6365c61e1502fab7837712e585b834fb1caf9a00",
+    "scale": 1.0,
+    "format": "PVRTC2 4bpp",
+    "quality_gate": {
+      "alpha_rmse": 4,
+      "composite_rmse": 5,
+      "composite_p99": 24
+    },
+    "archives": {
+      "jallpac": {
+        "bytes": 3310518272,
+        "volumes": 4,
+        "entries": 99657
+      },
+      "jallpachd": {
+        "bytes": 2370105344,
+        "volumes": 3,
+        "entries": 61272
+      },
+      "allpacml": {
+        "bytes": 14145536,
+        "volumes": 1,
+        "entries": 231
+      },
+      "allpachdml": {
+        "bytes": 10860544,
+        "volumes": 1,
+        "entries": 144
+      }
+    },
+    "counts": {
+      "protected": 8744,
+      "quality": 49994,
+      "accepted": 33494,
+      "format_or_small": 18271,
+      "no_storage_saving": 8273
+    },
+    "tiles_checked": 118776,
+    "seconds": 3831,
+    "source_bytes": 7227149935,
+    "candidate_bytes": 6665640504
+  },
+  "tests": {
+    "gxt_parser": 9,
+    "story_grid": 2,
+    "renderer": 176,
+    "native_upload_cases": 100,
+    "native_upload_checks": 1423,
+    "cache_concurrent_operations": 256,
+    "arm_build": true,
+    "package_check": true,
+    "embedded_profile_files": 46,
+    "eboot_matches_vpk": true
+  },
+  "encoder_provenance": [
+    {
+      "name": "psp2pvrt64.exe",
+      "bytes": 786432,
+      "sha256": "fe5bfed42e57971a8dfd7cb4b18999424e06a6f513f42a3f5aa4c29eabc95d24"
+    },
+    {
+      "name": "psp2gxt.exe",
+      "bytes": 270848,
+      "sha256": "f17d5df8b9adf34a32005ba249a9eba7026d335849513589d5d09f37433ae71a"
+    }
+  ],
+  "limitations": [
+    "No PS Vita hardware run",
+    "Observed dark-gradient banding in offline 1:1 comparison",
+    "Mixed-format tile seams and filtering require hardware validation",
+    "No software PVRTC2 decoder added",
+    "Input is existing DXT, not lossless original PNG"
+  ],
+  "rollback": ".work/pvrtc100-20261117/rollback-assets70-panel-lock",
+  "assets_manifest_sha256": "068100a1c6944587cdef032cf0f772b5a34259c46024dec384c34ca71473495e",
+  "optimization_mask": "0xcffffcfdfffffff",
+  "optimization_feature_count": 55,
+  "performance_console_default": true,
+  "quiet_build": false,
+  "offline_shader_count": 85,
+  "temporary_cleanup": {
+    "incomplete_archive_bytes_removed": 4014694400,
+    "encoding_cache_reclaimed_bytes_approx": 3749969801,
+    "policy": "Explicit generated files only; source packs preserved"
+  },
+  "tool_regression": {
+    "archive_audio_tests_passed": 2,
+    "resize_codec_tests_skipped": 2,
+    "skip_reason": "ispc_texcomp unavailable in this Windows Python; no image resize or BC encoder was changed"
+  },
+  "source_files": {
+    "tools/convert_story_pvrtc.py": "5422f8bd1194082f2fd016f81cc85b3908c4d681d6c49d420ffb4cfb1d12b3f8",
+    "tools/verify_story_pvrtc.py": "7bc3419eab0e0da6fb3dee681e9f55fe3fe9cbaf741c46be61c61ae84df196d3",
+    "tools/resize_story_variants.py": "b4709a29596c945a68897e25d180df2dcb651fc21bb53f156f46d56d26345c84",
+    "tools/vita_image_metadata.py": "aa1610b49c8313e767eddfd38b18e51a985c129e4f5519563afd5306c382122f",
+    "knife/knife/src/story_gxt.rs": "e6e79ea68bcd2958441eeae63f7f7e511b35dc5c7659c3cc3b365e229d02ee42",
+    "knife/knife/src/assets.rs": "712d0b26d0f1279c27292b2aee2427f5f9d730c4ee5c32c5c14fa50e6ae62185",
+    "knife/knife-platform-vita/src/gxt.rs": "844541b0e54c834193a7205b9cc006b91ffc6e1ffa3d76d2823e81edd3aca6d5",
+    "knife/knife-platform-vita/src/gxm.rs": "610e9d46efdd0d79e61f7bbfd5784b37bbaecca6a141612bff8ac9deadda94d4",
+    "knife/knife-render/src/vita.rs": "57f077b65a7f13be3447163ad6c4a0dff32094edd9a2a97b9a8c235770afa8c6",
+    "knife/vita/effects_backend.inc": "6dd02af1a099178de84a441e8ad0d4cc9ec53d04fbd8b6ee75eb95ee7df07fd6",
+    "knife/vita/tests/gxm_compressed_test.c": "16e77534af90b04c623b1b27c423e23a9bd969eedfc68d40665e842d697acd1b",
+    "knife/knife-platform-vita/src/asset_profile_540p.rs": "6e11cda89208b4a441671bd197c000a028cb21d1b8263919b9d9a9da60fef86a"
+  }
+}

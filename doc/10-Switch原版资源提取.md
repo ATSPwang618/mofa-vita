@@ -1,190 +1,135 @@
-# Switch 原版资源提取指南
+# 从 Switch 源文件重建最终 70% 混合纹理包
 
-2026-11-17版本边界：原版解包步骤仍用于提取源数据；下文r14/quality540转换表属于旧基础链，不是当前large-image包的完整重制流程。新版需要KQ变体、KQTL分块、savethumb及音频归档；profile生成器仍依赖散装stream，只有音频归档时不能直接执行最后的--check。当前身份与验证范围见[安装说明](08-素材与安装.md)。
+2026-11-18 · [English](10-switch-asset-extraction.en.md) · [文档索引](README.md)
 
-[返回项目首页](../README.md) · [English](10-switch-asset-extraction.en.md)
+## 固定目标与验收
 
-**先提取本体 + 1.02 更新的完整 RomFS，再准备字体和汉化，最后转换为 Vita 专用资源。** `prepare_game.py` 的输出是原版资源，不是能直接搭配当前 EBOOT 的 Vita 包。源码仓库与 VPK 都不包含游戏数据、密钥、固件或汉化文件，以下输入由使用者自行从自己持有的游戏/设备准备。
+唯一目标为 `Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct-PVRTC2-4bpp/assets/`。必须 **103个文件的路径、字节数、SHA-256全部一致**，不是仅尺寸相同或重新生成一份自洽清单。
 
-## 1. 准备输入与工具
+- 总大小：**5,030,762,588字节**，约4.685 GiB。
+- 清单SHA：`7c08cff36060b27bf7079917b4f984fe98c5dffe8cd6f9fd9859ee10ef59759d`。
+- 不可改写的基准：[59 最终文件锁](evidence/59-final-assets-lock.json)。
+- 实际执行状态：[61 复现收据](evidence/61-source-exact-replay.json)。只有 `exact_delivery_match=true` 才表示整包通过。
+- 配套程序：`perf-render-20261117-r10-assets70-pvrtc2` / `KNIF00540`。
 
-本项目已使用的输入版本如下；文件名可以不同，但游戏与更新版本必须匹配。
+正式入口是 **`tools/rebuild_final_assets.py`**。它不读取旧100% DXT包、旧70%包、既有最终成品或私人recovery kit。旧候选脚本不是本教程入口。
 
-| 输入 | 要求 |
+## 一、必要输入
+
+| 输入 | 内容 |
 |---|---|
-| 本体 NSP | 《WITCH ON THE HOLY NIGHT》，Title ID `010012A017F18000`，v0 / BASE |
-| 更新 NSP | 同一游戏的 **1.02**，更新 Title ID `010012A017F18800`，包版本 `v131072`；`--update` 指向 `.nsp` 文件，不是补丁目录 |
-| `prod.keys` | 使用者自己的 Switch 密钥文件，能够解密上述游戏与固件；脚本读取其原位置，不复制到 assets |
-| 固件目录 | 已解包的 Switch 固件 NCA 所在目录；支持目录下直接放 NCA，或注册内容目录中的 `<子目录>/00`。不能直接传固件 ZIP |
-| hactool | 自行取得 [SciresM/hactool](https://github.com/SciresM/hactool) 的 Windows 可执行文件，放在仓库的 `.tools/hactool/hactool.exe`；当前脚本固定读取此位置，仓库不附带该程序 |
-| Python | 建议 Python 3.11+；提取脚本仅使用标准库，不需要先安装图像转换依赖 |
-| 澄空汉化 | 若制作当前中文版本，另备与上述版本配套的汉化 MOD 的 `romfs` 目录，见第 5 步 |
+| BASE NSP | `WITCH ON THE HOLY NIGHT v0 (010012A017F18000) (BASE).nsp`，21,380,558,096字节 |
+| 1.02升级NSP | `WITCH ON THE HOLY NIGHT v131072 (010012A017F18800) (UPD).nsp`，19,474,192字节 |
+| 澄空MOD | `010012A017F18000/romfs`，包含 `allui.mrg`、`script_text.mrg`、`zc/arshanghaisonggbpro_lt.otf` |
+| 定制logo | `logo.mp4`，215,765字节；SHA `6bb49ee83aa8cc0f666db91d08583f5b7c9f656029a2bb4dc376fb844808aba0` |
+| 固件字库 | 自备Switch固件registered目录，或包含三份匹配Nintendo bfttf的目录 |
+| 提取及编码工具 | 自备prod.keys、nstool.exe、psp2pvrt64.exe、psp2gxt.exe、FFmpeg |
+| 本版本源码 | 包括tools/source_replay固定配方、两张credit-intro项目图片及生产数据表 |
 
-**当前提取脚本有明确适用范围：**只解析 PFS0 格式 NSP，按最大 NCA 选择候选并验证其 `Content Type: Program`；针对无需额外 ticket/title-key 处理的输入，不导入 ticket。XCI、NSZ、需要额外授权数据的 NSP，以及“最大 NCA 不是 Program”的其他打包布局，不在这条自动流程的支持范围。此时应先用适合自己备份格式的工具导出完整合并 RomFS，再从字体/资源检查步骤继续。
+**NSP不含澄空汉化、定制logo、项目致谢图和系统共享字体。** “一个命令”不等于“只有NSP就包含全部内容”。脚本可读取本机已有的固件并提取字体，不需要从旧运行包取字体。
 
-Windows 旧版 hactool 对 Unicode 路径支持有限。建议在纯英文路径检出源码，例如 `D:/mofa-vita`，密钥和固件路径也使用英文；`--out` 放在同一仓库的 `.work` 下。脚本向 hactool 传相对输出路径，**跨盘符输出不受支持**。原始 NSP 由 Python 读取，可使用带空格或中文的原路径。为 NCA、原始 RomFS 和转换中间产物预留数十 GiB 工作空间，不要按最终约数 GiB 的运行包估算。
+源身份按内容检查：
 
-## 2. 合并本体与 1.02 更新，提取共享字体
+- BASE Program NCA：`c134dd53826646afa027df1833254e0f999e6a6fc1c64bcf470944219f43da86`。
+- UPDATE Program NCA：`db83e0cdb33b5eb5a0868f3ddf15204b2173986b4402dad5bf65373731ab5ed4`。
+- `nintendo_udsg-r_std_003.bfttf`：`823913c9d80807979381e327846466f561f31ba1842cea8f7fedc5ad7d45d2ad`。
+- `nintendo_udsg-r_ext_zh-cn_003.bfttf`：`f5784e7a553fef9a05b3b7dba94e77e79162ace9db8dafc715ace0be1fd9b9ff`。
+- `nintendo_udsg-r_org_zh-cn_003.bfttf`：`a04eb490283d8393b2c49c52e315132461d790ac73996cb43ac869ce72003938`。
 
-以下为 **Windows PowerShell** 示例。从项目根目录执行；路径均为示例，请替换为自己的文件。若没有 `py` 启动器，用对应 Python 可执行文件替代 `py -3`。
+工具、MOD、配方及项目图片的完整身份见 `tools/source_replay/toolchain-lock.json`。不要改锁来接受不一致输出。
+
+## 二、最短操作步骤（Windows x64）
+
+### 1. 准备环境和路径
+
+验证环境：**Python 3.13.1 x64**、Pillow **11.3.0**、NumPy **2.3.3**、ispc_texcomp **1.0.1**。不要换编码器版本。
+
+在仓库根目录执行：
 
 ```powershell
-Set-Location 'D:\mofa-vita'
-$baseNsp = 'D:\mahoyo-input\WITCH ON THE HOLY NIGHT v0 (010012A017F18000) (BASE).nsp'
-$updateNsp = 'D:\mahoyo-input\WITCH ON THE HOLY NIGHT v131072 (010012A017F18800) (UPD).nsp'
-$keysFile = 'D:\mahoyo-input\prod.keys'
-$firmwareDir = 'D:\mahoyo-input\firmware-nca'
-$romfsDir = Join-Path (Get-Location).Path '.work\switch-romfs-1.02'
-
-py -3 tools/prepare_game.py --base "$baseNsp" --update "$updateNsp" --keys "$keysFile" --firmware "$firmwareDir" --out "$romfsDir"
-if ($LASTEXITCODE -ne 0) { throw '提取失败，请先处理错误，不要继续转换。' }
+python -m pip install --only-binary=:all: --target .work/replay-python -r tools/requirements-nsp-rebuild.txt
+Copy-Item tools/final-assets.example.json .work/final-assets.local.json
 ```
 
-这个命令按顺序完成：
+编辑JSON中的实际输入、工具路径。支持中文和空格。`work` 必须是仓库 `.work` 下的独立空目录；`output` 必须是新的独立目录，不能填现用成品。配置只保存路径，不保存密钥内容。
 
-1. 将两份 NSP 中的 NCA 解包到 `.work/nca/base/` 和 `.work/nca/update-1.02/`，记录来源、大小与 SHA-256。
-2. 检查候选 Program NCA。使用 hactool 的 `--basenca` 将本体作为更新 BKTR 分区的基础，导出**完整合并后的** RomFS。不能只提取更新文件，也不能把两组加密 NCA 文件直接覆盖当作合并。
-3. 扫描固件中的字体内容，提取下列四个 `.bfttf` 到同一个输出目录。字体不一定在游戏 NSP 内，所以只解包游戏会缺字体。
-4. 输出 `Assets ready` 摘要；详细记录位于 `doc/assets-provenance.json`、`doc/fonts-provenance.json`，提取日志位于 `doc/logs/`。这些是本机生成记录，包含本地来源路径，不应作为公开游戏资源上传。
+固件目录可填写：`C:/Users/你的用户名/AppData/Roaming/Ryujinx/bis/system/Contents/registered`。
 
-| 字体内容 Title ID | 提取文件 |
-|---|---|
-| `0100000000000811` | `nintendo_udsg-r_std_003.bfttf` |
-| `0100000000000814` | `nintendo_udsg-r_org_zh-cn_003.bfttf`、`nintendo_udsg-r_ext_zh-cn_003.bfttf` |
-| `0100000000000813` | `nintendo_udjxh-db_zh-tw_003.bfttf` |
+源码不附带密钥、固件或官方SDK工具。固定配方附带三个自编译宿主辅助程序及其源码/哈希，它们不是游戏EBOOT。
 
-提取阶段要求四个字体齐全；后续英语/澄空双语运行包只保留所需字体。`.bfttf` 按原名保留，不需要手动改名为 `.ttf`。
+### 2. 快速预检和重建
 
-## 3. 检查提取结果
+```powershell
+python -X utf8 tools/rebuild_final_assets.py --config .work/final-assets.local.json --check
+python -X utf8 tools/rebuild_final_assets.py --config .work/final-assets.local.json
+```
 
-`$romfsDir` 应当直接包含资源文件，不能再多套一层 `romfs/`：
+预检检查配置、MOD、logo、依赖、工具和配方。完整Program NCA及固件字体在正式提取阶段检查；预检通过不代表整包复现成功。
+
+完成输出：
 
 ```text
-switch-romfs-1.02/
-  allscr.mrg                  # 剧情脚本
-  script_text.mrg             # 文本
-  jallpac.{hed,mrg,nam}       # 普通剧情图库，三个独立文件
-  jallpachd.{hed,mrg,nam}     # 高清图库，离线转换输入
-  allpacml.{hed,mrg,nam}      # 多语言图片
-  allpachdml.{hed,mrg,nam}
-  allui.{hed,mrg,nam}         # 界面图集
-  parts.hed / parts.mrg
-  witch.bfsar
-  exfont_nx01.bffnt
-  nintendo_*.bfttf            # 上一步补入的共享字体
-  stream/                    # 原版声音流
-  movie/
-  en/  zc/  ...              # 其他语言/资源目录也先保留
+你的输出目录/
+  assets/                      # 固定103个文件
+  source-rebuild-receipt.json   # 来源、配方和完整验收结果
 ```
 
-先做文件存在性检查；它只能发现缺失，不能证明内容解密和版本正确：
+成功提示必须是 `EXACT FINAL DELIVERY VERIFIED`。失败保留现场，不发布半成品。重跑同一命令复用已校验阶段及缓存。输入/配方改变会拒绝混用。
+
+若异常退出留下 `exact-replay.lock`，先确认其中PID已结束，再删除这一个锁文件续建；不要并行启动两个同目录任务。
+
+### 3. 独立验收
 
 ```powershell
-$requiredFiles = @('allscr.mrg', 'script_text.mrg', 'witch.bfsar', 'exfont_nx01.bffnt',
-  'nintendo_udsg-r_std_003.bfttf', 'nintendo_udsg-r_org_zh-cn_003.bfttf',
-  'nintendo_udsg-r_ext_zh-cn_003.bfttf', 'nintendo_udjxh-db_zh-tw_003.bfttf')
-foreach ($archive in @('jallpac', 'jallpachd', 'allpacml', 'allpachdml', 'allui')) {
-  foreach ($extension in @('hed', 'mrg', 'nam')) { $requiredFiles += "$archive.$extension" }
-}
-$missingFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $romfsDir $_) -PathType Leaf) })
-if ($missingFiles.Count) { throw "缺少文件：$($missingFiles -join ', ')" }
+python -X utf8 tools/verify_final_delivery.py --assets "你的输出目录/assets"
 ```
 
-有宿主 Rust 工具链时，可使用仓库中的 `kdu` 再检查归档索引和全部脚本；这是 PC 工具，不是 Vita EBOOT：
+应返回 `physical_files=103`、`physical_bytes=5030762588`、`exact_delivery_match=true`。独立验证只证明文件相同；来源证据看同目录重建收据。
 
-```powershell
-cargo +1.99.0 build --manifest-path knife/Cargo.toml --locked --release -p kdu
-if ($LASTEXITCODE -ne 0) { throw 'kdu 构建失败。' }
-# 默认 Cargo 输出目录；若设置了 CARGO_TARGET_DIR，请改用实际路径。
-$kduExe = '.\knife\target\release\kdu.exe'
-& $kduExe --romfs "$romfsDir" list jallpac
-if ($LASTEXITCODE -ne 0) { throw '剧情归档读取失败。' }
-& $kduExe --romfs "$romfsDir" parse-all
-if ($LASTEXITCODE -ne 0) { throw '脚本解析失败。' }
-```
+本次正式入口复用了此前已经从声明源文件生成并验证的图像/音频缓存以及RomFS，随后重新校验、组包并执行整包验收；没有为证明“一键”而再次重复全部耗时转换。收据明确记录这种续建范围，不把它写成第二次全冷启动实测。
 
-`kdu` 还支持 `extract`、`export-bntx` 和 `scenes`，可用 `--help` 查看。提取素材不要求另外导出 ExeFS 或替换仓库已有的游戏表。
+本流程只生成 **assets**，不会重打EBOOT/VPK或调整存档、画质政策、按键、日志及音频方案。字节一致的资源继续使用既有配套程序。
 
-## 4. 已有完整 RomFS，或只有字体提取失败
+## 三、实际制作链
 
-如果已经从自己的工具导出了**应用 1.02 更新后的完整 RomFS**，将 `$romfsDir` 指向该目录，补字体即可：
+1. 读取固定Program NCA、校验SHA，以nstool `--basenca` 合并BASE和1.02升级。更新语音、脚本、shader来自合并RomFS。
+2. 用生产MZP解析器处理MOD，选 `blocks[2:6]` 保留英语/澄空，使用MOD字体，按序号生成UI、语言标记和别名。
+3. 重放历史图片流程：早期BC7/JPEG缩放、PNG优化、原生颜色迁移、后期画质更新、语言条带及内存预算缩放。一次Lanczos缩放不能代替历史多轮编码。
+4. 生成离线调色变体、504像素核心/4像素保护边的大图块、低内存fallback、存档预览。调色/缩放顺序、alpha、重名缩略图序号固定。
+5. 执行原70%物理尺寸策略。70%不是JPEG质量值；逻辑坐标、画布、UI、控制图及保护fallback不统一乘0.7。
+6. 按固定选择表重编码最终入选的 **11,616个PVRTC条目**，其余保持DXT；共享输入可复用载荷。不重新试验此前已淘汰的材质。
+7. 从源Opus转换音频，固定Ogg序列号/CRC，生成voice/bgm bank及M10启动片段。用固定FFmpeg参数处理影片，使用声明的logo。
+8. 保留容器压缩级别、扇区填充、去重、分卷、名字表CRLF和UI标题追加更新留下的旧数据区。70%重打包本来就不使用的100%垃圾区无需生成。
+9. 全部文件通过不可变交付锁后才发布输出和成功收据。
 
-```powershell
-py -3 tools/prepare_game.py --base "$baseNsp" --update "$updateNsp" --keys "$keysFile" --firmware "$firmwareDir" --out "$romfsDir" --fonts-only
-if ($LASTEXITCODE -ne 0) { throw '字体提取失败。' }
-```
+## 四、历史兼容配方是什么
 
-`--fonts-only` 跳过 NSP 解包与游戏 RomFS 提取，但当前参数解析仍要求填写 `--base`、`--update`；该模式不会读取两者。不要把只含更新差异的目录当作完整 RomFS。更换游戏/更新输入时不要复用旧 `.work/nca/` 缓存：目前复用检查依赖文件名和长度，并非每次重算内容哈希；使用独立检出或先移走旧缓存和输出目录。
+`tools/source_replay/` 包含生成合同、生产调色LUT、历史Ogg序列号、清单模板、工具锁及**明确标记的历史二进制编码差分**，不只是尺寸表。
 
-## 5. 澄空汉化与转换输入
+旧Intel/AMD近似倒数舍入、PNG封装及少量DXT/影片编码差异会影响SHA。宿主辅助程序重放BC7/JPEG缩放、颜色迁移和ISPC舍入；剩余历史差异由 `historical-corrections.json.gz` 恢复。
 
-本体提取不会自动加入澄空汉化。历史初制脚本 `tools/create_540p.py` 要求 `--mod` 指向 MOD 的 **`romfs` 内层目录**，且恰好包含以下四个文件；不要传包含 `atmosphere/contents/<TitleID>/` 的外层目录：
+当前固定127项兼容差分。两段影片采用固定单线程滤镜和x264编码，再恢复旧容器中的历史编码字节；两段各自已经完成两次独立编码一致性验证。图片仍按3个工作进程并行。
 
-```text
-romfs/
-  allui.mrg
-  script_text.mrg
-  zc/arshanghaisonggbpro_lt.otf
-  zt/SungASC-Medium.TTF
-```
+差分必须先匹配**源生成中间结果的SHA**，然后核验补丁SHA和输出SHA。不模糊套用，不从旧运行包补缺图。它含历史编码差分，**不能称为完全不含游戏派生数据的纯元数据，也不代表旧算法已经全部还原**。
 
-该脚本私有复制汉化文件，并保留原版提取目录供检查和从原图重建。其他版本 MOD 若文件集合不同，会触发 `Unexpected MOD file set`，需要先核对版本，不能删文件凑数。汉化的使用/分发条件以其作者说明为准。
+复现合同是：**声明的源输入＋本版本固定历史配方＋锁定工具 → 同SHA成品**。其中一张历史预览名称与实际图像不一致，也通过明确源序号及校验保留，不能擅自修正画面却仍声称历史哈希一致。
 
-制作历史 540p 中间包时，先将本节构建的 `kdu.exe` 复制到脚本要求的位置，再运行：
+## 五、时间、磁盘和失败处理
 
-```powershell
-Copy-Item -LiteralPath $kduExe -Destination tools/kdu.exe
-Copy-Item -LiteralPath $kduExe -Destination tools/kdu-compact.exe
-$modRomfs = 'D:\mahoyo-input\chengkong\romfs'
-py -3 tools/create_540p.py --source "$romfsDir" --mod "$modRomfs" --out '.work/chengkong-540p-source' --jobs 4
-if ($LASTEXITCODE -ne 0) { throw '汉化/540p 中间包生成失败。' }
-```
+- 默认3个有界工作进程；内容寻址缓存与已验收阶段支持续建，不重跑已完成转换。
+- 首次仍需真实编码时间，不承诺几分钟完成。新建任务至少 **50 GiB临时可用空间**，不计已经存放的源文件。
+- 提取成功立即删除本次NCA副本。全流程成功默认清理任务提取目录、100%/70%中间包及编码缓存；`--keep-work` 保留它们用于调查。
+- 不删除原始NSP、升级档、MOD、logo、固件或既有成品。失败保留现场，不递归清理仓库根目录。
+- 换NumPy/GPU编码实现可能改变SHA，不能为了提速悄悄改变复现合同。
 
-输出为 `.work/chengkong-540p-source/assets/`，**仍是转换中间包**。该脚本可能为未改动文件创建 NTFS 硬链接；不要在中间目录中原位修改这些文件，否则可能改到原版输入。另存转换结果或先断开链接。
-
-## 6. 从原版输入到当前 Vita 包的边界
-
-**当前仓库没有一条已验证的“干净检出 + NSP → r14 同身份 assets”一键命令。** 原始提取流程与上述中间包入口可以按源码核对；后续工具中仍有固定历史目录、旧收据和宿主工具依赖。下表说明转换顺序与各自合同，不应把各行无条件串成一键脚本：
-
-| 阶段 | 工具与要求 |
+| 报错 | 处理 |
 |---|---|
-| PNG/JPEG、Ogg Opus、H.264 MP4 中间资源 | `create_compact.py --source <上一步 assets> --out <新目录> --ffmpeg <ffmpeg.exe> --jobs 4`；需要 `tools/kdu-compact.exe`、`tools/requirements-compact.txt` 中的 Pillow，且 `ffprobe.exe` 与 FFmpeg 同目录。Ogg 是容器，此处声音是 Opus |
-| 英语/澄空精简 | `slim_languages.py` 处理语言条带、文字和映射，保留原语言 ID1/2；仍依赖固定 Compact 目录及 `verify_compact_assets.py` 生成的历史收据，不能只手动删除 `ja/zt` 文件夹 |
-| Vita DXT/颜色合同 | `make-vita-assets.py` / `pack_dxt_540.py` 的旧输出可能含 **codec8 预烘焙**，还依赖 `psp2gxt` 宿主工具（`KNIFE_VITA_GXT`）。不能直接部署；旧包迁移工具 `migrate-vita-native-color.py` 另有已知输入数量/收据要求。当前目标是 **codec9、encoded UNORM** |
-| 从原图提升剧情图库质量 | [quality540](../tools/quality540/README.md)：`rebuild_all_art.py` 使用原始 `$romfsDir` 和已有匹配 Vita 基包，只重建两大剧情图库；不是从零生成全包。依赖 Pillow、NumPy、`ispc_texcomp==1.0.1` |
-| 离线显存限额 | `quality540/limit_runtime_art.py` 使用匹配的运行包与可编辑工程，另存受限归档；`verify_runtime_art.py` 校验。限制的是潜在 RGBA 展开后的单图分配，不能省略 |
-| r11 UI 按成员读取 | `prepare_vita_ui_ranges.py --assets <完整 Vita assets> --output <新的暂存目录>`；校验后合入所输出的归档、索引和清单。暂存目录不是完整运行包 |
-| 最终身份与程序配套 | 更新 `vita-540p-assets.json`、启动 profile、atlas/stream 索引，然后重编 EBOOT；独立生成的素材不一定与现成 EBOOT 的校验值一致 |
+| Unsupported/corrupted nsp/update | 检查BASE和1.02 Program NCA，不改锁 |
+| Translation input / Custom logo differs | 使用匹配MOD或定制logo |
+| Required firmware fonts unavailable | 补充自备固件；它们不在游戏NSP内 |
+| Tool / Python dependency differs | 安装锁定版本 |
+| Historical encoder intermediate changed | 保留中间结果调查，不强行套补丁 |
+| Checkpoint changed / Corrupted cache | 定位被改动文件，不用旧成品填补 |
+| FINAL_DELIVERY_MISMATCH | 不是指定成品，不会宣告成功 |
 
-最终包的清单应满足 `schema=knife-540p-assets-v1`、`method=native-540p-encoded-unorm-v2`、`color_contract=encoded-unorm8-v1`、语言 `en/zc`；当前启动生成器还要求 9,470 个 stream 文件。原始高清归档不直接部署；也不要仅修改清单标签使旧 codec8 包冒充新格式。
-
-**仅在完整最终包及其 SHA/尺寸清单已生成、所有暂存改动已正确合入后**，放入标准目录并生成配套源码，再按[构建文档](03-构建与工具链.md)编译：
-
-```powershell
-$vitaAssets = 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets'
-py -3 tools/generate_vita_asset_profile_540.py --assets "$vitaAssets"
-if ($LASTEXITCODE -ne 0) { throw '素材合同/清单不匹配。' }
-py -3 tools/generate-vita-atlas-index.py "$vitaAssets" knife/knife/data/vita_atlas_index_540p.rs
-if ($LASTEXITCODE -ne 0) { throw '图集索引生成失败。' }
-py -3 tools/generate-vita-stream-index.py "$vitaAssets/vita-540p-assets.json" knife/knife/data/vita_stream_index_540p.txt
-if ($LASTEXITCODE -ne 0) { throw '声音索引生成失败。' }
-py -3 tools/generate_vita_asset_profile_540.py --assets "$vitaAssets" --check
-if ($LASTEXITCODE -ne 0) { throw '启动 profile 校验失败。' }
-py -3 tools/prepare_vita_ui_ranges.py --assets "$vitaAssets" --check
-if ($LASTEXITCODE -ne 0) { throw 'UI 成员布局校验失败。' }
-```
-
-`generate_vita_asset_profile_540.py` **验证已有清单并生成 Rust profile，不会将原版文件自动转换或替你重建缺失的清单**。最终复制的是完整包的 `assets/` 内容，设备应能直接找到 `ux0:data/WitchontheHolyNight/assets/allscr.mrg`，而不是 `assets/assets/allscr.mrg`。部署路径和版本对应关系见[素材与安装](08-素材与安装.md)。
-
-## 常见提取问题
-
-| 现象 | 检查项 |
-|---|---|
-| 找不到 hactool / `WinError 2` | `.tools/hactool/hactool.exe` 是否存在；它不随 Git 提供，也不是 VitaSDK 工具 |
-| 解密、key generation、Rights ID 错误 | 自有密钥是否匹配输入、该 NSP 是否超出自动脚本支持范围；不要公开密钥或将其放入资源包 |
-| BKTR/base NCA 错误或缺大量原版文件 | 必须配套本体 + 1.02，完整导出，而不是仅更新差异 |
-| `Shared fonts not found` | 固件是否先解包，路径是否直接包含 NCA 或注册内容子目录的 `00`，是否存在三个字体 Title ID |
-| `Unexpected MOD file set` | 指向正确的汉化 `romfs` 内层目录，核对四个文件与 MOD 版本 |
-| `WRONG FILE SIZE` / 启动素材校验失败 | 新素材与旧 EBOOT/profile 混用，或复制不完整；按最终包重新生成元数据并构建配套程序 |
-
-本节命令依据仓库脚本及 [hactool 上游选项](https://github.com/SciresM/hactool#usage)核对。此次文档更新未重新解包整份 NSP，也未声称完成从干净环境重制当前运行包的端到端验证。
+旧80%、70%纯DXT、100%PVRTC及私人kit候选教程已退出当前操作流程；旧收据仅作有日期的调查证据。文件一致不是新增实机帧率或稳定性测试。

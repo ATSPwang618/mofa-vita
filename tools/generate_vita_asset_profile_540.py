@@ -7,6 +7,7 @@ Vita reads small metadata files and only the edges of large payloads at startup.
 import argparse
 import hashlib
 import json
+import struct
 from pathlib import Path, PurePosixPath
 import zlib
 from vita_image_metadata import check_story_rgba_budget
@@ -15,6 +16,31 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita/assets'
 OUTPUT = ROOT / 'knife/knife-platform-vita/src/asset_profile_540p.rs'
 MARKER = 'vita-540p-assets.json'
+
+
+def audio_bank_locations(assets):
+    """Resolve logical stream names without extracting duplicate loose audio."""
+    result = {}
+    for name in ('voice.mrg', 'bgm.mrg'):
+        path = assets / name
+        if not path.is_file():
+            continue
+        with path.open('rb') as source:
+            magic, count, crc = struct.unpack('<8sII', source.read(16))
+            assert magic == b'KAUDMRG1' and 0 < count <= 16384, name
+            index = source.read(count * 40)
+        assert len(index) == count * 40 and zlib.crc32(index) == crc, name
+        end, previous = 16 + count * 40, ''
+        for offset in range(0, len(index), 40):
+            record = index[offset:offset+40]
+            key = record[:32].split(b'\0')[0].decode('ascii')
+            position, size = struct.unpack('<II', record[32:])
+            assert key > previous and '/' not in key and '\\' not in key
+            assert position == end and size > 0 and 'stream/' + key not in result
+            result['stream/' + key] = (path, position, size)
+            previous, end = key, position + size
+        assert end == path.stat().st_size, name
+    return result
 
 
 def generate(assets: Path = ASSETS, base_assets=None):
@@ -34,7 +60,10 @@ def generate(assets: Path = ASSETS, base_assets=None):
     streams = sorted(n for n in files if n.startswith('stream/') and n not in start_sidecars)
     assert len(streams) == 9470
     names += [streams[0], streams[-1], *start_sidecars]
-    records = [(MARKER, marker)]
+    banks = audio_bank_locations(assets)
+    if base_assets is not None:
+        for key, value in audio_bank_locations(base_assets).items():
+            banks.setdefault(key, value)
     rows = []
     total_read = 0
     for name in [MARKER] + names:
@@ -42,23 +71,35 @@ def generate(assets: Path = ASSETS, base_assets=None):
         assert not pure.is_absolute() and '..' not in pure.parts and ':' not in name and '\\' not in name
         p = assets / name
         if not p.is_file() and base_assets is not None: p = base_assets / name
-        size = p.stat().st_size
+        offset = 0
+        if p.is_file():
+            size = p.stat().st_size
+        else:
+            p, offset, size = banks[name]
         if name != MARKER:
             expected = files[name]
             assert size == expected['bytes'], name
             with p.open('rb') as f:
+                f.seek(offset)
                 digest = hashlib.sha256()
-                for block in iter(lambda: f.read(1024 * 1024), b''):
+                left = size
+                while left:
+                    block = f.read(min(left, 1024 * 1024))
+                    assert block, name
                     digest.update(block)
+                    left -= len(block)
                 assert digest.hexdigest() == expected['sha256'], name
         if name == MARKER or size <= 1024 * 1024:
-            data = p.read_bytes()
+            with p.open('rb') as f:
+                f.seek(offset)
+                data = f.read(size)
             content = f'ContentCheck::Full(0x{zlib.crc32(data):08x})'
             total_read += size
         else:
             with p.open('rb') as f:
+                f.seek(offset)
                 first = zlib.crc32(f.read(4096))
-                f.seek(size - 4096)
+                f.seek(offset + size - 4096)
                 last = zlib.crc32(f.read(4096))
             content = f'ContentCheck::Edges {{ first: 0x{first:08x}, last: 0x{last:08x} }}'
             total_read += 8192

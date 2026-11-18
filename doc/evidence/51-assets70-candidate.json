@@ -1,0 +1,43 @@
+{
+  "build_tag": "perf-render-20261117-r10-assets70",
+  "optimization_mask": "0xcffffcfdfffffff",
+  "optimization_features": 55,
+  "vitadeck_logs": true,
+  "files": {
+    "eboot.bin": {
+      "bytes": 4582499,
+      "sha256": "b1da0903fd9628fdfbeb5841e54f7347bde6fc90c32d9786857a79c82abae9e4"
+    },
+    "mofa-vita.vpk": {
+      "bytes": 6684658,
+      "sha256": "966700e8154720f8a041b893e6e2e4c99b4a15ea153735041c84bc39bc141429"
+    },
+    "assets/vita-540p-assets.json": {
+      "bytes": 1609196,
+      "sha256": "030d9a670428de03c4a9c5cb88b127772ace6432365c3276d7dafa6b3a6ec316"
+    }
+  },
+  "verification": {
+    "manifest_files": 9571,
+    "unchanged_files": 87,
+    "original_entries_identical": 33826,
+    "fallbacks_identical": 8698,
+    "variants": 16255,
+    "resized": 16214,
+    "preserved_variants": 41,
+    "production_metadata_and_budget": {
+      "checked": 28604,
+      "protected": 5198,
+      "maximum_rgba_allocation": 1048576
+    },
+    "source_bytes": 7227149935,
+    "candidate_bytes": 5213631610,
+    "hardware_tested": false
+  },
+  "coverage_rebind_entries": 13,
+  "host_render_tests": 175,
+  "hardware_tested": false,
+  "previous80_bytes": 5748285042,
+  "startup_profile_checks": 44,
+  "offline_gxp_programs": 85
+}

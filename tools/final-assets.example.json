@@ -1,0 +1,16 @@
+{
+ "nsp":"D:/my-inputs/WITCH-BASE.nsp",
+ "update":"D:/my-inputs/WITCH-1.02-UPD.nsp",
+ "mod":"D:/my-inputs/Chengkong/010012A017F18000/romfs",
+ "logo":"D:/my-inputs/logo.mp4",
+ "firmware":"C:/Users/YOUR_NAME/AppData/Roaming/Ryujinx/bis/system/Contents/registered",
+ "keys":"C:/Users/YOUR_NAME/AppData/Roaming/Ryujinx/system/prod.keys",
+ "nstool":"D:/my-tools/nstool.exe",
+ "encoder":"D:/my-tools/psp2pvrt64.exe",
+ "packer":"D:/my-tools/psp2gxt.exe",
+ "ffmpeg":"D:/my-tools/ffmpeg.exe",
+ "python_deps":"D:/AI-CODEX/mofa-vita/.work/replay-python",
+ "work":"D:/AI-CODEX/mofa-vita/.work/exact-source-build",
+ "output":"D:/AI-CODEX/mofa-vita/dist/Source-Rebuilt-70pct-Mixed",
+ "workers":3
+}

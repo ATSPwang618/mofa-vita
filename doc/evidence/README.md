@@ -1,5 +1,13 @@
 # 验证证据索引
 
+2026-11-17 提取教程与70%包复核：[53-assets70-extraction-audit.json](53-assets70-extraction-audit.json)，103个物理文件、9,571项完整SHA、44项启动profile通过；区分历史原图来源、现存转换入口与缺口，未改资源/重打程序。
+
+2026-11-17 书签栏按钮禁用：[52-bookmark-panel-lock.json](52-bookmark-panel-lock.json)，70%候选程序中禁用快退/快进按钮，6项控制策略测试、ARM构建和包内外EBOOT核验通过；实机待验。
+
+2026-11-17 70%材质候选：[51-assets70-candidate.json](51-assets70-candidate.json)，实测4.8556 GiB，比80%再减509.9 MiB；资源检查、175项串行host、ARM构建与程序配对通过，实机待验。
+
+2026-11-17 80%材质候选：[50-assets80-candidate.json](50-assets80-candidate.json)，资源容量6.73→5.35 GiB；完整性、串行host与ARM构建通过，实机待验。
+
 2026-11-17 文档与死代码维护：[49-documentation-maintenance.json](49-documentation-maintenance.json)。该记录区分本轮检查和此前构建/实机结果。
 
 收据固定记录当次源码、输入和程序身份；历史测试与实机结果不能直接归给最新构建。当前large-image/R10交付及2026-11-17清理汇总看[48](48-large-image-integration.json)，字号47和维护46均为历史快照，实际硬件性能仍需对应版本日志。旧临时路径可能已清理。
@@ -51,3 +59,17 @@
 - [36-material-coverage.json](36-material-coverage.json)
 
 已移除的逐轮文档可用 [history-index.json](history-index.json) 查原提交/路径。字号构建与检查日志位于 `.work/story-font-20261113/`；此前维护日志位于 `.work/cleanup-20261113/`，不随源码分发。
+
+- [54 全尺寸PVRTC2候选](54-pvrtc100-candidate.json)：容量、转换边界、全量资源核验、测试、EBOOT/VPK哈希；实机未验证。
+
+- [55 70%混合纹理候选](55-pvrtc70-candidate.json)：源包哈希、尺寸/回退保留、容量、配套程序身份与日志配置；实机未验证。
+
+- [56 最终70%混合包提取教程审计](56-final-mixed-extraction-audit.json)：真实NSP有界读取、生产提取函数往返、真实PVRTC重编码、全包校验与定向清理；不是完整NSP端到端重建。
+
+- [57 NSP重建验证](57-nsp-reconstruction-audit.json)：恢复配方、私人补充输入、真实BASE解包、完整资源重建及配套程序检查；请以status字段判断整链是否完成，实机验证另列。
+
+- [58 原始输入来源审计](58-reconstruction-source-audit.json)：MOD文本逐字节重放、字体直拷、更新索引及历史制作链声明；不含全包重编码。
+- [59 最终交付文件锁](59-final-assets-lock.json)：唯一最终assets的103个物理文件SHA，不是生成配方。
+- [60 复现门禁与文档清理](60-source-reproduction-guards.json)：测试、CLI拒绝检查、删除的冗余文档身份；该收据生成时完整源重建目标尚未完成；后续结果见61。
+
+- [61 源文件精确重放与清理](61-source-exact-replay.json)：完整103文件验收、实际源转换缓存复用、正式入口运行、确定性影片、历史编码差分范围与磁盘清理；不含新的实机测试。

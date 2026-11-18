@@ -124,7 +124,7 @@ def leaves(data, suffix=''):
         yield from leaves(data[start:start+size], suffix+f'_m{i:02d}')
 
 
-def textures(data):
+def textures(data, production_bc3=False):
     if data[:4] != b'BNTX':
         if data.startswith((b'\x89PNG', b'\xff\xd8', b'DDS ')):
             yield 0, '', Image.open(io.BytesIO(data)).convert('RGBA'), 'raster'
@@ -164,6 +164,9 @@ def textures(data):
         assert len(linear) == wb*hb*bpb
         if block == 1:
             image = Image.frombytes('L' if bpb == 1 else 'RGBA',(w,h),linear).convert('RGBA')
+        elif production_bc3 and fmt in (0x1c01,0x1c06):
+            from bc3_production import decode
+            image = decode(linear,w,h)
         elif fmt == 0x1d01:
             image = decode_bc4(linear,w,h)
         else:

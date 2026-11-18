@@ -36,6 +36,11 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates cmake curl git ninja-build python3
 
+      - name: Test asset reconstruction safeguards
+        run: |
+          python3 -m unittest discover -s tools -p test_asset_reproducibility.py -v
+          python3 -m unittest discover -s tools -p test_source_replay.py -v
+
       - name: Cache Rust toolchain and crates
         uses: actions/cache@v4
         with:

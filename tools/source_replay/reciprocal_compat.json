@@ -1,0 +1,7 @@
+{
+  "schema": "ispc-reciprocal-compat-v1",
+  "module_sha256": "1e69c985ec6a499f541f1d403b1697d8255b6ea07d4aa60a6957e06593b9bf98",
+  "sites": 282,
+  "platform": "win_amd64",
+  "package": "ispc_texcomp==1.0.1"
+}

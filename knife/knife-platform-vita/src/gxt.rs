@@ -9,6 +9,7 @@ const MAX_FILE_LEN: usize = 16 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GxtFormat {
     Pvrtc4,
+    PvrtcII4,
     Dxt1,
     Dxt5,
 }
@@ -95,6 +96,7 @@ impl<'a> GxtTexture<'a> {
         }
         let format = match word(52) {
             0x8100_0000 => GxtFormat::Pvrtc4,
+            0x8300_0000 => GxtFormat::PvrtcII4,
             0x8500_0000 => GxtFormat::Dxt1,
             0x8700_0000 => GxtFormat::Dxt5,
             _ => return Err(GxtError::UnsupportedFormat),
@@ -104,7 +106,7 @@ impl<'a> GxtTexture<'a> {
         let backing_height = u32::from(height).next_power_of_two().max(min);
         let pixels = backing_width.checked_mul(backing_height).ok_or(GxtError::InvalidDimensions)?;
         let expected = match format {
-            GxtFormat::Pvrtc4 | GxtFormat::Dxt1 => pixels / 2,
+            GxtFormat::Pvrtc4 | GxtFormat::PvrtcII4 | GxtFormat::Dxt1 => pixels / 2,
             GxtFormat::Dxt5 => pixels,
         };
         let payload_size = usize::try_from(expected).map_err(|_| GxtError::LengthMismatch)?;
@@ -170,6 +172,16 @@ mod tests {
         assert_eq!(g.texture_type, ARBITRARY);
         assert_eq!(g.data.len(), 32);
         assert!(std::ptr::eq(g.data.as_ptr(), bytes[80..].as_ptr()));
+    }
+
+    #[test]
+    fn pvrtc2_uses_four_bpp_and_preserves_npot_dimensions() {
+        let bytes = fixture(508, 508, ARBITRARY, 0x8300_0000, 64, 131072);
+        let g = GxtTexture::parse(&bytes).unwrap();
+        assert_eq!(g.format, GxtFormat::PvrtcII4);
+        assert_eq!((g.width, g.height, g.backing_width, g.backing_height), (508, 508, 512, 512));
+        assert_eq!(g.data.len(), 131072);
+        assert!(GxtTexture::parse(&fixture(508, 508, ARBITRARY, 0x8300_0000, 64, 262144)).is_err());
     }
 
     #[test]

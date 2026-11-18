@@ -251,7 +251,7 @@ impl Touch {
             wbtn: Default::default(),
             panel_key: None,
             // Start on Auto when the platform disables the fast-forward button.
-            panel_last: if super::STORY_CONTROLS.fast_forward { 3 } else { 2 },
+            panel_last: if super::STORY_CONTROLS.panel_button(3) { 3 } else { 2 },
             trail: Trail::default(),
             trail_t: 0.0,
             zl: None,
@@ -727,8 +727,8 @@ impl Ui {
     /// as the panel opens): object 209 lit in auto mode, 207 unavailable without a previous scene.
     fn panel_flags_scene(&mut self, game: &Game) {
         self.touch.pflags[2] = game.auto;
-        self.touch.pflags[1] = !super::STORY_CONTROLS.rewind;
-        self.touch.pflags[3] = !super::STORY_CONTROLS.fast_forward;
+        self.touch.pflags[1] = !super::STORY_CONTROLS.panel_button(1);
+        self.touch.pflags[3] = !super::STORY_CONTROLS.panel_button(3);
         self.touch.pflags[0] = !super::STORY_CONTROLS.scene_jump || !game.can_prev_scene();
     }
 
@@ -931,12 +931,12 @@ impl Ui {
         };
         if in_game && self.touch.panel == Panel::Open && held_button.is_some() {
             match held_button {
-                Some(1) if super::STORY_CONTROLS.rewind => {
+                Some(1) if super::STORY_CONTROLS.panel_button(1) => {
                     let t = self.touch.held_frames;
                     panel_rewind = Some(if t > 107.0 { 64 } else if t >= 8.0 { ((t as i32) * 64 - 512) / 100 } else { 0 });
                     self.touch.held_frames += f;
                 }
-                Some(3) if super::STORY_CONTROLS.fast_forward => panel_skip = true,
+                Some(3) if super::STORY_CONTROLS.panel_button(3) => panel_skip = true,
                 _ => self.touch.held_frames = 0.0,
             }
             // Witch on the Holy Night: cases 1 / 3 press their object every held frame (jp_AE040(.., 10))

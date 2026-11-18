@@ -1,0 +1,3 @@
+knife-languages-v1
+1	en	English
+2	zc	中文（澄空）

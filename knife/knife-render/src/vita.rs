@@ -321,6 +321,7 @@ impl GxtDescriptor {
         ensure!(physical.iter().all(|v| *v != 0 && *v <= 2048), "indexed GXT dimensions invalid");
         let format = match metadata.format {
             0x8100_0000 => GxtFormat::Pvrtc4, 0x8500_0000 => GxtFormat::Dxt1,
+            0x8300_0000 => GxtFormat::PvrtcII4,
             0x8700_0000 => GxtFormat::Dxt5, _ => anyhow::bail!("indexed GXT format unsupported"),
         };
         ensure!(matches!(metadata.layout, 0 | 0xa000_0000), "indexed GXT layout unsupported");

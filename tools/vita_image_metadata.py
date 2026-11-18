@@ -79,7 +79,7 @@ def story_extension_rows(archive, rows, names, source, extent, original_count):
 
     def checked_gxt(data, logical, descriptor=None):
         info = image_info(data)
-        require(info['codec'] == 9 and info['format'] in ('dxt1', 'dxt5')
+        require(info['codec'] == 9 and info['format'] in ('dxt1', 'dxt5', 'pvrtc2_4')
                 and info['logical'] == list(logical)
                 and info['physical'][0] * info['physical'][1] <= 960 * 1080
                 and info['gpu_payload_bytes'] <= 2 * 1024 * 1024
@@ -88,7 +88,7 @@ def story_extension_rows(archive, rows, names, source, extent, original_count):
         if descriptor is not None:
             size, fmt, payload = descriptor
             require(info['physical'] == size
-                    and fmt == (0x85000000 if info['format'] == 'dxt1' else 0x87000000)
+                    and fmt == {'dxt1': 0x85000000, 'dxt5': 0x87000000, 'pvrtc2_4': 0x83000000}[info['format']]
                     and payload == info['gpu_payload_bytes'], 'story tile descriptor mismatch')
 
     def raw_nx(data):
@@ -137,6 +137,7 @@ def story_extension_rows(archive, rows, names, source, extent, original_count):
             ref, pw, ph, fmt, size = struct.unpack_from('<5I', data, 32 + 20 * slot)
             require(ref == i + 1 + slot and name(ref) == f'KQT{i:07X}{slot:03X}.NXZ', 'story grid payload ordinal')
             if slot == 0:
+                require(fmt in (0x85000000, 0x87000000), 'story fallback must remain CPU-decodable DXT')
                 require(pw <= w and ph <= h, 'story grid fallback dimensions')
                 expected_logical = logical
             else:
@@ -245,7 +246,7 @@ def gxt_info(data, width, height):
     require(r[:4] == (offset, size, 0xffffffff, 0), "GXT record")
     require(r[4] in (0, 0xa0000000) and r[6:9] == (width, height, 1), "GXT layout")
     require(not any(data[61:64]) and not any(data[64:offset]), "GXT reserved bytes")
-    formats = {0x81000000: "pvrtc4", 0x85000000: "dxt1", 0x87000000: "dxt5"}
+    formats = {0x81000000: "pvrtc4", 0x83000000: "pvrtc2_4", 0x85000000: "dxt1", 0x87000000: "dxt5"}
     fmt = formats.get(r[5])
     require(fmt is not None, "GXT format")
     minimum = 8 if fmt == "pvrtc4" else 4

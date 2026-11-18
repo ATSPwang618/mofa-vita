@@ -1,0 +1,1 @@
+fn main(){cc::Build::new().cpp(true).std("c++11").include("../../../knife/kdu/vendor/bc7enc").file("../../../knife/kdu/vendor/bc7enc/bc7enc.cpp").file("../../../knife/kdu/src/bc7_wrapper.cpp").compile("bc7");}

@@ -1,0 +1,420 @@
+{
+  "schema": "knife-final-assets-lock-v1",
+  "target": "Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct-PVRTC2-4bpp",
+  "scope": "physical files under assets/ only",
+  "source_recipe_verified": false,
+  "files": {
+    "allpachdml.hed": {
+      "bytes": 1160,
+      "sha256": "57a4d0c375f9f9551bf3af8c89bcddf98ebdb3d300e81ca3e4c6ef08192b730d"
+    },
+    "allpachdml.mrg": {
+      "bytes": 9041920,
+      "sha256": "83029683fee4f469846c710bdebdd98fd35be19eb53e1ac9e1b104a25e92878f"
+    },
+    "allpachdml.nam": {
+      "bytes": 4640,
+      "sha256": "05aa8dc4a96d26b3afdf50cd58727fe91b25b98134f1ac43e4fe0b925b666ed2"
+    },
+    "allpacml.hed": {
+      "bytes": 1856,
+      "sha256": "9740b2b16f98ab864643e536f472e550648dcb5170b1d6c4cfb992579a7f8b96"
+    },
+    "allpacml.mrg": {
+      "bytes": 11249664,
+      "sha256": "05ca1cede122abca8cdd7b87e14281157cb8961953317dc3b2ccea49be44f46b"
+    },
+    "allpacml.nam": {
+      "bytes": 7424,
+      "sha256": "fbab4ac34ad2727c39a49f373fdcce482c374dc96b56d7cda8cbeda404cc1ed3"
+    },
+    "allscr.mrg": {
+      "bytes": 4890400,
+      "sha256": "8a2fae5f733d04d05844ddf2189a0a5fe5ce4e0b77df1ad52fe3c6f8b8a1b2a1"
+    },
+    "allui.hed": {
+      "bytes": 568,
+      "sha256": "98257a5928a8a3bf908e4aa0647c84a15e83a106fccb443777e2bfa97f86403e"
+    },
+    "allui.mrg": {
+      "bytes": 147877888,
+      "sha256": "07446bc2b7a2ebe9cf2cb363f51d49ef33e391ab0a0d935546babeb4060f28e9"
+    },
+    "allui.nam": {
+      "bytes": 2272,
+      "sha256": "cceed947903dd3f8825746918484111e85117bae28e3dcca3c8d524273d7c334"
+    },
+    "bgm.mrg": {
+      "bytes": 130605251,
+      "sha256": "b07490dbeaece2ec90deb058eaa86453d8850cf2231f09e658f61aa4c723b77c"
+    },
+    "corp.tga": {
+      "bytes": 12524,
+      "sha256": "761acfe1fe0b6554a7892fe11d944a80f112679460320ec9975b3d41ab7b59d6"
+    },
+    "en/HelveticaNeueLTGEO-55Roman.otf": {
+      "bytes": 48420,
+      "sha256": "18e070635bfb53837bb8a9a8cf4c01a5ca0a190a92500da6e350cee3af237f1c"
+    },
+    "exfont_nx01.bffnt": {
+      "bytes": 42720,
+      "sha256": "b513bb13ff97a621e25429e17186add62542cdf584eaf46d17e81afedbad73fb"
+    },
+    "jallpac.hed": {
+      "bytes": 602200,
+      "sha256": "fe5cc1a3b0706eb64572a8430d59a40fbb0035b07a9f216e2d34e1c6c0049758"
+    },
+    "jallpac.mrg": {
+      "bytes": 1073741824,
+      "sha256": "eb62be1f6c101dba4567c2a50ccf0da10fb025432dee81b9dc2ad77806a501ab"
+    },
+    "jallpac.mrg.001": {
+      "bytes": 1073741824,
+      "sha256": "eda150210f76adf99152babb3f64e66ca46d5cc9042d7303dd88db019d2df313"
+    },
+    "jallpac.mrg.002": {
+      "bytes": 190861312,
+      "sha256": "322c195a15e67a93023232ae885fd2c327d23d14f5cd54f45e4f93a023a3b1b8"
+    },
+    "jallpac.nam": {
+      "bytes": 2408800,
+      "sha256": "1361a1a0bc19d9a3c68157f8056079521f7bb0134a62e404b261675b12e29f9f"
+    },
+    "jallpachd.hed": {
+      "bytes": 364768,
+      "sha256": "bff18135130a9faafdff19aa193fa7dca378b8ccafbf4e692ab85f480cc29859"
+    },
+    "jallpachd.mrg": {
+      "bytes": 1073741824,
+      "sha256": "fdfaee740c1af34091bb7784249d31662cee6173ed8ca84c7c24172320f13079"
+    },
+    "jallpachd.mrg.001": {
+      "bytes": 639975424,
+      "sha256": "15b9fc530b19e005d1cbf2025eabe6dbe8f78f5785eaca814b5ed4af4ccf5cfd"
+    },
+    "jallpachd.nam": {
+      "bytes": 1459072,
+      "sha256": "a08866ada9c0690d3038e883bc6199afc3333edffccb841aededdec4bf918075"
+    },
+    "language-profile.txt": {
+      "bytes": 59,
+      "sha256": "a9e1044eab0b6b8cda7e89104be66582ad02d3f82209389419d715b8d83966c5"
+    },
+    "movie/logo.mp4": {
+      "bytes": 215765,
+      "sha256": "6bb49ee83aa8cc0f666db91d08583f5b7c9f656029a2bb4dc376fb844808aba0"
+    },
+    "movie/opening_en.mp4": {
+      "bytes": 15826531,
+      "sha256": "6bc4686fb0e76d13542ee36d2d288c62e38e17d6128dccf4f49e33f4c98554c6"
+    },
+    "movie/opening_zc.mp4": {
+      "bytes": 16279483,
+      "sha256": "11b8201ad1fcbc6242e6470ed63ac52f5096b281d4834fcff912c9cac0f50702"
+    },
+    "nintendo_udsg-r_ext_zh-cn_003.bfttf": {
+      "bytes": 123920,
+      "sha256": "f5784e7a553fef9a05b3b7dba94e77e79162ace9db8dafc715ace0be1fd9b9ff"
+    },
+    "nintendo_udsg-r_org_zh-cn_003.bfttf": {
+      "bytes": 7848208,
+      "sha256": "a04eb490283d8393b2c49c52e315132461d790ac73996cb43ac869ce72003938"
+    },
+    "nintendo_udsg-r_std_003.bfttf": {
+      "bytes": 2053636,
+      "sha256": "823913c9d80807979381e327846466f561f31ba1842cea8f7fedc5ad7d45d2ad"
+    },
+    "parts.hed": {
+      "bytes": 40,
+      "sha256": "c91df7f7b62bdde2aee49a93e3efcce141ca2bc34477a6a5043899ec06b0261f"
+    },
+    "parts.mrg": {
+      "bytes": 665600,
+      "sha256": "023fa15b95ec0e97d372d97b7f388e6ecee6d4ed3720156809e5efeb1e70cb8b"
+    },
+    "saveicon_en.tga": {
+      "bytes": 110636,
+      "sha256": "5db376e62331a92d3b5f31d1b23e68b2644419d13b9342ce1b63e2945b86f633"
+    },
+    "saveicon_zc.tga": {
+      "bytes": 110636,
+      "sha256": "8acae885376caed7da627de0b8fb2bb3be7b08bfba69b522e2c2581c607ff9eb"
+    },
+    "savethumb.hed": {
+      "bytes": 88312,
+      "sha256": "89173d57512f36ffc112d6cff8271824cfa2d3106c4ef20c6e0895b1f4341f67"
+    },
+    "savethumb.mrg": {
+      "bytes": 121810944,
+      "sha256": "9b535d98a88108bd3b7d7d671c4ad8564341bf825534c92daf3698b4b578f40b"
+    },
+    "savethumb.nam": {
+      "bytes": 353248,
+      "sha256": "7003607b6624b0516b3f5ee2af371f5865f5565964b88cdeaf79998c75260a2f"
+    },
+    "script_text.mrg": {
+      "bytes": 3498027,
+      "sha256": "97e520efcd1e45bc3312ec36ce6d0f8e1a5c6af3d4451948b0f091bf9614f1c1"
+    },
+    "shader/nexl_nxshader_add.bnsh": {
+      "bytes": 8560,
+      "sha256": "ecaf40f7d94c428fe7c5695d40c4df04757ffdd636bddd8cda00309320a5f0cd"
+    },
+    "shader/nexl_nxshader_add_alpha.bnsh": {
+      "bytes": 8568,
+      "sha256": "25e16f518ef6ff6f5aaf8ff05c70440786eaa75e445bbc0d9db8b99edde9815a"
+    },
+    "shader/nexl_nxshader_burn.bnsh": {
+      "bytes": 8560,
+      "sha256": "c4a20efa23854565d658f972811c2fd6ee410cbf3251be25dfa509798159c702"
+    },
+    "shader/nexl_nxshader_darken.bnsh": {
+      "bytes": 8560,
+      "sha256": "34cb2bd24dcab79cf6cdc5d4dc5bf38179d409102d51dfa605307c69adfaee1b"
+    },
+    "shader/nexl_nxshader_default.bnsh": {
+      "bytes": 8544,
+      "sha256": "943156de6b70fb2048a0d85b004d6dcafd4d30099074f0b7b067c968601ffd0d"
+    },
+    "shader/nexl_nxshader_default_mesh.bnsh": {
+      "bytes": 8568,
+      "sha256": "d7f66a5cbe0f64cbb36c820c42748a52f8a94a8785d28a44760bb03bfc79d72e"
+    },
+    "shader/nexl_nxshader_differnce.bnsh": {
+      "bytes": 8568,
+      "sha256": "4d97ec44fb2512532680a15faf286b6cb6d06a9f669aeda65dafcf095d928b77"
+    },
+    "shader/nexl_nxshader_differnce5.bnsh": {
+      "bytes": 8568,
+      "sha256": "db0ae26bb651196ee6953312a0cf4543127e34022ab35a578d391aec0c181a42"
+    },
+    "shader/nexl_nxshader_dissolve.bnsh": {
+      "bytes": 8584,
+      "sha256": "0253f3d1d96e38df04b120491a40df171f32f4b29c9b7fa8cde9557850b34f28"
+    },
+    "shader/nexl_nxshader_dodge.bnsh": {
+      "bytes": 8560,
+      "sha256": "e6d1b153d38ccf6167d66e624420e18e88930f9ce03f23f6e20920805152a9da"
+    },
+    "shader/nexl_nxshader_exalpha.bnsh": {
+      "bytes": 8560,
+      "sha256": "0a9786d1dc5caa4a7f13414b665319a1002af3e9602bfc9a4745ec15fce7bc0e"
+    },
+    "shader/nexl_nxshader_exclusion.bnsh": {
+      "bytes": 8568,
+      "sha256": "b87ff02c5ba6838ea4641d98215df9f6c1361fbb0cafb429d68002735aed98df"
+    },
+    "shader/nexl_nxshader_forcealpha.bnsh": {
+      "bytes": 8552,
+      "sha256": "5241593a1059a6bd123697ed9af543c96c0e392f8701d37bce99c2681072bca1"
+    },
+    "shader/nexl_nxshader_fulladd.bnsh": {
+      "bytes": 8552,
+      "sha256": "7431bf3f63291da315bc1ca9d69ecfeedc1977fd61a0dcbd5f600073f22755d1"
+    },
+    "shader/nexl_nxshader_fulladd_mesh.bnsh": {
+      "bytes": 8552,
+      "sha256": "e71dc8e5cb1bf72bdf0d4b76c9dc49d0cbc6345037b1783bba8b2ccf0304f3a0"
+    },
+    "shader/nexl_nxshader_gauss.bnsh": {
+      "bytes": 8560,
+      "sha256": "12f87dbf8b0c8ab5880280b50ae9c118550e265573f293af0ac7769bd10cadac"
+    },
+    "shader/nexl_nxshader_gaussian_h.bnsh": {
+      "bytes": 8560,
+      "sha256": "9950656fbd9a40541996531a95864025b7e0d70479ef68c88869f8e7ad37cbd9"
+    },
+    "shader/nexl_nxshader_gaussian_v.bnsh": {
+      "bytes": 8568,
+      "sha256": "61ad6cdbf79debb099071a0b42b0675182ebb1b00769572fe82eac4d690d6ef6"
+    },
+    "shader/nexl_nxshader_hardlight.bnsh": {
+      "bytes": 8568,
+      "sha256": "d7e927d33e63c7ac2906b31a7a9064fd28324724cda2adba7c73a59ed553f83c"
+    },
+    "shader/nexl_nxshader_hardlight_ex.bnsh": {
+      "bytes": 8568,
+      "sha256": "657d1a11cafae58679b95eb109f83ab31bb7419936ef8a5a880ceef2c381ce3b"
+    },
+    "shader/nexl_nxshader_haze.bnsh": {
+      "bytes": 8560,
+      "sha256": "82eccd368e8d95521f9099a50fd84f4da32d2a0017da05c07658c340b7f1f30f"
+    },
+    "shader/nexl_nxshader_hdr.bnsh": {
+      "bytes": 8560,
+      "sha256": "3a973936c7915cc841515d281deeb8916d12aa65ca3430a2ff193b12c42114df"
+    },
+    "shader/nexl_nxshader_lighten.bnsh": {
+      "bytes": 8560,
+      "sha256": "bbf7245776db2c4e00a90bb67e92ceab0fb29504a4824002073d6a55807da528"
+    },
+    "shader/nexl_nxshader_monotone.bnsh": {
+      "bytes": 8544,
+      "sha256": "f449e7fb0e92fca8d0fc93b09690aa7323b889bf513815e4e810410a68fe4594"
+    },
+    "shader/nexl_nxshader_movie_abgr.bnsh": {
+      "bytes": 8544,
+      "sha256": "97dee5af22bc7749e5c6fcd7c9addf6408a2fc73fbe8227ce687eaa9faf1ada6"
+    },
+    "shader/nexl_nxshader_movie_ycbcr.bnsh": {
+      "bytes": 8568,
+      "sha256": "c2cbb8e58e2e046dcb04424564e9400c0d7895815f58dea00022a3b36908ee3b"
+    },
+    "shader/nexl_nxshader_multi.bnsh": {
+      "bytes": 8560,
+      "sha256": "3249ecf02cc00b73e04285dd16ddc70ee0cd0a8db97cf096cf5d2679297800a4"
+    },
+    "shader/nexl_nxshader_negafilter.bnsh": {
+      "bytes": 8568,
+      "sha256": "1b6247004507c5159d258b5abbb8ed1895c719780aed5d43aff610aa976b5870"
+    },
+    "shader/nexl_nxshader_negative.bnsh": {
+      "bytes": 8544,
+      "sha256": "25e340b378065b3cd612bf3c05174d6fc1e3da494d7b3ca10bb4629102ee736a"
+    },
+    "shader/nexl_nxshader_noalpha.bnsh": {
+      "bytes": 8544,
+      "sha256": "a6ad83f9d8bb1516bece8b232ce0f5748307f46ec3c46573d093cb7967a6656e"
+    },
+    "shader/nexl_nxshader_noalpha_srgb.bnsh": {
+      "bytes": 8552,
+      "sha256": "65cf270e5f6ff454fbb90389284956da49c76db48d9053545287a57de6879db0"
+    },
+    "shader/nexl_nxshader_noise.bnsh": {
+      "bytes": 8560,
+      "sha256": "8b03d4fc7d280d4e821f79e214bc3d9ab65373b0d27631ebcfe29260dde71068"
+    },
+    "shader/nexl_nxshader_normal.bnsh": {
+      "bytes": 8560,
+      "sha256": "c735139cc62d6a06561ee2fd55bf2a031306486f47c4e4c9b718ecd472cc9f93"
+    },
+    "shader/nexl_nxshader_normal_linear.bnsh": {
+      "bytes": 8560,
+      "sha256": "d03cefd2c331d3057517271be59fc7dd37c0325ea709aebe7dbd3222cb9510ff"
+    },
+    "shader/nexl_nxshader_overlay.bnsh": {
+      "bytes": 8560,
+      "sha256": "f38d049e351e54636f3a174af080750948e4a86a16db0859de4b24c002550da1"
+    },
+    "shader/nexl_nxshader_pre_alter.bnsh": {
+      "bytes": 12656,
+      "sha256": "b32ce96aedf52dbb43cfa414ced29b4009811fb0d91621370fed645fa76948b4"
+    },
+    "shader/nexl_nxshader_ps_add.bnsh": {
+      "bytes": 8560,
+      "sha256": "6c72a4e134864785f54c6a7e00a48144dcc77cfa586deb693f2348b009e4d669"
+    },
+    "shader/nexl_nxshader_ps_burn.bnsh": {
+      "bytes": 8560,
+      "sha256": "de28d022e423e5e898a8db5ebdcf056ec1f111b0d3cc3a5894f54ef65ab4accf"
+    },
+    "shader/nexl_nxshader_ps_darken.bnsh": {
+      "bytes": 8568,
+      "sha256": "a589067377a3e2d63498019223f2f542b73663331ce9afa17c0739e9415f2db7"
+    },
+    "shader/nexl_nxshader_ps_dodge.bnsh": {
+      "bytes": 8568,
+      "sha256": "6f09789036898e9a9c103ad5790e5a963ec69541b2bd02d1e19254af61b1a390"
+    },
+    "shader/nexl_nxshader_ps_dodge5.bnsh": {
+      "bytes": 8568,
+      "sha256": "889a6db224de26fd49f02419d008f0fb7373a8264745c0153d709094eb979521"
+    },
+    "shader/nexl_nxshader_ps_dodge5_ex.bnsh": {
+      "bytes": 8568,
+      "sha256": "7df6f5002b2f937033793112561e05a70d735454c23aa11944a4d323c876f3bf"
+    },
+    "shader/nexl_nxshader_ps_lighten.bnsh": {
+      "bytes": 8568,
+      "sha256": "3a12374f91be24d1932c305471bc985982bc5285f8ef6d377f9f488df35ffa85"
+    },
+    "shader/nexl_nxshader_ps_mul.bnsh": {
+      "bytes": 8560,
+      "sha256": "603341cc3ebc17f635094c796d33c23024993defe404ebecde7cb95589e79829"
+    },
+    "shader/nexl_nxshader_ps_screen.bnsh": {
+      "bytes": 8568,
+      "sha256": "ef1461499236e8216fb83543770e0a299a3e70d27428489e604c7f15a70f4685"
+    },
+    "shader/nexl_nxshader_ps_sub.bnsh": {
+      "bytes": 8560,
+      "sha256": "ce2e749edcc1c7a2e2e2bb1d87a3e64d0181cbdd922ca7f15f9b2c8ae5e41cbc"
+    },
+    "shader/nexl_nxshader_raster.bnsh": {
+      "bytes": 8560,
+      "sha256": "63c3c2fa11f0cc64a003834b867bb319f3aa51acc22e87cf6fce78c06b5d7494"
+    },
+    "shader/nexl_nxshader_rasterv.bnsh": {
+      "bytes": 8560,
+      "sha256": "6cd8376fbdf75a593ba376293d3dae203f24a76516f7b8135c019610b3a62f92"
+    },
+    "shader/nexl_nxshader_screen.bnsh": {
+      "bytes": 8560,
+      "sha256": "4128e6ea30563512f3ac20c1ce000b1ff8944089dec8fe07d4419755c66dfb3d"
+    },
+    "shader/nexl_nxshader_sepia.bnsh": {
+      "bytes": 8544,
+      "sha256": "f870b9690ed0037079f15a890be33bb70e4518194e08c7452c4986f48e7eb457"
+    },
+    "shader/nexl_nxshader_sepianega.bnsh": {
+      "bytes": 8544,
+      "sha256": "012e7c3710a81cbef49a33e2d3ebdff54cf301285f8d55b73dfdb2a3d3fb020a"
+    },
+    "shader/nexl_nxshader_softlight.bnsh": {
+      "bytes": 8568,
+      "sha256": "3822cc15cb70500dc0c05c431ef7b2dee320d57f2e73b4e6f5c3729bae3f648a"
+    },
+    "shader/nexl_nxshader_splash.bnsh": {
+      "bytes": 8560,
+      "sha256": "733058cb90e493f3aec3096ea976256f97421b3e5b85cd5b34a4241d9c913867"
+    },
+    "shader/nexl_nxshader_stencil_alpha.bnsh": {
+      "bytes": 8560,
+      "sha256": "23bee89dbe31954aea9d41e378e3f087d0ff440c288713fa7e22ac3b0c2e3fd6"
+    },
+    "shader/nexl_nxshader_sub.bnsh": {
+      "bytes": 8560,
+      "sha256": "6a3f39f4173ccd37eef8816eaefa92018c1e1de3db6a9dc024cf43e6400adb5b"
+    },
+    "shader/nexl_nxshader_sub_noalpha.bnsh": {
+      "bytes": 8568,
+      "sha256": "b023e4b1511b524a4398fd09cbebc03bcbd9da5ccb59dc788d8676585df2c9a8"
+    },
+    "shader/nexl_nxshader_transition.bnsh": {
+      "bytes": 8584,
+      "sha256": "b34ae50a321fc3386bcee8c3a00ba3eefc2d6cb9bb1f0db63a541417f9bf797b"
+    },
+    "shader/nexl_nxshader_transitionalpha.bnsh": {
+      "bytes": 8584,
+      "sha256": "8a5997f72acf456f6a2e6e6418c28334b122eb75dcc005a9932975f8c179ea13"
+    },
+    "shader/nexl_nxshader_wave.bnsh": {
+      "bytes": 8560,
+      "sha256": "410723529535314be6cb0f2a4648dabe94a66b32f88be24f907860070c8c24df"
+    },
+    "shader/nexl_nxshader_whiteness.bnsh": {
+      "bytes": 8552,
+      "sha256": "fa13a761bc4674c495547b2fbf235fc131e7c51ce5775bacf9a38d76d9fe5ba1"
+    },
+    "ui-aliases.tsv": {
+      "bytes": 7003,
+      "sha256": "8274910571bf4f9801ef4636848c81de64dec74d4b098714cf1fd3652c491537"
+    },
+    "vita-540p-assets.json": {
+      "bytes": 1610190,
+      "sha256": "7c08cff36060b27bf7079917b4f984fe98c5dffe8cd6f9fd9859ee10ef59759d"
+    },
+    "voice.mrg": {
+      "bytes": 273621091,
+      "sha256": "830f413456f64b49ea57111ee7ad5032c1fc11d59cbb073df4c1ed6c0ec1eb83"
+    },
+    "witch.bfsar": {
+      "bytes": 219087752,
+      "sha256": "3416c56c8b694a632b9da63cd9069dcab2a2294ff8170d201566bfdf8bf933b3"
+    },
+    "zc/arshanghaisonggbpro_lt.otf": {
+      "bytes": 6249992,
+      "sha256": "0ebe4fac683355ea899a15a19f61bb3900135a424a8484ccf1758b73721eeef2"
+    }
+  }
+}

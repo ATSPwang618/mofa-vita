@@ -1,0 +1,18 @@
+{
+  "kit": "D:/my-local-inputs/mahoyo-recovery-kit",
+  "update": "D:/my-local-inputs/WITCH-1.02-UPD.nsp",
+  "mod": "D:/my-local-inputs/Chengkong/010012A017F18000/romfs",
+  "logo": "D:/my-local-inputs/logo.mp4",
+  "audio_contract": "D:/my-local-inputs/audio-contract.json",
+  "keys": "C:/Users/YOUR_NAME/AppData/Roaming/Ryujinx/system/prod.keys",
+  "nstool": "D:/my-tools/nstool.exe",
+  "encoder": "D:/my-tools/psp2pvrt64.exe",
+  "packer": "D:/my-tools/psp2gxt.exe",
+  "python_deps": "D:/my-python-deps",
+  "ffmpeg": "ffmpeg",
+  "work": "D:/AI-CODEX/mofa-vita/.work/my-nsp-build",
+  "output": "D:/AI-CODEX/mofa-vita/dist/NSP-Rebuilt-70pct-Mixed",
+  "workers": 4,
+  "wsl": "pocket-ubuntu",
+  "build_tag": "perf-render-nsp-rebuild-20261117"
+}

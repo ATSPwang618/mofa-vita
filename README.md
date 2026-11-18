@@ -22,13 +22,15 @@
 
 ## 当前版本
 
-2026-11-17 已将 `perf/large_image@06415b5` 完整整合到本地 `perf/render`。最近打包版本为 **`perf-render-20261117-142048-06415b5-large-image-r10`**，应用 ID **`KNIF00540`**。当前文档维护改动未重打该安装包，精确身份见[交付说明](doc/08-素材与安装.md)。
+最终交付资源采用 **70%尺寸 PVRTC2 4bpp / DXT 混合纹理包**，版本 `perf-render-20261117-r10-assets70-pvrtc2`。以原70% DXT包为输入，不再缩小图片；资源4.86→4.69 GiB，节省174.40 MiB（3.51%）。`release/` 已配套更新，实机画质与性能待验证。见 [最终包说明](doc/10-Switch原版资源提取.md)。
+
+2026-11-17 已将 `perf/large_image@06415b5` 完整整合到本地 `perf/render`。此前整合基线版本为 **`perf-render-20261117-142048-06415b5-large-image-r10`**，应用 ID **`KNIF00540`**。精确身份见[交付说明](doc/08-素材与安装.md)。
 
 - 原生 DXT1/DXT5、离线调色变体及 KQTL 大图分块，保留逻辑坐标；复杂材质不满足条件时使用回退路径。
 - 全游戏按材质选路的专用 shader，以及有限混合合并、遮罩范围和透明区域优化。部分优化依赖素材身份或特定演出阶段，范围见[优化清单](doc/05-优化记录与实测数据.md)。
 - 有界缓存、GPU 生命周期保护、资源失败回收重试及最近有效进度保护。
 - 图集按成员读取、转场预读、专用存档预览、Ogg 音频归档与 BGM 预备交接。
-- L+□ 阅读/背板设置，剧情字号 50%–150%；快进和回退已恢复，上一/下一场景仍禁用。
+- L+□ 阅读/背板设置，剧情字号 50%–150%；书签栏上一场景、回退、快进、下一场景四项禁用；自动播放、书签与语音重播保留。
 
 整合时 469 项宿主测试通过；ARM 构建、包检查及资源校验通过。新版本的实机画面、帧率与长期稳定性仍需验证，不承诺全游戏最低帧率。
 
@@ -49,7 +51,7 @@ python3 tools/build-vita.py game release
 
 构建使用 VitaSDK、`nightly-2026-05-28` 和 rust-src；Windows 通过 WSL 执行。通用构建缺省为 `hardware-test`，复现本次 R10 配置须按[构建文档](doc/03-构建与工具链.md)设置环境变量。输出固定为 `release/eboot.bin`、`release/mofa-vita.vpk`。
 
-详细原版提取步骤见[资源提取指南](doc/10-Switch原版资源提取.md)。PNG 工程不是直接可运行的数据包；当前尚无经过验证的从 NSP 一键重制同身份大图包的完整流程。
+资源制作见[一键提取与精确复现指南](doc/10-Switch原版资源提取.md)。使用原版BASE、1.02升级、澄空MOD、定制logo及固件字库，配合本版本固定配方与工具重建最终包；验收必须通过全部103个文件的SHA。实际执行与边界见[复现收据61](doc/evidence/61-source-exact-replay.json)。
 
 ## 仓库结构
 
@@ -66,4 +68,4 @@ python3 tools/build-vita.py game release
 
 ## 来源与许可
 
-引擎沿用 [MPL 2.0](knife/LICENSE)，来源见 [UPSTREAM.txt](knife/UPSTREAM.txt)。第三方依赖保留各自许可；游戏内容归各权利人所有，不随源码提供。感谢 @SpriteLisenLisen 对项目的技术支持。
+引擎沿用 [MPL 2.0](knife/LICENSE)，来源见 [UPSTREAM.txt](knife/UPSTREAM.txt)。第三方依赖保留各自许可；完整游戏资源需自行提供。精确重建配方含明确标记的历史编码差分，权利说明见[配方说明](tools/source_replay/README.md)。感谢 @SpriteLisenLisen @DeQxJ00 @今何求 对项目的技术支持。

@@ -1,0 +1,187 @@
+{
+  "date": "2026-11-17",
+  "final_delivery": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct-PVRTC2-4bpp",
+  "build_tag": "perf-render-20261117-r10-assets70-pvrtc2",
+  "assets_manifest": {
+    "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct-PVRTC2-4bpp/assets/vita-540p-assets.json",
+    "bytes": 1610190,
+    "sha256": "7c08cff36060b27bf7079917b4f984fe98c5dffe8cd6f9fd9859ee10ef59759d"
+  },
+  "programs": [
+    {
+      "path": "release/eboot.bin",
+      "bytes": 4582969,
+      "sha256": "05acd326e570633c8a44015579e7f3ce3739228166c85b4de863b05ef22e0749"
+    },
+    {
+      "path": "release/mofa-vita.vpk",
+      "bytes": 6685545,
+      "sha256": "52709fd3f16b02bd1b37defcc4816fbaced97648e821146ef5f6a5b800a8ca21"
+    }
+  ],
+  "source_and_program_bytes_unchanged": true,
+  "verification": {
+    "manifest_files": 9571,
+    "unchanged_files": 87,
+    "original_entries_identical": 33826,
+    "fallbacks_identical": 8698,
+    "variants": 16255,
+    "appended_images": 78716,
+    "converted_images": 11616,
+    "summed_entry_gpu_payload_reduction": 1437638656,
+    "note": "Summed entry payloads include duplicates; this is not resident memory savings.",
+    "production_metadata_and_budget": {
+      "checked": 28604,
+      "protected": 5198,
+      "maximum_rgba_allocation": 1048576
+    },
+    "hardware_tested": false
+  },
+  "sample_tests": {
+    "nsp": {
+      "bytes": 21380558096,
+      "entries": [
+        {
+          "name": "c134dd53826646afa027df1833254e0f.nca",
+          "offset": 272,
+          "bytes": 21379973120
+        },
+        {
+          "name": "eed8afd306d7a1c60486f5736f861e29.nca",
+          "offset": 21379973392,
+          "bytes": 438272
+        },
+        {
+          "name": "1efa2ddd2b2733f6bbd6e3b166b6dd8a.nca",
+          "offset": 21380411664,
+          "bytes": 142848
+        },
+        {
+          "name": "2f0d03a9a3e51e29beb2b6924e4d3b8d.cnmt.nca",
+          "offset": 21380554512,
+          "bytes": 3584
+        }
+      ],
+      "sampled_nca": "2f0d03a9a3e51e29beb2b6924e4d3b8d.cnmt.nca",
+      "sample_bytes": 3584,
+      "sample_sha256": "2f0d03a9a3e51e29beb2b6924e4d3b8dbd385b15ce0ffc3df4affa64c865db04",
+      "production_unpacker_roundtrip": true,
+      "decryption_tested": false,
+      "hactool_present": false
+    },
+    "pvrtc_sample": {
+      "archive": "jallpac",
+      "index": 22159,
+      "quality": {
+        "alpha_rmse": 3.673354387283325,
+        "composite_rmse": 4.721195697784424,
+        "composite_p99": 13.800983428955078,
+        "reason": "accepted"
+      },
+      "stored_bytes_match_final": true
+    },
+    "tests": {
+      "image_export": 15,
+      "resize": 4
+    },
+    "end_to_end_nsp_rebuild": false
+  },
+  "profile_check": {
+    "key_files": 44,
+    "startup_read_bytes": 4608754,
+    "passed": true
+  },
+  "vpk_check_passed": true,
+  "eboot_matches_vpk": true,
+  "cleanup": {
+    "deleted": [
+      {
+        "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita-PVRTC2-4bpp/assets",
+        "files": 105,
+        "bytes": 6665640504
+      },
+      {
+        "path": ".work/pvrtc100-20261117/cache",
+        "files": 186,
+        "bytes": 340841599
+      },
+      {
+        "path": ".work/pvrtc100-20261117/comparison-job",
+        "files": 4,
+        "bytes": 2359584
+      },
+      {
+        "path": ".work/pvrtc70-20261117/comparison-job",
+        "files": 4,
+        "bytes": 295200
+      },
+      {
+        "path": ".work/final-assets-doc-20261117/sample-cache",
+        "files": 6,
+        "bytes": 2490849
+      },
+      {
+        "path": ".work/pvrtc100-20261117/22158",
+        "files": 11,
+        "bytes": 4811432
+      },
+      {
+        "path": ".work/pvrtc100-20261117/22161",
+        "files": 9,
+        "bytes": 3561008
+      },
+      {
+        "path": ".work/pvrtc100-20261117/22167",
+        "files": 9,
+        "bytes": 3544489
+      },
+      {
+        "path": ".work/pvrtc100-20261117/22173",
+        "files": 9,
+        "bytes": 3928320
+      },
+      {
+        "path": ".work/pvrtc100-20261117/22182",
+        "files": 9,
+        "bytes": 3791681
+      },
+      {
+        "path": ".work/pvrtc100-20261117/22188",
+        "files": 9,
+        "bytes": 3566640
+      },
+      {
+        "path": ".work/pvrtc100-20261117/synthetic",
+        "files": 3,
+        "bytes": 8928
+      },
+      {
+        "path": ".work/pvrtc100-20261117/incomplete-first-attempt",
+        "files": 0,
+        "bytes": 0
+      },
+      {
+        "path": ".work/pvrtc100-20261117/incomplete-second-attempt",
+        "files": 0,
+        "bytes": 0
+      }
+    ],
+    "deleted_bytes": 7034840234,
+    "free_before": 81646112768,
+    "free_after": 88711925760
+  },
+  "end_to_end_nsp_rebuild": false,
+  "hardware_tested": false,
+  "tooling_gap": "No verified complete original-RomFS/art to high-resolution KQ variants, save thumbnails and audio-bank builder. Prepared 100% DXT and 70% DXT sources retained.",
+  "branch": "perf/render",
+  "pushed": false,
+  "documentation_validation": {
+    "local_links": {
+      "links": 188,
+      "missing": []
+    },
+    "powershell_blocks_parsed": 19,
+    "git_diff_whitespace_check": true,
+    "all_examples_executed": false
+  }
+}

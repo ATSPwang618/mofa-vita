@@ -1,0 +1,882 @@
+{
+  "schema": "source-exact-replay-evidence-v1",
+  "date": "2026-11-18",
+  "status": "complete",
+  "exact_delivery_match": true,
+  "source_recipe_verified": true,
+  "physical_files": 103,
+  "physical_bytes": 5030762588,
+  "output": "D:\\AI-CODEX\\mofa-vita\\dist\\Source-Rebuilt-70pct-Mixed",
+  "target_preserved": true,
+  "target_also_verified": {
+    "physical_files": 103,
+    "physical_bytes": 5030762588,
+    "exact_delivery_match": true,
+    "source_recipe_verified": false
+  },
+  "receipt": {
+    "physical_files": 103,
+    "physical_bytes": 5030762588,
+    "exact_delivery_match": true,
+    "source_recipe_verified": true,
+    "schema": "source-exact-replay-v1",
+    "recipe_sha256": "1689b6d3f31a207f3133c769bd48021e8554e5701e4f842c38a44640a51a0d06",
+    "sources": {
+      "recipe_sha256": "1689b6d3f31a207f3133c769bd48021e8554e5701e4f842c38a44640a51a0d06",
+      "inputs": {
+        "logo": {
+          "path": "C:\\Users\\26241\\Desktop\\logo.mp4",
+          "sha256": "6bb49ee83aa8cc0f666db91d08583f5b7c9f656029a2bb4dc376fb844808aba0"
+        },
+        "firmware": {
+          "path": "C:\\Users\\26241\\AppData\\Roaming\\Ryujinx\\bis\\system\\Contents\\registered",
+          "expected_fonts": {
+            "nintendo_udsg-r_ext_zh-cn_003.bfttf": "f5784e7a553fef9a05b3b7dba94e77e79162ace9db8dafc715ace0be1fd9b9ff",
+            "nintendo_udsg-r_org_zh-cn_003.bfttf": "a04eb490283d8393b2c49c52e315132461d790ac73996cb43ac869ce72003938",
+            "nintendo_udsg-r_std_003.bfttf": "823913c9d80807979381e327846466f561f31ba1842cea8f7fedc5ad7d45d2ad"
+          }
+        },
+        "nsp": {
+          "path": "D:\\SWITCH\\Ryujinx\\game\\WITCH ON THE HOLY NIGHT v0 (010012A017F18000) (BASE).nsp",
+          "bytes": 21380558096,
+          "identity": "SHA-256 of the selected Program NCA; checked during extract"
+        },
+        "update": {
+          "path": "D:\\PSV\\原版game收集\\魔夜重制版-switch版\\魔法使之夜游戏本体+升级档\\1.02补丁\\WITCH ON THE HOLY NIGHT v131072 (010012A017F18800) (UPD).nsp",
+          "bytes": 19474192,
+          "identity": "SHA-256 of the selected Program NCA; checked during extract"
+        },
+        "mod/allui.mrg": {
+          "path": "D:\\PSV\\原版game收集\\魔夜重制版-switch版\\魔夜澄空汉化mod(12月27日更新)\\010012A017F18000\\romfs\\allui.mrg",
+          "sha256": "1eeb355d1b62a2e86e92dee0385fd98274295da6b8f2d2aba58567ad3faad699"
+        },
+        "mod/script_text.mrg": {
+          "path": "D:\\PSV\\原版game收集\\魔夜重制版-switch版\\魔夜澄空汉化mod(12月27日更新)\\010012A017F18000\\romfs\\script_text.mrg",
+          "sha256": "1be83a011592abfdb38e3cd201b736e2f5e6674825d692337251802d821cb1a6"
+        },
+        "mod/zc/arshanghaisonggbpro_lt.otf": {
+          "path": "D:\\PSV\\原版game收集\\魔夜重制版-switch版\\魔夜澄空汉化mod(12月27日更新)\\010012A017F18000\\romfs\\zc\\arshanghaisonggbpro_lt.otf",
+          "sha256": "0ebe4fac683355ea899a15a19f61bb3900135a424a8484ccf1758b73721eeef2"
+        }
+      },
+      "source_members": {
+        "base": "c134dd53826646afa027df1833254e0f999e6a6fc1c64bcf470944219f43da86",
+        "update": "db83e0cdb33b5eb5a0868f3ddf15204b2173986b4402dad5bf65373731ab5ed4"
+      }
+    },
+    "hardware_tested": false,
+    "scope": "assets only; excludes EBOOT/VPK",
+    "historical_corrections": true,
+    "pure_nsp_only": false
+  },
+  "scope": {
+    "source_generation_completed": true,
+    "resumed_verified_source_caches": true,
+    "production_entry_executed": true,
+    "second_all_cold_execution": false,
+    "source_only_without_fixed_recipe": false,
+    "private_recovery_kit_required": false,
+    "previous_runtime_pack_required": false,
+    "engine_rebuilt": false,
+    "hardware_tested": false
+  },
+  "counts": {
+    "original_entries": 33826,
+    "unique_originals": 28706,
+    "variants": 16255,
+    "previews": 11038,
+    "pvrtc_selected": 11616,
+    "historical_corrections": 127
+  },
+  "tests": {
+    "source_replay": 10,
+    "existing_reproducibility": 11,
+    "checks": {
+      "production-probe.json": [
+        {
+          "kind": "original",
+          "base": "jallpac",
+          "index": 0,
+          "exact": true
+        },
+        {
+          "kind": "original",
+          "base": "jallpac",
+          "index": 649,
+          "exact": true
+        },
+        {
+          "kind": "original",
+          "base": "jallpac",
+          "index": 802,
+          "exact": true
+        },
+        {
+          "kind": "original",
+          "base": "jallpac",
+          "index": 1115,
+          "exact": true
+        },
+        {
+          "kind": "original",
+          "base": "jallpachd",
+          "index": 2029,
+          "exact": true
+        },
+        {
+          "kind": "original",
+          "base": "allpacml",
+          "index": 5,
+          "exact": true
+        },
+        {
+          "kind": "variant",
+          "base": "jallpac",
+          "index": 39186,
+          "exact": true
+        },
+        {
+          "kind": "variant",
+          "base": "jallpac",
+          "index": 98155,
+          "exact": true
+        },
+        {
+          "kind": "variant",
+          "base": "jallpachd",
+          "index": 12540,
+          "exact": true
+        },
+        {
+          "kind": "preview",
+          "index": 0,
+          "exact": true
+        },
+        {
+          "kind": "preview",
+          "index": 418,
+          "exact": true
+        },
+        {
+          "kind": "preview",
+          "index": 624,
+          "exact": true
+        },
+        {
+          "kind": "preview",
+          "index": 10959,
+          "exact": true
+        },
+        {
+          "kind": "preview",
+          "index": 11037,
+          "exact": true
+        }
+      ],
+      "movie-production-check.json": {
+        "exact": true,
+        "independent_encodes_each": 2,
+        "deterministic": true,
+        "source_inputs": {
+          "movie/opening_en.mp4": "8636fd623bdcb5a85d6893e1db94de5c0908769a9f5864fd4b8a12fabdf95b5d",
+          "movie/opening_zc.mp4": "88bdcab986a38f11e702300a7bb83cdd19ea0a0da877a74eeb6753d25889394d"
+        },
+        "output": {
+          "movie/opening_en.mp4": "6bc4686fb0e76d13542ee36d2d288c62e38e17d6128dccf4f49e33f4c98554c6",
+          "movie/opening_zc.mp4": "11b8201ad1fcbc6242e6470ed63ac52f5096b281d4834fcff912c9cac0f50702"
+        },
+        "correction_count": 127
+      },
+      "movie-deterministic-check.json": [
+        {
+          "file": ".work\\source-closure-20261118\\opening-en-deterministic-1.mp4",
+          "sha256": "c05afa29fa474bcb9be6412d911e736d834edd120308acdd74c9c323bffb5fae",
+          "bytes": 15835308,
+          "seconds": 66.60525393486023
+        },
+        {
+          "file": ".work\\source-closure-20261118\\opening-en-deterministic-2.mp4",
+          "sha256": "c05afa29fa474bcb9be6412d911e736d834edd120308acdd74c9c323bffb5fae",
+          "bytes": 15835308,
+          "seconds": 66.64952063560486
+        }
+      ],
+      "movie-zc-deterministic-check.json": [
+        {
+          "file": ".work\\source-closure-20261118\\opening-zc-deterministic-1.mp4",
+          "sha256": "071f4f7c820146b4f5238365bdfa04ce77396e04fee2589ffadacd6f68fb132a",
+          "bytes": 16284619,
+          "seconds": 66.9563958644867
+        },
+        {
+          "file": ".work\\source-closure-20261118\\opening-zc-deterministic-2.mp4",
+          "sha256": "071f4f7c820146b4f5238365bdfa04ce77396e04fee2589ffadacd6f68fb132a",
+          "bytes": 16284619,
+          "seconds": 66.67289519309998
+        }
+      ],
+      "resize-production-probe.json": [
+        {
+          "name": "KQ009930003F8000003F800000.NXZ",
+          "source_index": 22156,
+          "blocks": 25,
+          "exact": true
+        },
+        {
+          "name": "KQ015920003F8000003F800000.NXZ",
+          "source_index": 22203,
+          "blocks": 11,
+          "exact": true
+        },
+        {
+          "name": "KQ008540003F8000003F800000.NXZ",
+          "source_index": 22233,
+          "blocks": 11,
+          "exact": true
+        }
+      ],
+      "preflight-check.json": [
+        {
+          "case": "wrong-logo",
+          "rejected": true,
+          "message": "Custom logo differs from target"
+        },
+        {
+          "case": "correct-inputs",
+          "accepted": true
+        }
+      ]
+    }
+  },
+  "documents": [
+    "10-Switch原版资源提取.md",
+    "10-switch-asset-extraction.en.md"
+  ],
+  "evidence_files": {
+    ".exact-replay-owner.json": {
+      "bytes": 2362,
+      "sha256": "c15ac6a53004916877352dcd4c5b465dd937c791cad1ad7788d9011cbb7254e2"
+    },
+    "2-1-source.json": {
+      "bytes": 24,
+      "sha256": "5f577dc4fe4abe7f0e7dcd4d0861372cd130da342789c02d71f498474f96f5ad"
+    },
+    "allpachdml-gaps.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "allpacml-gaps.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "amd-rcp-table.json": {
+      "bytes": 35910,
+      "sha256": "465acf8aa1cafb0d901015a1ca88ee3ca71efa30ac0e194ee8d29d4e76b59601"
+    },
+    "audio-bank-check.json": {
+      "bytes": 423,
+      "sha256": "1d6a80877d8124c40e176087f8947f114730a70b670ca57664c8e63a10ba345f"
+    },
+    "audio-contract.json": {
+      "bytes": 2130215,
+      "sha256": "0af6a06395aa1fe0650efa0dcdb5fe6d16be8a0fc7e1d2298d5815e03e596f69"
+    },
+    "audio-restore-check.json": {
+      "bytes": 101,
+      "sha256": "24a2b368cbc338a19336069d2216244b64a80bf8c94526881d3ee220d8a33f9a"
+    },
+    "back_cursor-source.json": {
+      "bytes": 20,
+      "sha256": "3dc36db8adbcd9f4df5584d15ba3d7238d4cdeca5785b4b0e6d072b0895b44dc"
+    },
+    "bank-build-check.json": {
+      "bytes": 1215,
+      "sha256": "6348e488168c99cf3f32ba552c5eaddb8ead3f79ace6002c91b191648459c9df"
+    },
+    "build-ui-final.log": {
+      "bytes": 1938,
+      "sha256": "a38e63f7c215577118c1e2bb243d22b6ce968e1e283c421e633531134a3f7c4c"
+    },
+    "build-ui.log": {
+      "bytes": 4346,
+      "sha256": "4810d31839ff90f4d4c39d47b36df7527125c685a6c033fea8fcdb53ec735f87"
+    },
+    "completion.json": {
+      "bytes": 2857,
+      "sha256": "65532af2764b295777c80e5c8b7ed951a7fb43ecadc0d69523f1c6345e5bdf01"
+    },
+    "extract-updated.log": {
+      "bytes": 720978,
+      "sha256": "ecfb1cefded3495909f985d9172918892cfca73cdc093eb6ea4e7cbda82b9004"
+    },
+    "final-config.json": {
+      "bytes": 1252,
+      "sha256": "30d36a483c0219d8d58b8a79e09fe692bb80e8c37833165035458a20d55961e7"
+    },
+    "final-independent-verification.json": {
+      "bytes": 133,
+      "sha256": "a138fa3eca3f07169fc47949ea5b22f328c0db83ccadb03614083341029f6937"
+    },
+    "final-pvrtc-complete.log": {
+      "bytes": 160,
+      "sha256": "af035bc380b1cbe338069899f94b3796d2a92f3e846277fb47f4284d828805ed"
+    },
+    "final-pvrtc-jallpac.log": {
+      "bytes": 1049,
+      "sha256": "ef3c80e50654043228c6fec746557c936051adc09faf75d91861c031875ccb5f"
+    },
+    "final-pvrtc-jallpachd.log": {
+      "bytes": 808,
+      "sha256": "c23bcd79a9b945359d72fa4886546c56fcac39031907b5c8b2e00c3061980f24"
+    },
+    "history-original-check.json": {
+      "bytes": 3205,
+      "sha256": "692b0bb3f12a73358dae1542ce8e2ba97ee69310434a14baf4ffa93464004a69"
+    },
+    "jallpac-gaps.json": {
+      "bytes": 1012,
+      "sha256": "7a6da259c0212b7c045622c9e4d0b347ddbcc7deb9f33c24194611c0d3763f27"
+    },
+    "jallpachd-gaps.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "legacy-check.json": {
+      "bytes": 1480,
+      "sha256": "7407bd75cb4ea342227d63c0832058ee37cb822accb00477a9b7890720ceaccd"
+    },
+    "menu_window-source.json": {
+      "bytes": 25,
+      "sha256": "36474e96eb20bd66ed63deec13a4020f3b5da3ad8eb4630b8545ecd0ddc15626"
+    },
+    "movie-deterministic-check.json": {
+      "bytes": 465,
+      "sha256": "61d9022e18cf9a8a4a390f3cfe38921dbe7a34e421eb42767956a04582632efe"
+    },
+    "movie-production-check.json": {
+      "bytes": 544,
+      "sha256": "ddc7bbebab67768c6d3577b1cf0af276bf20bb7a1da481f18e7611ebbd1ab2a5"
+    },
+    "movie-zc-deterministic-check.json": {
+      "bytes": 464,
+      "sha256": "ccc29222f6aca746db61ae4d9c5a3b26ceedd2994b38bc80da99ff3adecb7690"
+    },
+    "nca-ready.json": {
+      "bytes": 154,
+      "sha256": "f40a889aec54e7d1817f2976deb220580cf22a64c320ec9660f99569b7cdbb03"
+    },
+    "nonhistory-check.json": {
+      "bytes": 5424,
+      "sha256": "6750d14f5c744b5c79a02ea55f3748647e8e0d6c74d24b1db272b59f1cac6ef6"
+    },
+    "opening-en-packet-diff.json": {
+      "bytes": 4814,
+      "sha256": "d25f99e46569eb75665c47fa9e6ec96f0542c8324bf9cb03aae22adf49b7d118"
+    },
+    "original-build.jsonl": {
+      "bytes": 1993071,
+      "sha256": "99120b01fd431e6ec9baa285a8b4c760c306d960dec73f69ce3773550cc6ceb0"
+    },
+    "original-container-contract.json": {
+      "bytes": 5228622,
+      "sha256": "fcf592be3fa3169f41501bd4e15b1471cb2253c205a3760f44ac8a132ba7260f"
+    },
+    "original-correction-check.json": {
+      "bytes": 15671,
+      "sha256": "dd646257299801e06b377e048c9f6a4fff6ae8c8af6a0d74379e4530ff47258b"
+    },
+    "original-residual.jsonl": {
+      "bytes": 24041,
+      "sha256": "69e37dec885088657882ac07e1a11600b05cdfbc8f46911b626514875be47acb"
+    },
+    "original-retry.jsonl": {
+      "bytes": 23036,
+      "sha256": "94fb927547b311311fbf1a4ddbb54452c962b2d77dc3230b26fac7f2e3e81961"
+    },
+    "parts-bank-check.json": {
+      "bytes": 343,
+      "sha256": "1889167ca83acf37dd4c6a2dfad07addf5e98151402ab5ae2a84218f8a329ef0"
+    },
+    "patched-match.json": {
+      "bytes": 15076,
+      "sha256": "af43f8d3fba2965fa1068623b521237b904a70f67220d31da08622405a5a4ccb"
+    },
+    "preflight-check.json": {
+      "bytes": 178,
+      "sha256": "1327fd2737ff72681b2c2deedb04c96aecc38574b6cf34dffe128e5b58a53913"
+    },
+    "preview-build-v2.jsonl": {
+      "bytes": 1463512,
+      "sha256": "b73375a94de23a14ce8903f557189d8adf917b96eeee2128c6f6936aa8ad46e5"
+    },
+    "preview-build-v2.log": {
+      "bytes": 9415,
+      "sha256": "78e6c409f70d0a090e7db798b5a0df0563b8c30df87083e1af39a92f674978a5"
+    },
+    "preview-build-v3.jsonl": {
+      "bytes": 1468931,
+      "sha256": "8f8b00e1de9249bc5021330f684f758d7aa5725e579776d78106080335e1159f"
+    },
+    "preview-build-v3.log": {
+      "bytes": 3562,
+      "sha256": "aa00a80b19eb890fc0a591513927f9258fd80f0e81f1a8eb425649120488494e"
+    },
+    "preview-build.jsonl": {
+      "bytes": 1327013,
+      "sha256": "99a5775670a042d2de9ab95719fcb4570cccafac8015b9ba8c2725ff343f6d24"
+    },
+    "probe-preview-tail.log": {
+      "bytes": 9015,
+      "sha256": "56d3340f1fd43d51704e57bbc3e8c5464cd09715d252349fea5cffb631b9c824"
+    },
+    "production-full.log": {
+      "bytes": 5836,
+      "sha256": "fe46b12c938c7cdd5b67bc0481fbf30e7c23ec009f0c69fa6e68e903b18ef9ec"
+    },
+    "production-probe.json": {
+      "bytes": 1258,
+      "sha256": "766916e7f5d0bacb86417e7db912e8da1b74bef70e7d925cd997828fe22d3452"
+    },
+    "resize-production-probe.json": {
+      "bytes": 375,
+      "sha256": "637e48596e36f3fd1661a25f28cc9d846e8862eab3f65b927ec6dded31bb3d6d"
+    },
+    "resize-report.json": {
+      "bytes": 5890893,
+      "sha256": "d7cdbf38146e24d668eb1e219e24c178f09d9a7f888839220ce7a7e851f64d71"
+    },
+    "resize70-full-check.json": {
+      "bytes": 7612,
+      "sha256": "687456d4d1baa78e377a5932a6c780d203e8cb92b318a32215395a0f5196af17"
+    },
+    "resize70.log": {
+      "bytes": 5284,
+      "sha256": "008574b7642ae5e50df408e2d8bbed97b48967b49a665393cc08430587451940"
+    },
+    "savethumb-gaps.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "source-direct-check.json": {
+      "bytes": 12673,
+      "sha256": "5d75b11dc7a009da3c6fc603287b8c1404ddae22e790082e0bb4a8dd833bc9e6"
+    },
+    "state.json": {
+      "bytes": 1480858,
+      "sha256": "e481984a8b91c99c3382e61974633c12c3f3b0e7b863817dd98f35bb56f319ff"
+    },
+    "ui-bank-check.json": {
+      "bytes": 381,
+      "sha256": "a314457bd99d0f7bf26d8a6d9049c1cd02a5cf57fbe118e634c1e212ab07c3fa"
+    },
+    "ui-check.json": {
+      "bytes": 8751,
+      "sha256": "ac3d063da04b2b583679b97b96d4de156d06f727f4e38c1092f48aeafda53256"
+    },
+    "ui-container-contract.json": {
+      "bytes": 17319,
+      "sha256": "3765ee14c4137c4cc208aea86df08d6883ad7e5920b6828092c2e91763d2d7b8"
+    },
+    "ui-correction-check.json": {
+      "bytes": 3353,
+      "sha256": "e3ab35dfbb55992877d9c965e41d4e96add8e2dc51c3ed68ecabdc2734189af0"
+    },
+    "ui-retry.json": {
+      "bytes": 84689,
+      "sha256": "96de1be435fe156b8dc49db13131d3b519c3f7a4873919010806907445a9d3cf"
+    },
+    "variant-build-v2.jsonl": {
+      "bytes": 1149576,
+      "sha256": "c4a23b9863295ddd49bf77fc3c4033a5bdf90fc0b64558592f1ea6f5a12188e6"
+    },
+    "variant-build-v3.jsonl": {
+      "bytes": 9387250,
+      "sha256": "0dff8d97e4d727565edfbe5739cb7cc9c46ed85e2f4949a3ed7321f4dd672313"
+    },
+    "variant-build.jsonl": {
+      "bytes": 464053,
+      "sha256": "d725cec505567d17d78c4e1811eac040b4b405c53f0709736e4bb02fc60bfab6"
+    },
+    "variant-intel-check.json": {
+      "bytes": 7935,
+      "sha256": "b8e96614a8e0be2b3d015b0dd591d397af6824946c210f55ad9eb888e8b70337"
+    },
+    "variant-retry.jsonl": {
+      "bytes": 7350,
+      "sha256": "e256e9a4ac154db349d29590a8d89b7de537d4cec814df698d742b224e4f3c46"
+    }
+  },
+  "git": {
+    "branch": "perf/render",
+    "head": "b06043a0d916fa6e4629383a6ad40a65fdc51646",
+    "committed": false,
+    "pushed": false
+  },
+  "cleanup": {
+    "root": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118",
+    "status": "blocked_by_automatic_approval",
+    "reason": "blocked by policy",
+    "deletion_executed": false,
+    "paths": [
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\audio-exact",
+        "logical_bytes": 404226342
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\delta-deps",
+        "logical_bytes": 284804
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\exact-pvrtc-cache",
+        "logical_bytes": 1225022811
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\firmware",
+        "logical_bytes": 20052970
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\ispc_texcomp-1.0.1",
+        "logical_bytes": 312192
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\legacy-compact",
+        "logical_bytes": 128442211
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\linux-ispc",
+        "logical_bytes": 3555423
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\metadata-cache",
+        "logical_bytes": 17813504
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\movie-production-final",
+        "logical_bytes": 547361978
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\movie-production-probe",
+        "logical_bytes": 515242105
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\movies-exact",
+        "logical_bytes": 47938384
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\original-cache",
+        "logical_bytes": 1481404416
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\original-mismatch",
+        "logical_bytes": 16039616
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\original-residual",
+        "logical_bytes": 24731744
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\parts-exact",
+        "logical_bytes": 1845450
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\patched",
+        "logical_bytes": 21320906908
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\pillow12",
+        "logical_bytes": 15756615
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\preview-cache",
+        "logical_bytes": 121636864
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\preview-mismatch",
+        "logical_bytes": 5334096
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\rebuilt-100",
+        "logical_bytes": 7227149935
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\rebuilt-70",
+        "logical_bytes": 5213631610
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\ui-exact",
+        "logical_bytes": 547195450
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\variant-cache",
+        "logical_bytes": 4760162304
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\variant-mismatch",
+        "logical_bytes": 113940480
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\verified-source-output",
+        "logical_bytes": 234784632
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\__pycache__",
+        "logical_bytes": 38726
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\2-1-source.rgba",
+        "logical_bytes": 278784
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\2-1-win.rgba",
+        "logical_bytes": 524288
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\2-1.dds",
+        "logical_bytes": 65664
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\A40_C_1_0001.ogg",
+        "logical_bytes": 25288
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\A40_C_1_0005.ogg",
+        "logical_bytes": 43637
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\amd-table.dll",
+        "logical_bytes": 90935
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\back_cursor-source.rgba",
+        "logical_bytes": 16384
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\back_cursor-win.rgba",
+        "logical_bytes": 16384
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\back_cursor.dds",
+        "logical_bytes": 4224
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\bcdec-probe",
+        "logical_bytes": 4534600
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\bcdec.dll",
+        "logical_bytes": 5015005
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\btn_default_en-actual.bin",
+        "logical_bytes": 524384
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\btn_default_en-expected.bin",
+        "logical_bytes": 524384
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\conf_band-actual.bin",
+        "logical_bytes": 131168
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\conf_band-expected.bin",
+        "logical_bytes": 131168
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\dummy-actual.bin",
+        "logical_bytes": 112
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\dummy-expected.bin",
+        "logical_bytes": 112
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\expected-649.bin",
+        "logical_bytes": 147388
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\expected-802.bin",
+        "logical_bytes": 159795
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\ispc-probe.rgba",
+        "logical_bytes": 1048576
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\last-preview.png",
+        "logical_bytes": 136678
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\legacy-649.bin",
+        "logical_bytes": 147364
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\legacy-802.bin",
+        "logical_bytes": 159795
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\menu_window-source.rgba",
+        "logical_bytes": 756000
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\menu_window-win.rgba",
+        "logical_bytes": 2097152
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\menu_window.dds",
+        "logical_bytes": 524416
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\native-color-blocks.dll",
+        "logical_bytes": 104852
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\opening-en-deterministic-1.mp4",
+        "logical_bytes": 15835308
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\opening-en-deterministic-2.mp4",
+        "logical_bytes": 15835308
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\opening-zc-deterministic-1.mp4",
+        "logical_bytes": 16284619
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\opening-zc-deterministic-2.mp4",
+        "logical_bytes": 16284619
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-1115-actual.png",
+        "logical_bytes": 366349
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-1115-expected.png",
+        "logical_bytes": 366349
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-1451-actual.png",
+        "logical_bytes": 105351
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-1451-expected.png",
+        "logical_bytes": 105351
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-1511-actual.png",
+        "logical_bytes": 163082
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-1511-expected.png",
+        "logical_bytes": 163081
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-2335-actual.png",
+        "logical_bytes": 80297
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-2335-expected.png",
+        "logical_bytes": 80309
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-942-actual.png",
+        "logical_bytes": 288539
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-942-expected.png",
+        "logical_bytes": 288539
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-984-actual.png",
+        "logical_bytes": 381098
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\png-984-expected.png",
+        "logical_bytes": 381098
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\reciprocal_compat.dll",
+        "logical_bytes": 122120
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-epsilon.dll",
+        "logical_bytes": 104830
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-even.dll",
+        "logical_bytes": 101854
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-fast.dll",
+        "logical_bytes": 96643
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-fma.dll",
+        "logical_bytes": 103828
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-four.dll",
+        "logical_bytes": 104830
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-nofloor.dll",
+        "logical_bytes": 104318
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-o0.dll",
+        "logical_bytes": 104535
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-one.dll",
+        "logical_bytes": 104830
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-unweighted.dll",
+        "logical_bytes": 104338
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-x87.dll",
+        "logical_bytes": 103316
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\refine-zero.dll",
+        "logical_bytes": 102782
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\title-actual.png",
+        "logical_bytes": 306604
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\title-expected.png",
+        "logical_bytes": 443166
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\update.nca",
+        "logical_bytes": 18888192
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\win-rcp.dll",
+        "logical_bytes": 105688
+      }
+    ],
+    "logical_bytes": 44100031278,
+    "physical_space_may_differ_due_to_hardlinks": true,
+    "attempts": 2,
+    "manual_review_script": "D:\\AI-CODEX\\mofa-vita\\.work\\source-closure-20261118\\cleanup-after-verification.ps1"
+  },
+  "limitations": [
+    "Historical compatibility deltas are game-derived data, not pure metadata or complete recovery of every old encoder.",
+    "Declared firmware fonts, MOD, custom logo, repository artwork and pinned host tools are required in addition to game NSPs.",
+    "Unreferenced garbage in the old 100% intermediate is not reproduced; all final physical files are identical."
+  ],
+  "final_checks": {
+    "local_markdown_links": 110,
+    "broken_links": 0,
+    "source_syntax_modules": 8,
+    "locked_preflight": true,
+    "recipe_matches_published_receipt": true,
+    "touched_docs_diff_check": true,
+    "manual_cleanup_script_syntax": true,
+    "manual_cleanup_executed": false
+  }
+}

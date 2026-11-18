@@ -304,6 +304,7 @@ static void linear_allocation_failure(void) {
 int main(void) {
     /* Public encoded formats are literal SDK ABI values, not test-owned IDs. */
     EXPECT((uint32_t)SCE_GXM_TEXTURE_FORMAT_PVRT4BPP_ABGR==0x81000000U);
+    EXPECT((uint32_t)SCE_GXM_TEXTURE_FORMAT_PVRTII4BPP_ABGR==0x83000000U);
     EXPECT((uint32_t)SCE_GXM_TEXTURE_FORMAT_UBC1_ABGR==0x85000000U);
     EXPECT((uint32_t)SCE_GXM_TEXTURE_FORMAT_UBC3_ABGR==0x87000000U);
     preconditions();
@@ -332,6 +333,11 @@ int main(void) {
     invalid(8,8,0x85000000U,UINT32_MAX,0,0);
     valid(1,9,0x81000000U,64,0,0);
     valid(9,1,0x85000000U,32,0,1);
+    valid(508,508,0x83000000U,131072,0,1);
+    valid(8,8,0x83000000U,32,0,0);
+    invalid(508,508,0x83000000U,508*508/2,0,1);
+    invalid(508,508,0x83000000U,262144,0,1);
+    invalid(8,8,0x83000001U,32,0,0);
     for(enum Fault point=ALLOC;point<=CLAMP_V;++point) failed_upload(point,0);
     failed_upload(BASE,2); failed_upload(MAP,2);
     failed_upload(INIT,1); failed_upload(MIN,2); failed_upload(CLAMP_V,1); failed_upload(CLAMP_V,2);

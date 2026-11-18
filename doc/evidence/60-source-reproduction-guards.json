@@ -1,0 +1,55 @@
+{
+  "schema": "knife-reproduction-guard-audit-v1",
+  "source_to_exact_final_complete": false,
+  "guard_tests_passed": 11,
+  "existing_recovery_tests_passed": 10,
+  "cli_checks": {
+    "implicit_recovery_rejected": true,
+    "explicit_candidate_preflight_passed": true,
+    "direct_generator_bypass_rejected": true
+  },
+  "full_conversion_repeated": false,
+  "final_lock_files": 103,
+  "final_lock_bytes": 5030762588,
+  "final_lock_read_seconds": 4.96,
+  "retired_documents": [
+    {
+      "path": "doc/13-80percent素材候选.md",
+      "bytes": 5774,
+      "sha256": "9114e9703332896c83f3f7b9acff68a7d5fab08275c95ded4672d21391afad95"
+    },
+    {
+      "path": "doc/14-70percent素材候选.md",
+      "bytes": 4306,
+      "sha256": "aa48d1688b6ffd057db6529b0d5d4f6d248d45eb65aaf3722113eb2fe829f699"
+    },
+    {
+      "path": "doc/15-PVRTC全尺寸候选.md",
+      "bytes": 6361,
+      "sha256": "150421a398a4afd66180076f50ca2d4d04eae336bd9fce3fd4908e84fb4c2f6a"
+    },
+    {
+      "path": "doc/16-70percent混合纹理候选.md",
+      "bytes": 4933,
+      "sha256": "515d4e5800cb9b27678444e1c7eb214405ed5646916bdb85b3d0249cb66ac219"
+    },
+    {
+      "path": "doc/17-NSP重建入口.md",
+      "bytes": 14307,
+      "sha256": "881f1fdb6001af509fdd8cafb87901d8467a4ddd07384882855242365516f926"
+    },
+    {
+      "path": "doc/17-nsp-rebuild.en.md",
+      "bytes": 10675,
+      "sha256": "5445e5121b3a9039aa6abbae493692906f54d2775fb2d441fbe2e533ffdab380"
+    },
+    {
+      "path": "doc/18-资源可复现性与来源门禁.md",
+      "bytes": 5979,
+      "sha256": "af60fd6c5a525b892526b561168eb0fc2bbca0504fa0c6b2b2073b225dade6f8"
+    }
+  ],
+  "retirement_reason": "Consolidated source/final delivery guidance into doc10; unique hashes and historical evidence50-59 retained",
+  "scope": "Recovery entrypoints, PVRTC cache, command receipts and exact final asset verifier; not a complete source production chain",
+  "pushed": false
+}

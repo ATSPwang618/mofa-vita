@@ -1,0 +1,287 @@
+{
+  "build_tag": "perf-render-20261117-r10-assets70-pvrtc2",
+  "hardware_tested": false,
+  "source_scale_relative_to_full_resolution": 0.7,
+  "additional_resize": false,
+  "verification": {
+    "manifest_files": 9571,
+    "unchanged_files": 87,
+    "original_entries_identical": 33826,
+    "fallbacks_identical": 8698,
+    "variants": 16255,
+    "appended_images": 78716,
+    "converted_images": 11616,
+    "summed_entry_gpu_payload_reduction": 1437638656,
+    "note": "Summed entry payloads include duplicates; this is not resident memory savings.",
+    "production_metadata_and_budget": {
+      "checked": 28604,
+      "protected": 5198,
+      "maximum_rgba_allocation": 1048576
+    },
+    "hardware_tested": false
+  },
+  "conversion": {
+    "schema": "knife-pvrtc2-4bpp-candidate-v1",
+    "source_manifest_sha256": "030d9a670428de03c4a9c5cb88b127772ace6432365c3276d7dafa6b3a6ec316",
+    "scale": 1.0,
+    "format": "PVRTC2 4bpp",
+    "quality_gate": {
+      "alpha_rmse": 4,
+      "composite_rmse": 5,
+      "composite_p99": 24
+    },
+    "archives": {
+      "jallpac": {
+        "bytes": 2338344960,
+        "volumes": 3,
+        "entries": 75274
+      },
+      "jallpachd": {
+        "bytes": 1713717248,
+        "volumes": 2,
+        "entries": 45595
+      },
+      "allpacml": {
+        "bytes": 11249664,
+        "volumes": 1,
+        "entries": 231
+      },
+      "allpachdml": {
+        "bytes": 9041920,
+        "volumes": 1,
+        "entries": 144
+      }
+    },
+    "counts": {
+      "protected": 8723,
+      "quality": 37345,
+      "accepted": 11616,
+      "no_storage_saving": 8782,
+      "format_or_small": 12250
+    },
+    "tiles_checked": 78716,
+    "seconds": 4858,
+    "source_bytes": 5213631610,
+    "candidate_bytes": 5030762588
+  },
+  "files": [
+    {
+      "path": "release/eboot.bin",
+      "bytes": 4582969,
+      "sha256": "05acd326e570633c8a44015579e7f3ce3739228166c85b4de863b05ef22e0749"
+    },
+    {
+      "path": "release/mofa-vita.vpk",
+      "bytes": 6685545,
+      "sha256": "52709fd3f16b02bd1b37defcc4816fbaced97648e821146ef5f6a5b800a8ca21"
+    }
+  ],
+  "source_manifest": {
+    "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct/assets/vita-540p-assets.json",
+    "bytes": 1609196,
+    "sha256": "030d9a670428de03c4a9c5cb88b127772ace6432365c3276d7dafa6b3a6ec316"
+  },
+  "assets_manifest": {
+    "path": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct-PVRTC2-4bpp/assets/vita-540p-assets.json",
+    "bytes": 1610190,
+    "sha256": "7c08cff36060b27bf7079917b4f984fe98c5dffe8cd6f9fd9859ee10ef59759d"
+  },
+  "coverage_rebind": [
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ0172E0003F8000003F800000.NXZ",
+      "old": 60109,
+      "new": 60109,
+      "sha256": "d12d642b735af23601bd22a4a72b1a473f684d804c36453ca5f9a5639d1b5314"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ0172A0003F8000003F800000.NXZ",
+      "old": 60115,
+      "new": 60115,
+      "sha256": "4f3cac7631ccba3b5b3b2f6039bf23696c6dd8d0c4995dd102d73cefb06ad589"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ005DF0003F8000003F800000.NXZ",
+      "old": 71503,
+      "new": 71503,
+      "sha256": "03e0ca7e68509309e8eb4e8aead715f8479bdbdf8fa7050f9f80c227f3cb7760"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ00B5D0003F8000003F800000.NXZ",
+      "old": 71656,
+      "new": 71656,
+      "sha256": "21fa0d0dd663eb401218bb04841d0e151017e636a53a02ad6573b10366b6a1e9"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ012070003F8000003F800000.NXZ",
+      "old": 71899,
+      "new": 71899,
+      "sha256": "a686022d367d1adf5ab09df72e6228f33ddb49330a8a799b27115c79976a4a50"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ0046D0003F8000003F800000.NXZ",
+      "old": 71955,
+      "new": 71955,
+      "sha256": "e556758305da11ae5592eebbfc4579dd521baf3fb602e19555558eb1edeb3468"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ016A12103F8000003F800000.NXZ",
+      "old": 72620,
+      "new": 72620,
+      "sha256": "ad150e4d1e11d9129d5b76689cd4434deba0ecd3613221454b1010247551a0e8"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ012170003F8000003F800000.NXZ",
+      "old": 72746,
+      "new": 72746,
+      "sha256": "453c3bf0d581d3b920c26044fd60f24162fd6da6f8916fa82406ee5584ba5332"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ004FA0003F8000003F800000.NXZ",
+      "old": 73734,
+      "new": 73734,
+      "sha256": "af2cb51967f480512c56ff4ac3a6405d419ef8abcdd44b6e7e6c4f8f399befbb"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ015D70003F8000003F800000.NXZ",
+      "old": 74580,
+      "new": 74580,
+      "sha256": "d68f27c5c6543b511434aff9ddb746c9530e20d395bd1cc606691c53647d0850"
+    },
+    {
+      "file": "vita_live_alpha_data.rs",
+      "name": "KQ0087F0003F8000003F800000.NXZ",
+      "old": 74813,
+      "new": 74813,
+      "sha256": "397e3cc86a8f7e4071ff679693b8f76ae5f874da7bd61fb0b967dfd4ef1d7573"
+    },
+    {
+      "file": "vita_sparse_coverage.rs",
+      "name": "KQ014710003F8000003F800000.NXZ",
+      "old": 73049,
+      "new": 73049,
+      "sha256": "bd6587961a63188daeeb5ca04209e68582b7de6bc1879319ba310730f8c79440"
+    },
+    {
+      "file": "vita_sparse_coverage.rs",
+      "name": "KQ0075D0003F8000003F800000.NXZ",
+      "old": 73643,
+      "new": 73643,
+      "sha256": "c4a767ecfde836a17e9281f37e3d6d06366579cb42bc1b703442caf995486b8f"
+    }
+  ],
+  "tests": {
+    "gxt_parser": 9,
+    "story_grid": 2,
+    "renderer": 176,
+    "arm_build": true,
+    "package_check": true,
+    "eboot_matches_vpk": true,
+    "embedded_profile_check": true
+  },
+  "rollback": ".work/pvrtc70-20261117/rollback-pvrtc100",
+  "limitations": [
+    "Not tested on PS Vita hardware",
+    "Lossy recompression from 70% DXT, not lossless PNG",
+    "Mixed-format tile filtering and seams require hardware validation",
+    "No new PVRTC software fallback"
+  ],
+  "source_verification": {
+    "source_manifest_sha256": "030d9a670428de03c4a9c5cb88b127772ace6432365c3276d7dafa6b3a6ec316",
+    "verified_manifest_entries": 9571,
+    "bytes": 5213631610,
+    "seconds": 7.88
+  },
+  "optimization_mask": "0xcffffcfdfffffff",
+  "optimization_feature_count": 55,
+  "performance_console_default": true,
+  "quiet_build": false,
+  "offline_shader_count": 85,
+  "source_files": {
+    "knife/knife-platform-vita/src/asset_profile_540p.rs": "c52207cb71985433ba0266c04e838c4cde49f055393f01c1f40dd25e8bb66d99",
+    "knife/knife-render/src/vita_live_alpha_data.rs": "ee25c867850b01191c8546b623162fca2ac5b7449b1916384c74eb773d12d59c",
+    "knife/knife-render/src/vita_sparse_coverage.rs": "21fc6037937bcf951587282207d372c0ff0bf1d61ab93374c8b852f2f6c5f52f",
+    "knife/knife/src/ui/story_controls.rs": "fc8e0ae90532d22286583ccec0ecf2833022df10659a0393572bc757ff048f57",
+    "knife/knife/src/ui/touch.rs": "4962b6ba41b95c839c099396e3e538b1cab71ccab66de94e120f6d3a9fc26319",
+    "tools/convert_story_pvrtc.py": "5422f8bd1194082f2fd016f81cc85b3908c4d681d6c49d420ffb4cfb1d12b3f8",
+    "tools/verify_story_pvrtc.py": "7bc3419eab0e0da6fb3dee681e9f55fe3fe9cbaf741c46be61c61ae84df196d3"
+  },
+  "temporary_cleanup": {
+    "removed_cache_files": 48108,
+    "reclaimed_bytes": 1395364572,
+    "scope": ".work/pvrtc70-20261117/cache; generated encoding cache only"
+  },
+  "comparison_samples": [
+    {
+      "name": "IMG1800",
+      "variant": "KQ009930003F8000003F800000.NXZ",
+      "size": [
+        1680,
+        2940
+      ],
+      "converted_tiles": 11,
+      "total_tiles": 24
+    },
+    {
+      "name": "TOB_A_00_01_05",
+      "variant": "KQ02AD00003F8000003F800000.NXZ",
+      "size": [
+        785,
+        2220
+      ],
+      "converted_tiles": 2,
+      "total_tiles": 10
+    },
+    {
+      "name": "SOU_A_08_03_00_05_10",
+      "variant": "KQ01B0D0003F8000003F800000.NXZ",
+      "size": [
+        644,
+        2116
+      ],
+      "converted_tiles": 8,
+      "total_tiles": 10
+    },
+    {
+      "name": "AOK_A_03_08_00_10_10",
+      "variant": "KQ00C1D0003F8000003F800000.NXZ",
+      "size": [
+        541,
+        2047
+      ],
+      "converted_tiles": 7,
+      "total_tiles": 10
+    }
+  ],
+  "encoder_provenance": [
+    {
+      "name": "psp2pvrt64.exe",
+      "bytes": 786432,
+      "sha256": "fe5bfed42e57971a8dfd7cb4b18999424e06a6f513f42a3f5aa4c29eabc95d24"
+    },
+    {
+      "name": "psp2gxt.exe",
+      "bytes": 270848,
+      "sha256": "f17d5df8b9adf34a32005ba249a9eba7026d335849513589d5d09f37433ae71a"
+    }
+  ],
+  "symbols": [
+    {
+      "path": ".work/vita/game-release-540p/knife.elf",
+      "sha256": "547a48e2b6eb4cf9b3e7019f5cf02695bb8d2b452be599a53a71250d938c6bc3"
+    },
+    {
+      "path": ".work/vita/game-release-540p/knife.map",
+      "sha256": "c157b92ba8464dbd69a079b50847c205548d7662b7e970d77eef3535828729a0"
+    }
+  ]
+}

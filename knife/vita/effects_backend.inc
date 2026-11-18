@@ -923,6 +923,7 @@ int32_t kv_gxm_texture_create_compressed(KvGxm *g, const uint8_t *data,
     if (!active(g) || !out || g->scene_open || !data || !width || !height
         || width > 2048 || height > 2048 || srgb != 0 || linear > 1
         || (format != SCE_GXM_TEXTURE_FORMAT_PVRT4BPP_ABGR
+            && format != SCE_GXM_TEXTURE_FORMAT_PVRTII4BPP_ABGR
             && format != SCE_GXM_TEXTURE_FORMAT_UBC1_ABGR
             && format != SCE_GXM_TEXTURE_FORMAT_UBC3_ABGR)) return KV_BAD_ARGUMENT;
     *out = NULL;

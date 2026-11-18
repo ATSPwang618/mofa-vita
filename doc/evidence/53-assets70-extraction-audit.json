@@ -1,0 +1,95 @@
+{
+  "date": "2026-11-17",
+  "scope": "Read-only current 70pct pack and extraction documentation audit",
+  "assets": "dist/Witch-on-the-Holy-Night-Chengkong-540p-Vita-70pct/assets",
+  "physical_files": 103,
+  "physical_bytes": 5213631610,
+  "manifest_sha256": "030d9a670428de03c4a9c5cb88b127772ace6432365c3276d7dafa6b3a6ec316",
+  "manifest_files_hashed": 9571,
+  "source_100pct_manifest_sha256": "caa3afb3e52913f3634f24fa6365c61e1502fab7837712e585b834fb1caf9a00",
+  "resize": {
+    "source_manifest_sha256": "caa3afb3e52913f3634f24fa6365c61e1502fab7837712e585b834fb1caf9a00",
+    "scale": 0.7,
+    "archives": {
+      "jallpac": {
+        "bytes": 2462375936,
+        "volumes": 3,
+        "entries": 75274,
+        "variants": 9483
+      },
+      "jallpachd": {
+        "bytes": 1772517376,
+        "volumes": 2,
+        "entries": 45595,
+        "variants": 6655
+      },
+      "allpacml": {
+        "bytes": 11272192,
+        "volumes": 1,
+        "entries": 231,
+        "variants": 63
+      },
+      "allpachdml": {
+        "bytes": 9058304,
+        "volumes": 1,
+        "entries": 144,
+        "variants": 54
+      }
+    }
+  },
+  "bank_members": {
+    "voice.mrg": 9406,
+    "bgm.mrg": 65
+  },
+  "sampled_audio_headers": {
+    "voice.mrg": {
+      "member": "stream/A10_1DOT5_2_0000.ogg",
+      "ogg": true,
+      "opus_head": true
+    },
+    "bgm.mrg": {
+      "member": "stream/M01.ogg",
+      "ogg": true,
+      "opus_head": true
+    }
+  },
+  "startup_profile_check": {
+    "passed": true,
+    "key_files": 44,
+    "startup_read_bytes": 4607760
+  },
+  "manifest_statistics_are_inherited": {
+    "files": 9573,
+    "bytes": 7225211382,
+    "entries": 33900,
+    "textures": 34849,
+    "pixels": 4475146974
+  },
+  "source_nsp": {
+    "bytes": 21380558096,
+    "magic": "PFS0",
+    "full_hash_rechecked": false,
+    "historical_identity": "doc/evidence/original-switch-png-20261114.json"
+  },
+  "current_resize_report_present": false,
+  "end_to_end_nsp_rebuild_tested": false,
+  "hardware_tested": false,
+  "assets_modified": false,
+  "program_rebuilt": false,
+  "gap": "Current repository lacks a verified original-art-to-complete-KQ-variant/thumbnail/audio-bank build entrypoint. resize_story_variants consumes an already prepared 100pct runtime pack.",
+  "documentation_validation": {
+    "local_links": 168,
+    "powershell_blocks_parsed": 17,
+    "embedded_python_syntax_passed": true,
+    "cli_help_checked": [
+      "prepare_game.py",
+      "export-original-switch-png.py",
+      "resize_story_variants.py",
+      "verify_resized_story_pack.py",
+      "rebind_story_coverage.py",
+      "generate_vita_asset_profile_540.py"
+    ],
+    "release_and_latest_panel_sources_unchanged": true,
+    "extraction_and_conversion_examples_executed": false
+  }
+}

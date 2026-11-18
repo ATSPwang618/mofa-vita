@@ -22,13 +22,15 @@ Historical screenshots are not performance acceptance evidence for the latest ca
 
 ## Current state
 
-On 2026-11-17, `perf/large_image@06415b5` was fully integrated into local `perf/render`. Latest packaged build: **`perf-render-20261117-142048-06415b5-large-image-r10`**, title ID **`KNIF00540`**. Subsequent documentation/dead-code maintenance has not repackaged this binary. See [release identity](doc/08-素材与安装.md).
+Final delivery assets: **70%-size PVRTC2 4bpp / DXT mixed pack**, `perf-render-20261117-r10-assets70-pvrtc2`. Converted from the existing 70% DXT pack without further resizing: 4.86 → 4.69 GiB (174.40 MiB / 3.51% saved). `release/` contains the paired executable. Hardware image quality and performance remain unverified. See [final-pack notes](doc/10-switch-asset-extraction.en.md).
+
+On 2026-11-17, `perf/large_image@06415b5` was fully integrated into local `perf/render`. Previous integration baseline: **`perf-render-20261117-142048-06415b5-large-image-r10`**, title ID **`KNIF00540`**. See [release identity](doc/08-素材与安装.md).
 
 - Native DXT1/DXT5 upload, offline color variants and KQTL large-image tiles. Unsupported material combinations retain a fallback texture.
 - Material-selected specialized shaders, limited blend fusion, mask bounds and transparent-area rejection. Some optimizations require authenticated texture data or a specific scene phase; they are not universally applied.
 - Bounded caches, GPU retirement, allocation recovery and protection of the last valid story checkpoint.
 - Member-based UI reads, transition prefetch, dedicated save previews, packed Ogg audio and prepared BGM handoff.
-- L+Square settings: 50%–150% story font size and rear-touch modes. Rewind/fast-forward are enabled; previous/next scene remain disabled. Vita currently selects Chengkong Chinese; the asset pack retains English and Chinese.
+- L+Square settings: 50%–150% story font size and rear-touch modes. Previous scene, rewind, fast-forward and next scene on the story panel are disabled; auto mode, bookmarks and voice replay remain available. Vita currently selects Chengkong Chinese; the asset pack retains English and Chinese.
 
 Integration passed 469 host tests, ARM packaging and asset verification. New hardware image/performance/long-session validation is pending; no whole-game minimum FPS is guaranteed.
 
@@ -49,10 +51,10 @@ python3 tools/build-vita.py game release
 
 Requires VitaSDK, `nightly-2026-05-28` and rust-src; use WSL on Windows. The generic build defaults to `hardware-test`; use the environment settings in the [build guide](doc/03-构建与工具链.md) to reproduce the R10 configuration. Outputs are always `release/eboot.bin` and `release/mofa-vita.vpk`.
 
-See the [Switch extraction guide](doc/10-switch-asset-extraction.en.md). An editable PNG project is not a deployable Vita pack. A verified one-command NSP-to-identical-large-image-pack pipeline is not currently provided.
+See the [one-command extraction and exact-replay guide](doc/10-switch-asset-extraction.en.md). Provide BASE, update 1.02, the Chengkong MOD, the custom logo and firmware fonts with this revision’s locked recipe and tools. Acceptance checks all 103 files against the historical SHA-256 baseline; execution evidence and scope are in [receipt 61](doc/evidence/61-source-exact-replay.json).
 
 ## Layout and licensing
 
 [`knife/`](knife/README.md) contains the engine, [`tools/`](tools/README.md) the tooling, and [`doc/`](doc/README.md) current documentation plus versioned historical evidence. `release/`, `dist/` and `.work/` are local-only outputs. This checkout currently retains the runtime pack, not a complete editable PNG project. See [maintenance rules](doc/09-仓库维护与清理.md).
 
-Engine license: [MPL 2.0](knife/LICENSE); provenance: [UPSTREAM.txt](knife/UPSTREAM.txt). Native dependencies retain their own notices. Game content belongs to its respective rights holders and is not distributed with the source. Thanks to @SpriteLisenLisen for technical support.
+Engine license: [MPL 2.0](knife/LICENSE); provenance: [UPSTREAM.txt](knife/UPSTREAM.txt). Native dependencies retain their own notices. Complete game assets must be supplied separately. The exact-replay recipe includes explicitly identified historical encoding deltas; see its [scope and licensing notes](tools/source_replay/README.md). Thanks to @SpriteLisenLisen @DeQxJ00 @今何求 for technical support.

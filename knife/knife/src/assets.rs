@@ -1599,8 +1599,9 @@ impl Assets {
         let image = compact::parse(&data).context("parsing offline story GXT")?;
         anyhow::ensure!(image.encoding == compact::Encoding::GxtNativeUnorm,
             "offline story variant must contain a native UNORM GXT");
-        let size = knife_core::format::gxt_decode::dimensions(image.payload)?;
-        anyhow::ensure!(image.size == [size.0, size.1], "offline story GXT dimensions differ");
+        let texture = knife_platform_vita::gxt::GxtTexture::parse(image.payload)?;
+        anyhow::ensure!(image.size == [u32::from(texture.width), u32::from(texture.height)],
+            "offline story GXT dimensions differ");
         knife_perf::Scope::new(Metric::StoryGxtVariant).finish_hot(name, image.payload.len() as u64, 1);
         Self::decode_shared_data_pixels(data, archive, index, name, Bake::NONE, None, None)
     }
@@ -2879,5 +2880,4 @@ fn sysmes_u32(d: &[u8], o: usize) -> Option<u32> {
 fn sysmes_u64(d: &[u8], o: usize) -> Option<usize> {
     Some(u64::from_le_bytes(d.get(o..o + 8)?.try_into().ok()?) as usize)
 }
-
 

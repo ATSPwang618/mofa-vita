@@ -1,0 +1,604 @@
+{
+  "schema": "knife-nsp-reconstruction-audit-v1",
+  "status": "complete-host-validated-hardware-pending",
+  "updated_at": "2026-11-18T01:36:05.772114+00:00",
+  "source": {
+    "nsp_bytes": 21380558096,
+    "program_nca": "c134dd53826646afa027df1833254e0f.nca",
+    "program_sha256": "c134dd53826646afa027df1833254e0f999e6a6fc1c64bcf470944219f43da86",
+    "whole_nsp_sha256_recomputed": false,
+    "romfs_files": 9565,
+    "romfs_bytes": 21320901679
+  },
+  "private_kit": {
+    "bytes": 229712708,
+    "private_payload_bytes": 213062257,
+    "kit_sha256": "8c9f77a4f7c89286ef0aab9f10b9209208c3e7717f0c142850ce5d10de2a7508",
+    "recipe_sha256": "924d4dcfc059588985045ad5df66a392702e979553793854738e15f4abdd728a",
+    "pure_nsp_only": false
+  },
+  "reference_contract_verification": {
+    "originals": 33826,
+    "variants": 16255,
+    "tiles": 102521,
+    "previews": 11038,
+    "proofs": 13,
+    "recipe_sha256": "924d4dcfc059588985045ad5df66a392702e979553793854738e15f4abdd728a",
+    "hardware_tested": false,
+    "seconds": 78.15
+  },
+  "tests": {
+    "recovered_asset_tests": 10,
+    "archive_resize_tests": 4,
+    "full_chain_complete": true,
+    "hardware_tested": false,
+    "fresh_unattended_from_empty_repeated": false,
+    "note": "First full reconstruction required explicit repairs recorded above; production generators and kit preparation corrected and verified. All corrected stages passed complete validation. No second multi-hour fresh build performed."
+  },
+  "output": "dist/NSP-Rebuilt-70pct-Mixed",
+  "reference_identical": false,
+  "existing_release_replaced": false,
+  "remote_pushed": false,
+  "full_rebuild": {
+    "verification": {
+      "originals": 33826,
+      "variants": 16255,
+      "tiles": 102521,
+      "previews": 11038,
+      "proofs": 13,
+      "recipe_sha256": "924d4dcfc059588985045ad5df66a392702e979553793854738e15f4abdd728a",
+      "hardware_tested": false
+    },
+    "physical_files": 103,
+    "physical_bytes": 6256106593,
+    "manifest_sha256": "0fccbd30dff2b981e6aaee422ac87a8fbf47ab8d5120652db27e9c72f67fc450",
+    "production_profile_passed": true,
+    "jpeg_entries_repaired": 45,
+    "marker_previews_preserved": 2
+  },
+  "resize_verification": {
+    "manifest_files": 9571,
+    "unchanged_files": 87,
+    "original_entries_identical": 33826,
+    "fallbacks_identical": 8698,
+    "variants": 16255,
+    "resized": 16214,
+    "preserved_variants": 41,
+    "production_metadata_and_budget": {
+      "checked": 28604,
+      "protected": 5198,
+      "maximum_rgba_allocation": 1048576
+    },
+    "source_bytes": 6256106593,
+    "candidate_bytes": 4835181514,
+    "hardware_tested": false
+  },
+  "audio_reference_comparison": {
+    "ogg_streams": 9470,
+    "audio_packets_identical": 9468,
+    "granules_identical": 9468,
+    "opus_head_identical": 9470,
+    "differences": [
+      "stream/A40_C_1_0001.ogg",
+      "stream/A40_C_1_0005.ogg"
+    ]
+  },
+  "audio_difference_resolution": "Both voices applied identically to all stages; complete validation repeated",
+  "kit_preparation_validation": {
+    "recipe_equal": true,
+    "private_contract_equal": true,
+    "used_luts_equal": 76,
+    "fresh_luts": 87,
+    "private_bytes": 213062257,
+    "audio_exceptions": 2,
+    "marker_previews": 2
+  },
+  "audio_supplement_validation": [
+    {
+      "path": "stream/A40_C_1_0001.ogg",
+      "channels": 1,
+      "frames": 243720,
+      "decode_ok": true
+    },
+    {
+      "path": "stream/A40_C_1_0005.ogg",
+      "channels": 1,
+      "frames": 399240,
+      "decode_ok": true
+    }
+  ],
+  "cleanup_duplicates": [
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-kit-validation",
+      "bytes": 229826806
+    },
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-kit-final-check",
+      "bytes": 229847032
+    },
+    {
+      "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-kit-audio-check",
+      "bytes": 229916495
+    }
+  ],
+  "first_run_repairs": [
+    "Preserve45 JPEG contracts instead of PNG",
+    "Retain2 directory-marker previews as explicit inputs",
+    "Retain2 non-BASE voice streams as explicit inputs"
+  ],
+  "final": {
+    "schema": "knife-nsp-rebuild-v1",
+    "program_sha256": "c134dd53826646afa027df1833254e0f999e6a6fc1c64bcf470944219f43da86",
+    "kit_sha256": "8c9f77a4f7c89286ef0aab9f10b9209208c3e7717f0c142850ce5d10de2a7508",
+    "private_inputs_bytes": 213062257,
+    "pure_nsp_only": false,
+    "reference_identical": false,
+    "manifest_sha256": "3e1ebb18fb078c888744c15d1390e395bc396b7c498206ae47bc5b409c675b88",
+    "physical_files": 103,
+    "physical_bytes": 4671930284,
+    "hardware_tested": false,
+    "paired_executable": true,
+    "programs": {
+      "eboot.bin": "3cc8489965a5df37cf55fa171b6a742590528ba0d5f1773ffa101262c117730c",
+      "mofa-vita.vpk": "c66c1c2db4358d08189e18f53b48c725b656d7df439cbd04ad396b290001e349"
+    }
+  },
+  "pvrtc_verification": {
+    "manifest_files": 9571,
+    "unchanged_files": 87,
+    "original_entries_identical": 33826,
+    "fallbacks_identical": 8698,
+    "variants": 16255,
+    "appended_images": 78716,
+    "converted_images": 10878,
+    "summed_entry_gpu_payload_reduction": 1352220672,
+    "note": "Summed entry payloads include duplicates; this is not resident memory savings.",
+    "production_metadata_and_budget": {
+      "checked": 28604,
+      "protected": 5198,
+      "maximum_rgba_allocation": 1048576
+    },
+    "hardware_tested": false
+  },
+  "final_audio_verification": {
+    "ogg_streams": 9470,
+    "all_audio_packets_opus_heads_granules_equal_reference": true,
+    "ogg_container_bytes_may_differ": true
+  },
+  "build": {
+    "tag": "perf-render-nsp-rebuild-20261117",
+    "optimization_mask": "0xcffffcfdfffffff",
+    "enabled_features": 55,
+    "console": true,
+    "quiet": false,
+    "title_id": "KNIF00540",
+    "offline_shaders": {
+      "program_count": 85,
+      "all_operation_ids": [
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87
+      ],
+      "source_sha256": "1d9e29b45a81713a5cdb6aa8d462fbc8cf497c8e239785fa243869165a40f6f8",
+      "pc_compiler_sha256": "dae6c92bb97b2b8adfa26a3f85589e80eacf4ba88d2d6189bff4eaa6c87a4e27",
+      "embedded_header_sha256": "52edf4862808a5d505ad9fb29d19a91cd091288298c6ccda1866db005feb06ec",
+      "programs": [
+        {
+          "shader": 11,
+          "sha256": "8cd0f542ebed2ecb5acb50a385f877193f03aee53bc553ba813c33bcd31fd83c"
+        },
+        {
+          "shader": 15,
+          "sha256": "cf6f235a38275066a1ded9a49654973208c1539a15d813163c426b973098a6ea"
+        },
+        {
+          "shader": 17,
+          "sha256": "c6a7ba9f390fb6746a79e1b7db48688a2bff2b8b6da963d2e3fdf460d4529bef"
+        },
+        {
+          "shader": 18,
+          "sha256": "8cab9e1ac0eb30f69b951242a9c1309472ed6274c26b23bdbd25dc0cb85aa9a5"
+        },
+        {
+          "shader": 19,
+          "sha256": "56d815c3b540704ed7ec7216f797303ae02e433d5f483363008df247eb56d605"
+        },
+        {
+          "shader": 20,
+          "sha256": "46893dd0e60702f0804f0452cd385d3083ffc3bdb2ccae2a3a28e3a461e1ca74"
+        },
+        {
+          "shader": 21,
+          "sha256": "8295058603f3fbb8df8110bbc77b929fc26b4b8ebefad56ac9c85f084d128da0"
+        },
+        {
+          "shader": 22,
+          "sha256": "8ee4354aaefc3d282568b33950f4f5f1737e4c76da7f8db81e335f7d2c9a3c18"
+        },
+        {
+          "shader": 23,
+          "sha256": "5e45d659b5ce2877d272dd0e965f134cadab6469a4a95286cf10f389ec6f3ca6"
+        },
+        {
+          "shader": 25,
+          "sha256": "27dc3b829cbcebd5a2101fc477944a50bb2696ab684edafd6891a6ed7d2808f5"
+        },
+        {
+          "shader": 26,
+          "sha256": "030c9f461d1d5476298d7d911e5a36cfe08d3fb53b689cd06e2fea00aff7bae0"
+        },
+        {
+          "shader": 28,
+          "sha256": "5771227039c50c524c73a77705474cd70b1fff8833fb241b3b212671011c6972"
+        },
+        {
+          "shader": 29,
+          "sha256": "67d223ce578d37b3fb424fa9ee120d4ecd3b83e89dc0211d4564b0b4d44d33ff"
+        },
+        {
+          "shader": 30,
+          "sha256": "62eda7e9e854cee0396869e677e7dada9dcce0b2f6c68626295a469a0d595a59"
+        },
+        {
+          "shader": 31,
+          "sha256": "d7eddb4c02617ae24cd522fa3a5ead9400b1a1439a4459dce7115e4dd9a96977"
+        },
+        {
+          "shader": 32,
+          "sha256": "5bcd5c27a8a5f4fe56767221a3d56163eeb5484bebe115964cce220a15a5b3bc"
+        },
+        {
+          "shader": 33,
+          "sha256": "593b8c6010b14a94e0a6528e1ff90a91bdd48de7ae068ac85c29d86380886136"
+        },
+        {
+          "shader": 34,
+          "sha256": "2812a4e9e035610ab1fac28d73ad34c37736426018df963c5c9ecd59e0b9b7e8"
+        },
+        {
+          "shader": 35,
+          "sha256": "f5c394986735d38e5ddc062ea1c2a267ea39f1407255352ce6d081540e1114a7"
+        },
+        {
+          "shader": 36,
+          "sha256": "0d90b748bb87ac07032736c368409c357c5a33f919e927e8d77f7b57713427ea"
+        },
+        {
+          "shader": 37,
+          "sha256": "99e5928c4f0cfef96bd332e46f9ac633859f1edb46130287be505e5744c495b5"
+        },
+        {
+          "shader": 38,
+          "sha256": "d5a5d1e4492fce9a56b743d6694473a7f5eba929354db77cefcda41d36030ec8"
+        },
+        {
+          "shader": 39,
+          "sha256": "cd7ef9b3602cb227ef3692c8c575d8dc95c59d3c7afc9506dda50306c8346836"
+        },
+        {
+          "shader": 40,
+          "sha256": "4a6e1796adb01977a8fe546d35c18c95c953d05996a68d7aca6d5431eed0ac0e"
+        },
+        {
+          "shader": 41,
+          "sha256": "d15a6ad901b21a484f9d75377952488c6d2ab5acc3c48db8523ee84dd6f383f0"
+        },
+        {
+          "shader": 42,
+          "sha256": "bca401bf7056ba57bccf12a90196940c142cc33b66961a2875a7915c62ba9223"
+        },
+        {
+          "shader": 43,
+          "sha256": "821d1dfa2277e2ec1bbfaab37fdf6c19b3f2d78e5808dbedfc21ccc77e584f35"
+        },
+        {
+          "shader": 44,
+          "sha256": "91ce16449d219a3e25ad77b5a4548cbdf11e55df99c83b930700a3a52eb9d045"
+        },
+        {
+          "shader": 45,
+          "sha256": "3096ce2689c9bd843f013b9f453f9ed1f457656b6814c2981e0c2609d7d8168e"
+        },
+        {
+          "shader": 46,
+          "sha256": "43d9393c0697c082387576aabf6a490bfad480d69dd7a5f35ab692f5733faf1b"
+        },
+        {
+          "shader": 47,
+          "sha256": "ea9025504db30e89f23b5a4e6c3dfaebfdabd0508ec7f7e3064502958799871e"
+        },
+        {
+          "shader": 48,
+          "sha256": "2998d33c238e5c230bb862b0b47f266de9de62f817a9a69062057e11e3467579"
+        },
+        {
+          "shader": 49,
+          "sha256": "e2d2e624a52bb3bb65f171ba5a092939925fb9dd9458ea0f7a76e41d0bc8272c"
+        },
+        {
+          "shader": 50,
+          "sha256": "c06cc198ec56f787cb0e5f253b4c6792893c6b3b079b3bd7294c6851141ce610"
+        },
+        {
+          "shader": 51,
+          "sha256": "6bbf99d5ce6922bb1edcf51cb2cd49f93c8021f3b8f5f9fb36164cd36fe73765"
+        },
+        {
+          "shader": 52,
+          "sha256": "99b8292236153e290f1ba6ae0d71cb132282d14c04e971d934def18d3b55eb5b"
+        },
+        {
+          "shader": 53,
+          "sha256": "7d3ea6349d4814cfa3f75fc821a7478b93988bdc4c62e3ecd0ed688daaf5073d"
+        },
+        {
+          "shader": 54,
+          "sha256": "314049672873848bb84de869e4ccf82c42dd78fe4a638a9078257794da008fa1"
+        },
+        {
+          "shader": 55,
+          "sha256": "a441f74ccfabd64d3780575665ede40488125febc68f362aef1ea2d628d688d2"
+        },
+        {
+          "shader": 56,
+          "sha256": "bac261904232c513ff1d484c198d6efc4fc132ed2afa1f05fe9603d44a6991c6"
+        },
+        {
+          "shader": 57,
+          "sha256": "71321ec5ea21b5f29296a917755ba21a27b74db8595266f65874829339bb16cb"
+        },
+        {
+          "shader": 64,
+          "sha256": "777e27618aa8a244a980bba98d4b7444a5dfc6bc4ea6766d452ab740040a63d7"
+        },
+        {
+          "shader": 65,
+          "sha256": "f6f940267a7398e31545fa15ef9be1200f22d2bb88e636d5735fd42812d13bc0"
+        },
+        {
+          "shader": 66,
+          "sha256": "9743c5af2f461e5a42bb82c305d716da987c8e937df1deedd5d62a65a8b923db"
+        },
+        {
+          "shader": 67,
+          "sha256": "5a5b806c6c2414ff9930eca1544ddf3b258b46ed2fa2fcbae92b48e1b5511b6e"
+        },
+        {
+          "shader": 68,
+          "sha256": "1982f41062b5615900d73e3bdb52c57816adc0f5771c54208b677f76d31dea1b"
+        },
+        {
+          "shader": 69,
+          "sha256": "3e3ac8681f36e45cd2a5873bfa264a164b9d376f0e3f17027cbf08aaed67d20c"
+        },
+        {
+          "shader": 70,
+          "sha256": "ddaf25844200d27ffcccbd7c10c73a270e1c1f10e3c597bc0adcb6bb976a026f"
+        },
+        {
+          "shader": 71,
+          "sha256": "09c6886481a11e9a9c21396f64ecd0730a941e5b5a29201d99a08757a8b5b775"
+        },
+        {
+          "shader": 72,
+          "sha256": "98892db59ee25c92f894e59aec01efc7a74d3b58df0fbf2f3ca19f015d1aaa84"
+        },
+        {
+          "shader": 73,
+          "sha256": "f07449babd8d47eb0b103eeb5e757a42f26daff29afebbb1708d7663cea629c8"
+        },
+        {
+          "shader": 74,
+          "sha256": "e12cc9e4269af3ff46e77b0a46b443b9b7d62f46f3d7798fb9a0887eb5a0f133"
+        },
+        {
+          "shader": 75,
+          "sha256": "0de30268e3dc97a15444acf815ebb1518d7a133ffd411cc5881a8188f9c94a59"
+        },
+        {
+          "shader": 76,
+          "sha256": "8bc317054804a6a7c236b895803a86fc96447ffa7d0dc0d3cbfc197a6853554f"
+        },
+        {
+          "shader": 77,
+          "sha256": "8f78c41eb99618ef6a28cfad52c0ce1cf7ea88a618da5fa3c3482c928ac5e7a0"
+        },
+        {
+          "shader": 78,
+          "sha256": "8df6961ecdc808df3c923f86332601348de1feee14780c2818def266f4e1669c"
+        },
+        {
+          "shader": 79,
+          "sha256": "a56999bf33558fa0c8c2edb8d6f0bf72ed861fd8930c8f030b674f6f2a177c81"
+        },
+        {
+          "shader": 80,
+          "sha256": "9311b9e78e678ee4b2a5394e66bcb32d8ec74b02e6be6355c65aa510db1d7adc"
+        },
+        {
+          "shader": 81,
+          "sha256": "c80e1e441b27d4547017aa46ed4a824c53e0e06cb676b2b59818fa46b4190bfd"
+        },
+        {
+          "shader": 82,
+          "sha256": "f67df52743398193f671f1dae87c9d25943de34d6ee5fdd453a437c116cec753"
+        },
+        {
+          "shader": 83,
+          "sha256": "be7a46dc4006e09d9c288732c308e185de923c88e634c6306f0093a09a307eae"
+        },
+        {
+          "shader": 84,
+          "sha256": "51be1c7d90ad2e4654dab8a6981bd0a5770d0dd6dd309c4db68da77216032948"
+        },
+        {
+          "shader": 85,
+          "sha256": "11c38197dab76698f266391fea80271bdc6d1d3ff07e9d4ec00f2fdd37bc9798"
+        },
+        {
+          "shader": 86,
+          "sha256": "d97eda9d5edb353c689e96ceb0c427a1ddc615e2a26cbf3f2861aca49d788306"
+        },
+        {
+          "shader": 87,
+          "sha256": "33fa9450f39fc1ecc08e4118249e2d8512dece58f37e5cb907e2d8ed769b5fe8"
+        },
+        {
+          "shader": 88,
+          "sha256": "5b3994f2469a29d36f72dc6e237f677d519fbf9e703c1d4d36d4bc4b353a6efe"
+        },
+        {
+          "shader": 89,
+          "sha256": "41d49ac744cc73ce4c46051c601d26bcabb5804a9e37da1dbbff7c71a8d3e215"
+        },
+        {
+          "shader": 90,
+          "sha256": "fee2274e0fbac5599b4a00c238d9b70415aee8facebc5620452b1263a8135449"
+        },
+        {
+          "shader": 91,
+          "sha256": "8ea1dbf91bc4c49c7a093f41662635990636689e52355d64365cf52ccf813080"
+        },
+        {
+          "shader": 92,
+          "sha256": "9314ce12d143b0474d9ccae3874411cb93b242d12f879b5d508c236ec30a25b9"
+        },
+        {
+          "shader": 93,
+          "sha256": "a4e10cf8d61b17493e7a01e8b9b58dccd319b7a1e0f88c45c297bb59d67203fb"
+        },
+        {
+          "shader": 94,
+          "sha256": "a62b0f27f3a1c563863ed633f7c932b3a789a42c5cd3c35fe355435195e09b14"
+        },
+        {
+          "shader": 95,
+          "sha256": "897ff1bebc6a80c9b9165119644c3978ec564eeed3557d69448fb4821089520b"
+        },
+        {
+          "shader": 96,
+          "sha256": "60489796f9d5e17ed2d89df5fd8421688688712aa53890cb7323770bf4f98ec6"
+        },
+        {
+          "shader": 97,
+          "sha256": "b938067ec065a26d7ca722aa41c09301f0672d11eebe0add88959d4eedfb9d31"
+        },
+        {
+          "shader": 98,
+          "sha256": "db39a8b01f266de540a4bace867da7031d118615d339f29ed1464e627b74788e"
+        },
+        {
+          "shader": 99,
+          "sha256": "1030ee0e37ea5b25e5c5747e80490b82d10163104badd79b9a31ad5f6c59c12a"
+        },
+        {
+          "shader": 100,
+          "sha256": "3ddb951f303e6d46bbae2dd9a79f7b57de3e22985152c5d89c3073ec1dc07e4e"
+        },
+        {
+          "shader": 101,
+          "sha256": "26a9deb45ec253a4dcc35940d5ff69b2c6db923222e99d7624eb642525886028"
+        },
+        {
+          "shader": 102,
+          "sha256": "742dc919f335d51a5854ddba920a08adae20f465152f73235ebc9124083f12d5"
+        },
+        {
+          "shader": 103,
+          "sha256": "097b6f8e2ab5d84e65fe809dcc6188fae5d16b27baca19a203406f0146b567c2"
+        },
+        {
+          "shader": 104,
+          "sha256": "75fc50152037db6da426af128065a90fa652549a299974ac077631747e35eb32"
+        },
+        {
+          "shader": 105,
+          "sha256": "54aac0c3f5e749c27dba87fb8bd845915c8a52746de38f58aebe1d9cb86ab5cc"
+        },
+        {
+          "shader": 106,
+          "sha256": "8429a4928b11ce4239f677b04cb95a622a9df8ff1d237b4226184fd1fe732708"
+        },
+        {
+          "shader": 107,
+          "sha256": "34be654dd7d3f66eaf658c19ea1045b8cb6c61a8fdd2697fb94debe7c77fbd6f"
+        }
+      ],
+      "load_order": "embedded GXP, validated device cache, runtime compiler; per-entry fallback",
+      "shader_capabilities": "two independent u64 banks, program IDs0..127; separate from optimization options",
+      "gpu_pixel_equivalence_verified": false,
+      "hardware_performance_verified": false
+    }
+  },
+  "cleanup": {
+    "final_stages": [
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\romfs",
+        "bytes": 21320901679,
+        "files": 9565
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\rebuilt-100",
+        "bytes": 6256114210,
+        "files": 107
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\resized-70",
+        "bytes": 4841072837,
+        "files": 105
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\pvrtc-cache",
+        "bytes": 938966916,
+        "files": 33222
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\engine-copy",
+        "bytes": 75931856,
+        "files": 666
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\arm-cache",
+        "bytes": 563280184,
+        "files": 970
+      },
+      {
+        "path": "D:\\AI-CODEX\\mofa-vita\\.work\\nsp-rebuild-20261117\\recovery-kit",
+        "bytes": 229623019,
+        "files": 94
+      }
+    ],
+    "final_stages_bytes": 34225890701,
+    "duplicate_kits_bytes": 689590333,
+    "temporary_nca_bytes": 21379973120,
+    "total_removed_bytes": 56295454154,
+    "source_nsp_preserved": true,
+    "canonical_kit_preserved": true
+  },
+  "completed_command_recheck": {
+    "passed": true,
+    "after_intermediate_cleanup": true
+  },
+  "first_run_repair_scripts": "local .work/nsp-rebuild-20261117/repair-tools; not required by corrected production path"
+}

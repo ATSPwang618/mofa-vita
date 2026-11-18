@@ -249,7 +249,9 @@ def decode_wsl(data):
 
 
 def wsl_path(wsl, distro, path):
-    rc, out, err = capture([wsl, "-d", distro, "--", "wslpath", "-u", str(path)])
+    # Some WSL launchers pass backslashes through a shell before wslpath. Use
+    # Windows forward slashes so D:\\folder cannot become D:folder.
+    rc, out, err = capture([wsl, "-d", distro, "--", "wslpath", "-u", str(path).replace("\\", "/")])
     if rc or not out:
         raise RuntimeError("WSL path conversion failed in " + distro + ": " + err)
     return out.splitlines()[-1]

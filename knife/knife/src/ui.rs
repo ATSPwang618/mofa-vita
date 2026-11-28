@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod pad;
+mod save_cooldown;
 mod story_controls;
 mod touch;
 mod witch;
@@ -5941,12 +5942,7 @@ impl Ui {
             self.drag_frame(game);
             self.conf_hold_frame(game);
             // sub_40EB0 in sub_48AC0 (off_AE04E8 2 / 3; the title's LOAD runs in mode 2)
-            let story = self.screen == Screen::Game || self.stack.contains(&Screen::Game);
-            let load = matches!(self.screen, Screen::SaveLoad { .. })
-                || self.stack.iter().any(|s| matches!(s, Screen::SaveLoad { .. }));
-            if story || load {
-                self.save_cool = self.save_cool.saturating_sub(1);
-            }
+            self.save_cool = save_cooldown::tick(self.save_cool, self.screen, &self.stack, self.wt.st);
             self.save_flash = (self.save_flash - 0.2).max(0.0);
             if let Screen::SaveLoad { save, scroll } = self.screen {
                 let cur = (save, self.hover, scroll);
